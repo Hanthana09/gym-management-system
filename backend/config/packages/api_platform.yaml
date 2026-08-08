@@ -1,0 +1,19 @@
+api_platform:
+    title: 'Hello API Platform'
+    version: 1.0.0
+    formats:
+        jsonld:
+            - application/ld+json
+        jsonapi:
+            - application/vnd.api+json
+        hal:
+            - application/hal+json
+        html:
+            - text/html
+    enable_swagger_ui: true
+    enable_re_doc: true
+    enable_scalar: true
+    defaults:
+        stateless: true
+        cache_headers:
+            vary: [Content-Type, Authorization, Origin]
