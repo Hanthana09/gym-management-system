@@ -1,0 +1,15 @@
+framework:
+    rate_limiter:
+        # Functional requirements §1.2 / architecture §9: max 3 OTP requests
+        # per 10 minutes, keyed by destination+IP in the controller.
+        otp_request:
+            policy: 'sliding_window'
+            limit: 3
+            interval: '10 minutes'
+
+        # Functional requirements §1.1: max 5 failed password attempts per
+        # 15 minutes, keyed by account (email) in the controller.
+        login_attempts:
+            policy: 'sliding_window'
+            limit: 5
+            interval: '15 minutes'

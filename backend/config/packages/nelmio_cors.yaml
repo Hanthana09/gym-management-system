@@ -5,6 +5,7 @@ nelmio_cors:
         allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
         allow_headers: ['Content-Type', 'Authorization']
         expose_headers: ['Link']
+        allow_credentials: true # the refresh token travels as an httpOnly cookie
         max_age: 3600
     paths:
         '^/': {}

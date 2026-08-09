@@ -1,50 +1,137 @@
-import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { useAuth } from './auth/AuthContext'
+import { LoginPage } from './pages/LoginPage'
+import { OtpVerifyPage } from './pages/OtpVerifyPage'
+import { HomePage } from './pages/HomePage'
+import { OwnerPlansPage } from './pages/OwnerPlansPage'
+import { OwnerDashboardPage } from './pages/OwnerDashboardPage'
+import { MemberCheckInPage } from './pages/MemberCheckInPage'
+import { MemberSessionsPage } from './pages/MemberSessionsPage'
+import { CoachSchedulePage } from './pages/CoachSchedulePage'
+import { MemberTrackingPage } from './pages/MemberTrackingPage'
+import { ComingSoonPage } from './pages/ComingSoonPage'
+import { DevComponentsPage } from './pages/DevComponentsPage'
 
-type HealthState =
-  | { status: 'loading' }
-  | { status: 'ok'; body: string }
-  | { status: 'error'; message: string }
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { status } = useAuth()
+
+  if (status === 'loading') return null
+  if (status === 'unauthenticated') return <Navigate to="/login" replace />
+
+  return <>{children}</>
+}
+
+function RedirectIfAuthenticated({ children }: { children: ReactNode }) {
+  const { status } = useAuth()
+
+  if (status === 'loading') return null
+  if (status === 'authenticated') return <Navigate to="/" replace />
+
+  return <>{children}</>
+}
 
 function App() {
-  const [health, setHealth] = useState<HealthState>({ status: 'loading' })
-
-  useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL as string
-
-    fetch(`${apiUrl}/health`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.text()
-      })
-      .then((body) => setHealth({ status: 'ok', body }))
-      .catch((err) => setHealth({ status: 'error', message: String(err) }))
-  }, [])
-
   return (
-    <div className="flex min-h-svh items-center justify-center bg-white px-4">
-      <div className="w-full max-w-sm rounded-lg border border-gray-200 p-6 text-center">
-        <h1 className="text-xl font-semibold text-gray-900">
-          Gym Management System
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">Backend connectivity check</p>
-
-        <div className="mt-4 rounded-md bg-gray-50 p-3 text-sm">
-          {health.status === 'loading' && (
-            <span className="text-gray-500">Checking backend…</span>
-          )}
-          {health.status === 'ok' && (
-            <span className="font-medium text-green-600">
-              Backend reachable: {health.body}
-            </span>
-          )}
-          {health.status === 'error' && (
-            <span className="font-medium text-red-600">
-              Backend unreachable: {health.message}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <RequireAuth>
+            <HomePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/login"
+        element={
+          <RedirectIfAuthenticated>
+            <LoginPage />
+          </RedirectIfAuthenticated>
+        }
+      />
+      <Route
+        path="/login/otp"
+        element={
+          <RedirectIfAuthenticated>
+            <OtpVerifyPage />
+          </RedirectIfAuthenticated>
+        }
+      />
+      <Route
+        path="/owner/plans"
+        element={
+          <RequireAuth>
+            <OwnerPlansPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/dashboard"
+        element={
+          <RequireAuth>
+            <OwnerDashboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/member/check-in"
+        element={
+          <RequireAuth>
+            <MemberCheckInPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/member/sessions"
+        element={
+          <RequireAuth>
+            <MemberSessionsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/member/tracking"
+        element={
+          <RequireAuth>
+            <MemberTrackingPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/member/notifications"
+        element={
+          <RequireAuth>
+            <ComingSoonPage title="Notifications" activeHref="/member/notifications" />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/coach/sessions"
+        element={
+          <RequireAuth>
+            <CoachSchedulePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/coach/dashboard"
+        element={
+          <RequireAuth>
+            <ComingSoonPage title="Dashboard" activeHref="/coach/dashboard" role="coach" />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/coach/members"
+        element={
+          <RequireAuth>
+            <ComingSoonPage title="Members" activeHref="/coach/members" role="coach" />
+          </RequireAuth>
+        }
+      />
+      <Route path="/dev/components" element={<DevComponentsPage />} />
+    </Routes>
   )
 }
 

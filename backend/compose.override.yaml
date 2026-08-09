@@ -18,10 +18,19 @@ services:
     environment:
       FRANKENPHP_WORKER_CONFIG: watch
       FRANKENPHP_SITE_CONFIG: hot_reload
-      MERCURE_EXTRA_DIRECTIVES: demo
+      # Mercure is served by Caddy directly, not by the Symfony app, so
+      # nelmio/cors-bundle never sees subscription requests — cors_origins
+      # is Mercure's own equivalent (dev-only permissive value).
+      MERCURE_EXTRA_DIRECTIVES: |
+        demo
+        cors_origins *
       # See https://xdebug.org/docs/all_settings#mode
       XDEBUG_MODE: "${XDEBUG_MODE:-develop}"
       APP_ENV: "${APP_ENV:-dev}"
+      # Phase 5 real-device testing: browsers/curl send no SNI when
+      # connecting to a raw IP literal, so Caddy has nothing to pick a
+      # certificate by unless told a default (see backend/.env.local).
+      CADDY_GLOBAL_OPTIONS: "${CADDY_GLOBAL_OPTIONS:-}"
     extra_hosts:
       # Ensure that host.docker.internal is correctly defined on Linux
       - host.docker.internal:host-gateway
@@ -34,3 +43,14 @@ services:
     ports:
       - "5432"
 ###< doctrine/doctrine-bundle ###
+
+###> symfony/mailer ###
+  mailer:
+    image: axllent/mailpit
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_HTTP_PORT:-8025}:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+###< symfony/mailer ###

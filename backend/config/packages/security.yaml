@@ -1,0 +1,41 @@
+security:
+    # https://symfony.com/doc/current/security.html#registering-the-user-hashing-passwords
+    password_hashers:
+        App\Entity\User: 'auto' # argon2id where available (architecture doc §9)
+
+    # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
+    providers:
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: email
+
+    firewalls:
+        dev:
+            # Ensure dev tools and static assets are always allowed
+            pattern: ^/(_profiler|_wdt|assets|build)/
+            security: false
+        main:
+            lazy: true
+            stateless: true
+            provider: app_user_provider
+            # Validates a Bearer JWT when present; /auth/* endpoints issue
+            # tokens via custom controllers (password check, OTP verify)
+            # rather than this authenticator, so they stay reachable
+            # without a token.
+            jwt: ~
+
+    # No access_control rules yet: no protected resource exists in this
+    # phase (Phase 2 is auth only). Later phases add #[IsGranted]/Voters
+    # per entity (architecture doc §9.1) rather than broad path rules here.
+
+when@test:
+    security:
+        password_hashers:
+            # Password hashers are resource-intensive by design to ensure security.
+            # In tests, it's safe to reduce their cost to improve performance.
+            Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface:
+                algorithm: auto
+                cost: 4 # Lowest possible value for bcrypt
+                time_cost: 3 # Lowest possible value for argon
+                memory_cost: 10 # Lowest possible value for argon

@@ -1,1 +1,63 @@
 @import "tailwindcss";
+
+@theme {
+  /*
+   * Mobile-first breakpoints (roadmap Phase 1). These match Tailwind's
+   * defaults but are declared explicitly so the strategy is documented
+   * in code, not just in the roadmap doc:
+   *   (base) 0–639px   phone — default for every component
+   *   sm     >=640px   large phone / small tablet portrait
+   *   md     >=768px   tablet — front-desk kiosk, Coach on the gym floor
+   *   lg     >=1024px  Owner desktop dashboard, reports
+   *   xl     >=1280px  wide desktop, data-dense tables
+   */
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+
+  /*
+   * Minimum touch target (roadmap Phase 1: 44x44px on any interactive
+   * element). Named so it reads as intent at call sites, e.g.
+   * `min-h-touch min-w-touch`, rather than a bare `11`.
+   */
+  --spacing-touch: 2.75rem;
+
+  /*
+   * DESIGN-SYSTEM.md §1 — color tokens. That doc writes these as a
+   * tailwind.config.ts theme.extend.colors object, but this project uses
+   * Tailwind v4's CSS-first config (see the @tailwindcss/vite plugin in
+   * vite.config.ts, set up in Phase 0) — there is no tailwind.config.ts
+   * being read by the build, so a JS config file would be silently dead
+   * code. These @theme entries are the v4-native equivalent: a
+   * `--color-<name>` (or `--color-<name>-<shade>`) variable generates the
+   * same `bg-*`/`text-*`/`border-*` utilities a JS color token would.
+   */
+  --color-paper: #ECEDE6;
+  --color-paper-dim: #E1E3D6;
+  --color-card: #F6F6F0;
+  --color-ink: #14181A;
+  --color-ink-soft: #565F5A;
+  --color-line: #C7CBBB;
+  --color-hivis: #D6FA3C;
+
+  --color-owner: #4A3AFF;
+  --color-owner-soft: #ECEAFF;
+  --color-coach: #256B57;
+  --color-coach-soft: #E2EFE9;
+  --color-member: #E8611F;
+  --color-member-soft: #FDE9DC;
+
+  /* DESIGN-SYSTEM.md §2 — typography tokens (Google Fonts loaded in index.html). */
+  --font-display: "Oswald", sans-serif;
+  --font-sans: "Space Grotesk", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+/* DESIGN-SYSTEM.md §2: "Body copy is font-sans throughout; this is the
+   default, so most components don't need to declare it explicitly." */
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+}

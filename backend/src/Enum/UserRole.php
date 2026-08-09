@@ -1,0 +1,10 @@
+<?php
+
+namespace App\Enum;
+
+enum UserRole: string
+{
+    case OWNER = 'owner';
+    case COACH = 'coach';
+    case MEMBER = 'member';
+}

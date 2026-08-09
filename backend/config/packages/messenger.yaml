@@ -1,0 +1,38 @@
+framework:
+    messenger:
+        # Uncomment this (and the failed transport below) to send failed messages to this transport for later handling.
+        # failure_transport: failed
+
+        transports:
+            # https://symfony.com/doc/current/messenger.html#transport-configuration
+            # failed: 'doctrine://default?queue_name=failed'
+            sync: 'sync://'
+            # architecture doc §6.6: notification email delivery — a real
+            # queue (Doctrine-backed, same DSN as the scheduler transport's
+            # storage) so a slow provider never blocks the request that
+            # triggered it. Consumed by `messenger:consume async`.
+            async: '%env(MESSENGER_TRANSPORT_DSN)%'
+            # Backs the MembershipScheduleProvider's #[AsSchedule('membership')]
+            # (architecture doc §8.3) — consumed by `messenger:consume scheduler_membership`.
+            # Note: the DSN scheme is 'schedule://' (no "r") — Symfony
+            # Scheduler's own transport factory only recognizes that exact
+            # prefix (see SchedulerTransportFactory::supports()). This was a
+            # pre-existing typo from Phase 4, latent until now because
+            # nothing had actually tried to consume this transport for real
+            # (MembershipExpiryScannerTest calls the scanner service
+            # directly, bypassing Messenger entirely).
+            scheduler_membership: 'schedule://membership'
+
+        routing:
+            # Route your messages to the transports
+            'App\Notification\SendNotificationEmailMessage': async
+            'App\Membership\RunMembershipExpiryScanMessage': scheduler_membership
+
+when@test:
+    framework:
+        messenger:
+            transports:
+                # In-memory, not Doctrine — functional tests assert against
+                # InMemoryTransport::getSent() instead of needing a real
+                # consumer or a messenger_messages table in the test DB.
+                async: 'in-memory://'
