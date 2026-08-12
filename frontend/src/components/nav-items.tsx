@@ -1,6 +1,7 @@
 import type { NavItem } from './NavShell'
 import {
   BellIcon,
+  BillingIcon,
   CheckInIcon,
   DashboardIcon,
   MembersIcon,
@@ -22,6 +23,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', href: '/owner/dashboard', icon: <DashboardIcon /> },
   { label: 'Members', href: '/owner/members', icon: <MembersIcon /> },
   { label: 'Plans', href: '/owner/plans', icon: <PlansIcon /> },
+  { label: 'Billing', href: '/owner/invoices', icon: <BillingIcon /> },
   { label: 'Settings', href: '/owner/settings', icon: <SettingsIcon /> },
 ]
 

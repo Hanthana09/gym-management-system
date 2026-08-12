@@ -1,8 +1,14 @@
 const API_URL = import.meta.env.VITE_API_URL as string
 
-// Mercure hub is mounted on the same FrankenPHP/Caddy origin as the API
-// (Phase 0) — no separate env var needed.
-export const MERCURE_URL = `${API_URL}/.well-known/mercure`
+// Mercure hub is mounted on the same origin as the API (proxied through
+// the dev server too — see vite.config.ts) — no separate env var needed.
+// API_URL is a relative path (e.g. "/api") so the browser's own fetch()
+// calls resolve it against the current page automatically, but every
+// Mercure subscriber does `new URL(MERCURE_URL)` to append a topic param,
+// and the URL constructor throws on a relative string with no base.
+// Resolving against location.origin here, once, keeps every one of those
+// call sites working unchanged.
+export const MERCURE_URL = new URL(`${API_URL}/.well-known/mercure`, window.location.origin).toString()
 
 export class ApiError extends Error {
   status: number
@@ -55,4 +61,31 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   return data as T
+}
+
+/**
+ * roadmap Phase 11: GET /reports/export returns a CSV/PDF file, not
+ * JSON — apiRequest()'s unconditional response.json() can't handle that,
+ * so this is a separate, minimal fetch that reads a Blob and pulls the
+ * filename off the same Content-Disposition header the server sets.
+ */
+export async function apiRequestBlob(path: string, accessToken: string | null): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(`${API_URL}${path}`, {
+    credentials: 'include',
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  })
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new ApiError(
+      response.status,
+      typeof data.error === 'string' ? data.error : 'unknown_error',
+      typeof data.message === 'string' ? data.message : 'Something went wrong.',
+    )
+  }
+
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename="?([^"]+)"?/)
+
+  return { blob: await response.blob(), filename: match ? match[1] : 'export' }
 }

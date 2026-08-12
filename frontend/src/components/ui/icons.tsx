@@ -107,6 +107,15 @@ export function PlansIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function BillingIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <circle cx="12" cy="12" r="8.25" />
+      <path d="M12 7.5v9M14.5 9.75a2.5 2.5 0 0 0-2.5-1.5c-1.4 0-2.5.84-2.5 2s1.1 1.75 2.5 2 2.5.84 2.5 2-1.1 2-2.5 2a2.5 2.5 0 0 1-2.5-1.5" />
+    </IconBase>
+  )
+}
+
 export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <IconBase {...props}>

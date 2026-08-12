@@ -82,6 +82,46 @@ class InvitationService
         return ['invitation' => $invitation, 'created' => true];
     }
 
+    /**
+     * roadmap Phase 9.1: bulk import calls the exact same sendInvitation()
+     * every single invite already goes through — there is no separate
+     * "create an active account" path here, deliberately. Each row gets
+     * its own outcome so a messy real-world spreadsheet produces a clear
+     * report instead of an all-or-nothing failure.
+     *
+     * @param array<array{name: ?string, email: ?string, phone: ?string, role: ?string}> $rows
+     * @return array<array{row: int, outcome: string, destination: ?string, reason: ?string}>
+     */
+    public function bulkImport(User $owner, array $rows): array
+    {
+        $report = [];
+
+        foreach ($rows as $index => $row) {
+            $destination = $row['email'] ?? $row['phone'] ?? null;
+            $role = InvitationRole::tryFrom(strtolower(trim((string) ($row['role'] ?? ''))));
+
+            if ($destination === null) {
+                $report[] = ['row' => $index + 1, 'outcome' => 'invalid', 'destination' => null, 'reason' => 'missing_email_or_phone'];
+                continue;
+            }
+
+            if ($role === null) {
+                $report[] = ['row' => $index + 1, 'outcome' => 'invalid', 'destination' => $destination, 'reason' => 'invalid_role'];
+                continue;
+            }
+
+            $result = $this->sendInvitation($owner, $destination, $role);
+            $report[] = [
+                'row' => $index + 1,
+                'outcome' => $result['created'] ? 'created' : 'duplicate',
+                'destination' => $destination,
+                'reason' => null,
+            ];
+        }
+
+        return $report;
+    }
+
     /** @return Invitation[] */
     public function listForUser(User $user): array
     {

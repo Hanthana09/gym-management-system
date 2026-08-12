@@ -249,6 +249,94 @@ final class InvitationControllerTest extends WebTestCase
 
     // ---- OTP <-> Invitation integration (architecture doc §6.7) ----------
 
+    // ---- roadmap Phase 9.1: bulk import (GTM Pillar A) --------------------
+
+    /**
+     * The point of this test: a deliberately messy real-world spreadsheet
+     * — non-canonical header order/naming, a ragged row with fewer
+     * columns than the header, a missing phone number, a within-file
+     * duplicate, and an invalid role — produces an accurate per-row
+     * report rather than an all-or-nothing failure.
+     */
+    public function test_given_messy_csv_when_imported_then_accurate_per_row_report(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000020', UserRole::OWNER);
+
+        // Non-canonical header order + an alias ("E-mail"); row 6 is
+        // ragged (only 2 of the 4 header columns present at all).
+        $csv = implode("\n", [
+            'Full Name,E-mail,Role,Phone',
+            'Alice,alice@example.com,member,',           // 1: valid, no phone — created
+            'Bob,,coach,+15550001111',                     // 2: valid, phone-only — created
+            'Alice Again,alice@example.com,member,',       // 3: duplicate of row 1 (within the same file)
+            'Charlie,,member,',                            // 4: no email AND no phone — invalid
+            'Dana,dana@example.com,manager,',              // 5: invalid role — invalid
+            'Eve,eve@example.com',                          // 6: ragged row, missing role/phone columns entirely — invalid
+        ]);
+
+        $result = $this->request('POST', '/invitations/bulk', $owner, ['csv' => $csv]);
+
+        self::assertSame(201, $result['status']);
+        self::assertSame(['created' => 2, 'duplicate' => 1, 'invalid' => 3], $result['body']['summary']);
+
+        $rows = $result['body']['results'];
+        self::assertSame(['row' => 1, 'outcome' => 'created', 'destination' => 'alice@example.com', 'reason' => null], $rows[0]);
+        self::assertSame(['row' => 2, 'outcome' => 'created', 'destination' => '+15550001111', 'reason' => null], $rows[1]);
+        self::assertSame(['row' => 3, 'outcome' => 'duplicate', 'destination' => 'alice@example.com', 'reason' => null], $rows[2]);
+        self::assertSame(['row' => 4, 'outcome' => 'invalid', 'destination' => null, 'reason' => 'missing_email_or_phone'], $rows[3]);
+        self::assertSame(['row' => 5, 'outcome' => 'invalid', 'destination' => 'dana@example.com', 'reason' => 'invalid_role'], $rows[4]);
+        self::assertSame(['row' => 6, 'outcome' => 'invalid', 'destination' => 'eve@example.com', 'reason' => 'invalid_role'], $rows[5]);
+
+        // Exactly two Invitation rows exist — the duplicate and the three invalid rows created nothing.
+        $count = $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM invitation');
+        self::assertSame('2', (string) $count);
+    }
+
+    /** Hard rule (CLAUDE.md / roadmap Phase 9.1): bulk import must never set User.status = active directly. */
+    public function test_bulk_imported_rows_never_create_an_active_account(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000021', UserRole::OWNER);
+        $csv = "name,email,role\nNew Person,newperson@example.com,member";
+
+        $result = $this->request('POST', '/invitations/bulk', $owner, ['csv' => $csv]);
+        self::assertSame(201, $result['status']);
+        self::assertSame(['created' => 1, 'duplicate' => 0, 'invalid' => 0], $result['body']['summary']);
+
+        // No User row exists yet at all — bulk import only ever creates the
+        // Invitation; the User is provisioned later, at the invitee's own
+        // first OTP verify (same as a single invite — see
+        // InvitationService::provisionUserForDestination).
+        $userCount = $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM "user" WHERE email = ?', ['newperson@example.com']);
+        self::assertSame('0', (string) $userCount);
+
+        $invitationStatus = $this->em->getConnection()->fetchOne('SELECT status FROM invitation WHERE email = ?', ['newperson@example.com']);
+        self::assertSame('pending', $invitationStatus);
+    }
+
+    public function test_bulk_import_reuses_pending_invitation_for_an_existing_pending_destination(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000022', UserRole::OWNER);
+        $this->request('POST', '/invitations', $owner, ['destination' => 'already@example.com', 'role' => 'member']);
+
+        $csv = "name,email,role\nAlready Invited,already@example.com,member";
+        $result = $this->request('POST', '/invitations/bulk', $owner, ['csv' => $csv]);
+
+        self::assertSame(201, $result['status']);
+        self::assertSame('duplicate', $result['body']['results'][0]['outcome']);
+
+        $count = $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM invitation WHERE email = ?', ['already@example.com']);
+        self::assertSame('1', (string) $count);
+    }
+
+    public function test_non_owner_cannot_bulk_import_403(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach2@example.com', '+15550000023', UserRole::COACH);
+
+        $result = $this->request('POST', '/invitations/bulk', $coach, ['csv' => "name,email,role\nX,x@example.com,member"]);
+
+        self::assertSame(403, $result['status']);
+    }
+
     public function test_given_no_existing_account_when_otp_verified_for_invited_destination_then_account_created(): void
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000016', UserRole::OWNER);

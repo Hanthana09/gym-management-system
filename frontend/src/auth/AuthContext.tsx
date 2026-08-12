@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { apiRequest, ApiError } from '../lib/apiClient'
+import { apiRequest, apiRequestBlob, ApiError } from '../lib/apiClient'
 
 export interface AuthUser {
   id: string
@@ -39,6 +39,8 @@ interface AuthContextValue {
   logout: () => void
   /** For future protected calls: attaches the access token and silently refreshes once on a 401. */
   authFetch: <T>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>
+  /** Same auth/refresh handling as authFetch, for endpoints that return a file (roadmap Phase 11's report export) instead of JSON. */
+  authFetchBlob: (path: string) => Promise<{ blob: Blob; filename: string }>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -145,8 +147,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   )
 
+  const authFetchBlob = useCallback(
+    async (path: string): Promise<{ blob: Blob; filename: string }> => {
+      try {
+        return await apiRequestBlob(path, accessTokenRef.current)
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          const refreshed = await refresh()
+          if (refreshed) {
+            return apiRequestBlob(path, accessTokenRef.current)
+          }
+        }
+        throw error
+      }
+    },
+    [refresh],
+  )
+
   return (
-    <AuthContext.Provider value={{ status, user, login, requestOtp, verifyOtp, logout, authFetch }}>
+    <AuthContext.Provider value={{ status, user, login, requestOtp, verifyOtp, logout, authFetch, authFetchBlob }}>
       {children}
     </AuthContext.Provider>
   )

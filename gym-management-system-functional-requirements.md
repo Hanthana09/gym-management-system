@@ -131,14 +131,20 @@ Format: **Given / When / Then** per criterion. Role in brackets after each story
 
 ## 8. Billing & Payments
 
-### 8.1 Enrollment payment
-**As a** Member, **I want to** pay for a plan when I enroll, **so that** my membership becomes active.
-- Given I complete payment successfully, when the gateway confirms it, then my membership status becomes active and I receive a receipt/notification.
-- Given payment fails, when that happens, then my membership stays inactive/pending and I see a clear reason and retry option.
+**Current scope note:** payment recording is manual (Owner marks an invoice as paid — cash/bank transfer) for now; gateway integration (Stripe/PayHere) is deferred. The criteria below reflect the manual flow. When a gateway is added later, criterion 8.1's "Owner marks paid" step is replaced by an automated webhook confirmation — everything else (invoice creation, history, Member visibility) stays the same.
+
+### 8.1 Enrollment invoice & manual payment recording
+**As a** Member, **I want to** enroll in a plan and know what I owe, **so that** I can arrange payment with the gym.
+**As an** Owner, **I want to** mark an invoice paid once I've received payment (cash/bank transfer), **so that** the member's status updates accurately.
+- Given a Member enrolls in a plan, when enrollment completes, then an invoice is created with status `pending` and the Member can see the amount owed.
+- Given an Owner marks an invoice as paid (specifying the payment method), when that action completes, then the invoice status becomes `paid`, the associated membership becomes/stays active, and the Member is notified.
+- Given a Member attempts to mark their own invoice paid, when that's attempted, then it's rejected — only the Owner can confirm payment (functional requirement, not just a UI omission; enforce this at the API level).
+- Given an invoice has been pending for an extended period, when that happens, then it remains visible to the Owner as outstanding — no automatic assumption of payment or automatic membership activation without an explicit Owner action.
 
 ### 8.2 Invoice history
 **As a** Member, **I want to** see my past invoices, **so that** I have a record for my own budgeting.
-- Given I have past payments, when I view billing history, then I see date, amount, and status for each, with a downloadable/viewable receipt.
+- Given I have past invoices, when I view billing history, then I see date, amount, status (paid/pending), and — for paid invoices — the payment method and when it was recorded.
+- I can view only my own invoices, never another Member's (same scoping principle as every other role-specific feature in this document).
 
 ---
 
@@ -148,6 +154,35 @@ Format: **Given / When / Then** per criterion. Role in brackets after each story
 **As an** Owner, **I want to** see revenue and attendance summaries, **so that** I can understand how my gym is performing.
 - Given I view the reports screen, when it loads, then I see current-period revenue and a check-in trend, both filterable by date range.
 - This data is visible only to the Owner of that gym — never to Coaches or Members, and never to another gym's Owner.
+
+---
+
+## 10. Analytics & Advanced Reporting (Owner)
+
+### 10.1 Live business dashboard
+**As an** Owner, **I want to** see today's key numbers update in real time, **so that** I have an accurate picture of my gym right now, not as of last night.
+- Given I have the dashboard open, when a Member checks in, then the live counter updates without a manual refresh (same behavior as the Phase 5 attendance counter — this is that same mechanism, reused, not rebuilt).
+- Given I view the dashboard, when it loads, then I see today's check-ins, today's revenue, and current active-member count — all reflecting activity up to the current moment, not just yesterday's aggregated numbers.
+
+### 10.2 Attendance trend analysis
+**As an** Owner, **I want to** see how attendance has changed over time, **so that** I can spot patterns (busy days, slow periods, growth or decline).
+- Given I select a date range, when the trend loads, then I see check-in counts per day across that range as a chart, not just a single total.
+- Given the range spans a period before this feature existed, when it loads, then I see accurate historical data, not a gap — the underlying attendance data (Phase 5) predates this reporting feature and must be reflected correctly.
+
+### 10.3 Revenue forecasting
+**As an** Owner, **I want to** see a projected revenue estimate for the coming weeks/months, **so that** I can plan ahead.
+- Given sufficient historical revenue data exists, when I view the forecast, then I see a 30/60/90-day projection along with a clear indication of how it was calculated (a trend line, not just a bare number) — this must never be presented as a guaranteed figure.
+- Given I have too little historical data for a meaningful projection (e.g. a brand-new gym), when I view the forecast, then I see an explicit "not enough data yet" state rather than a misleadingly confident number.
+
+### 10.4 Retention & churn prediction
+**As an** Owner, **I want to** see which members are at risk of leaving, **so that** I can reach out before they lapse.
+- Given a member's check-in frequency has dropped or their membership is nearing expiry without a renewal, when I view the retention list, then they appear on it with a clear, specific reason (not just a bare "at risk" label — functional requirement, not a nice-to-have, since an unexplained risk score isn't actionable).
+- Given a member's activity is normal, when I view the retention list, then they don't appear on it — the list should be short and specific enough to act on, not a restatement of the full member list.
+
+### 10.5 Exportable reports
+**As an** Owner, **I want to** export any of the above as a file, **so that** I can share it or keep records outside the app.
+- Given I choose a report and a date range, when I export it, then I receive a CSV or PDF (my choice) containing exactly that data, scoped to that range.
+- Given the export is for another Owner's gym data (attempted via a manipulated request), when that's attempted, then it's rejected — export must respect the same gym-scoping as viewing the data (functional requirements §9.1's scoping rule applies equally to exports).
 
 ---
 

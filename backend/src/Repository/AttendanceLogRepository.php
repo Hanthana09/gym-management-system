@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\AttendanceLog;
+use App\Entity\MemberProfile;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -31,6 +32,30 @@ class AttendanceLogRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
     }
 
+    /** roadmap Phase 11: one day's check-in count for DailyMetricAggregator (live "today" and historical backfill alike). */
+    public function countForDate(\DateTimeImmutable $date): int
+    {
+        return (int) $this->createQueryBuilder('a')
+            ->select('COUNT(a.id)')
+            ->andWhere('a.checkIn >= :start')
+            ->andWhere('a.checkIn < :end')
+            ->setParameter('start', $date)
+            ->setParameter('end', $date->modify('+1 day'))
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /** Earliest check-in on record — DailyMetricAggregator's backfill start bound. */
+    public function findEarliestCheckInDate(): ?\DateTimeImmutable
+    {
+        $result = $this->createQueryBuilder('a')
+            ->select('MIN(a.checkIn) as earliest')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return $result !== null ? new \DateTimeImmutable($result) : null;
+    }
+
     /** @return AttendanceLog[] */
     public function findByDateRange(\DateTimeImmutable $from, \DateTimeImmutable $to): array
     {
@@ -42,5 +67,11 @@ class AttendanceLogRepository extends ServiceEntityRepository
             ->orderBy('a.checkIn', 'DESC')
             ->getQuery()
             ->getResult();
+    }
+
+    /** roadmap Phase 9.3: raw material for streak calculation — newest first. */
+    public function findAllForMember(MemberProfile $member): array
+    {
+        return $this->findBy(['member' => $member], ['checkIn' => 'DESC']);
     }
 }

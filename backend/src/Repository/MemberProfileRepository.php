@@ -25,6 +25,27 @@ class MemberProfileRepository extends ServiceEntityRepository
     }
 
     /**
+     * Owner's member roster (architecture doc §7: GET /members). Sourced
+     * from MemberProfile, not a role-filtered User query — a member-role
+     * User only gets a MemberProfile once their invitation is approved
+     * (architecture doc §6.7), so this naturally excludes still-pending
+     * invitees. They already have their own visibility via the Owner's
+     * Invitations panel (Phase 3); this list is the actual onboarded
+     * roster, a different concern.
+     *
+     * @return MemberProfile[]
+     */
+    public function findAllWithUser(): array
+    {
+        return $this->createQueryBuilder('m')
+            ->innerJoin('m.user', 'u')
+            ->addSelect('u')
+            ->orderBy('u.name', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * Roadmap Phase 7: defines "own clients" for a Coach's announcement
      * audience (functional requirements §6.3) — any Member with at least
      * one PT session (any status) booked with this Coach. This is a

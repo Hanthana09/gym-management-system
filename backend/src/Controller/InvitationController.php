@@ -59,6 +59,52 @@ class InvitationController extends AbstractController
         );
     }
 
+    /**
+     * roadmap Phase 9.1 (GTM Pillar A): CSV in, per-row report out. The
+     * SEND permission check runs once, up front — it's the same Owner and
+     * the same gym for every row in a batch, so InvitationVoter::SEND's
+     * outcome can't differ row to row (unlike the per-row destination/role
+     * validation below, which is exactly the point of this endpoint).
+     * Every row still goes through InvitationService::sendInvitation()
+     * unchanged — there is no path here that sets User.status directly.
+     */
+    #[Route('/invitations/bulk', name: 'invitations_bulk_create', methods: ['POST'])]
+    public function bulkCreate(Request $request): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $data = $this->decode($request);
+        $csv = (string) ($data['csv'] ?? '');
+        if (trim($csv) === '') {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'csv is required.'], 400);
+        }
+
+        $gym = $this->gymProvisioning->ensureGymForOwner($user);
+        $candidate = new Invitation($gym, $user, null, null, null, InvitationRole::MEMBER, new \DateTimeImmutable('+7 days'));
+        if (!$this->isGranted(InvitationVoter::SEND, $candidate)) {
+            return $this->forbidden();
+        }
+
+        $rows = $this->parseCsv($csv);
+        if ($rows === []) {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'No data rows found in the CSV.'], 400);
+        }
+
+        $results = $this->invitations->bulkImport($user, $rows);
+
+        return new JsonResponse([
+            'results' => $results,
+            'summary' => [
+                'created' => count(array_filter($results, fn (array $r) => $r['outcome'] === 'created')),
+                'duplicate' => count(array_filter($results, fn (array $r) => $r['outcome'] === 'duplicate')),
+                'invalid' => count(array_filter($results, fn (array $r) => $r['outcome'] === 'invalid')),
+            ],
+        ], 201);
+    }
+
     #[Route('/invitations/me', name: 'invitations_me', methods: ['GET'])]
     public function mine(): JsonResponse
     {
@@ -119,6 +165,74 @@ class InvitationController extends AbstractController
         }
 
         return new JsonResponse($this->serialize($invitation));
+    }
+
+    /**
+     * Header-driven, not position-driven — "inconsistent columns" (roadmap
+     * Phase 9.1) means real spreadsheets vary in column order/naming, so
+     * this matches by header name (case-insensitive, a couple of common
+     * aliases) rather than assuming a fixed column order. Ragged rows
+     * (fewer fields than the header) are tolerated: missing trailing
+     * fields just come back empty, they don't shift later columns or
+     * throw.
+     *
+     * @return array<array{name: ?string, email: ?string, phone: ?string, role: ?string}>
+     */
+    private function parseCsv(string $csv): array
+    {
+        $lines = array_values(array_filter(
+            preg_split('/\r\n|\r|\n/', trim($csv)) ?: [],
+            fn (string $line) => trim($line) !== '',
+        ));
+        if ($lines === []) {
+            return [];
+        }
+
+        $header = array_map(fn (string $h) => strtolower(trim($h)), str_getcsv(array_shift($lines), ',', '"', '\\') ?: []);
+        $columns = [
+            'name' => $this->findColumn($header, ['name']),
+            'email' => $this->findColumn($header, ['email', 'e-mail']),
+            'phone' => $this->findColumn($header, ['phone', 'phone number', 'mobile']),
+            'role' => $this->findColumn($header, ['role', 'type']),
+        ];
+
+        $rows = [];
+        foreach ($lines as $line) {
+            $fields = str_getcsv($line, ',', '"', '\\') ?: [];
+            $rows[] = [
+                'name' => $this->fieldAt($fields, $columns['name']),
+                'email' => $this->fieldAt($fields, $columns['email']),
+                'phone' => $this->fieldAt($fields, $columns['phone']),
+                'role' => $this->fieldAt($fields, $columns['role']),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** @param string[] $header @param string[] $aliases */
+    private function findColumn(array $header, array $aliases): ?int
+    {
+        foreach ($aliases as $alias) {
+            $index = array_search($alias, $header, true);
+            if ($index !== false) {
+                return $index;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param string[] $fields */
+    private function fieldAt(array $fields, ?int $index): ?string
+    {
+        if ($index === null) {
+            return null;
+        }
+
+        $value = trim($fields[$index] ?? '');
+
+        return $value === '' ? null : $value;
     }
 
     private function serialize(Invitation $invitation): array

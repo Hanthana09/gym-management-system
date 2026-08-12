@@ -39,6 +39,19 @@ class Membership
     #[ORM\Column]
     private bool $autoRenew;
 
+    /**
+     * Added in Phase 11 — not in architecture doc §5.1's MEMBERSHIP
+     * columns, but needed to compute DAILY_METRIC_SNAPSHOT.cancelled_
+     * members_count per day: `status` alone can't say *when* a
+     * cancellation happened. Nullable and stays null forever for any
+     * membership cancelled before this field existed — the nightly
+     * aggregation job's backfill honestly shows 0 cancellations on those
+     * past days rather than guessing a date (see DailyMetricAggregator's
+     * docblock).
+     */
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $cancelledAt = null;
+
     public function __construct(
         MemberProfile $member,
         MembershipPlan $plan,
@@ -126,6 +139,12 @@ class Membership
     public function cancel(): void
     {
         $this->status = MembershipStatus::CANCELLED;
+        $this->cancelledAt = new \DateTimeImmutable();
+    }
+
+    public function getCancelledAt(): ?\DateTimeImmutable
+    {
+        return $this->cancelledAt;
     }
 
     /** Days until expiry, used by the scheduled reminder job (architecture doc §8.3) to match the 7/3/1 thresholds. */

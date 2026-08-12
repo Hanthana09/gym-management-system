@@ -78,4 +78,83 @@ class MembershipRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * roadmap Phase 11 / DailyMetricAggregator: "was this membership
+     * within its paid term on day D" — computed purely from start_date/
+     * end_date (both permanent, never-changing facts), not the possibly
+     * lazily-stale `status` column, so it's equally correct for today and
+     * for historical backfill. CANCELLED is excluded outright: a
+     * cancelled membership has no recorded cancellation date before
+     * Phase 11 (see Membership::cancelledAt's docblock), so treating it
+     * as "never active" for historical counting is the honest choice —
+     * see DailyMetricAggregator's own docblock for the fuller reasoning.
+     */
+    public function countWithinTermOnDate(\DateTimeImmutable $date): int
+    {
+        return (int) $this->createQueryBuilder('m')
+            ->select('COUNT(m.id)')
+            ->andWhere('m.status != :cancelled')
+            ->andWhere('m.startDate <= :date')
+            ->andWhere('m.endDate >= :date')
+            ->setParameter('cancelled', MembershipStatus::CANCELLED)
+            ->setParameter('date', $date)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /** New enrollments on a given day — start_date is set once at enroll() and never changes. */
+    public function countStartedOnDate(\DateTimeImmutable $date): int
+    {
+        return (int) $this->createQueryBuilder('m')
+            ->select('COUNT(m.id)')
+            ->andWhere('m.startDate = :date')
+            ->setParameter('date', $date)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /** Cancellations recorded on a given day (only meaningful since Membership::cancelledAt started being set — see its docblock). */
+    public function countCancelledOnDate(\DateTimeImmutable $date): int
+    {
+        return (int) $this->createQueryBuilder('m')
+            ->select('COUNT(m.id)')
+            ->andWhere('m.cancelledAt >= :start')
+            ->andWhere('m.cancelledAt < :end')
+            ->setParameter('start', $date)
+            ->setParameter('end', $date->modify('+1 day'))
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    /** Earliest enrollment on record — DailyMetricAggregator's backfill start bound. */
+    public function findEarliestStartDate(): ?\DateTimeImmutable
+    {
+        $result = $this->createQueryBuilder('m')
+            ->select('MIN(m.startDate) as earliest')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return $result !== null ? new \DateTimeImmutable($result) : null;
+    }
+
+    /**
+     * roadmap Phase 11 / RetentionAnalyzer: active memberships "as of" a
+     * point in time — start_date/end_date bound the term the same way
+     * countWithinTermOnDate() does, so this stays accurate whether called
+     * live (asOf = now) or from the aggregator's historical backfill.
+     *
+     * @return Membership[]
+     */
+    public function findWithinTermAsOf(\DateTimeImmutable $asOf): array
+    {
+        return $this->createQueryBuilder('m')
+            ->andWhere('m.status != :cancelled')
+            ->andWhere('m.startDate <= :asOf')
+            ->andWhere('m.endDate >= :asOf')
+            ->setParameter('cancelled', MembershipStatus::CANCELLED)
+            ->setParameter('asOf', $asOf)
+            ->getQuery()
+            ->getResult();
+    }
 }

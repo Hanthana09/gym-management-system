@@ -5,6 +5,12 @@ import { LoginPage } from './pages/LoginPage'
 import { OtpVerifyPage } from './pages/OtpVerifyPage'
 import { HomePage } from './pages/HomePage'
 import { OwnerPlansPage } from './pages/OwnerPlansPage'
+import { OwnerMembersPage } from './pages/OwnerMembersPage'
+import { OwnerInvoicesPage } from './pages/OwnerInvoicesPage'
+import { MemberInvoicesPage } from './pages/MemberInvoicesPage'
+import { OwnerBulkImportPage } from './pages/OwnerBulkImportPage'
+import { OwnerReferralsPage } from './pages/OwnerReferralsPage'
+import { CoachReferralPage } from './pages/CoachReferralPage'
 import { OwnerDashboardPage } from './pages/OwnerDashboardPage'
 import { MemberCheckInPage } from './pages/MemberCheckInPage'
 import { MemberSessionsPage } from './pages/MemberSessionsPage'
@@ -63,6 +69,54 @@ function App() {
         element={
           <RequireAuth>
             <OwnerPlansPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/members"
+        element={
+          <RequireAuth>
+            <OwnerMembersPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/invoices"
+        element={
+          <RequireAuth>
+            <OwnerInvoicesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/member/invoices"
+        element={
+          <RequireAuth>
+            <MemberInvoicesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/import"
+        element={
+          <RequireAuth>
+            <OwnerBulkImportPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/referrals"
+        element={
+          <RequireAuth>
+            <OwnerReferralsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/coach/refer"
+        element={
+          <RequireAuth>
+            <CoachReferralPage />
           </RequireAuth>
         }
       />

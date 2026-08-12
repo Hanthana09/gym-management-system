@@ -11,7 +11,6 @@ use App\PersonalTraining\PtSessionService;
 use App\Repository\CoachProfileRepository;
 use App\Repository\MemberProfileRepository;
 use App\Repository\PtSessionRepository;
-use App\Repository\UserRepository;
 use App\Security\Voter\PtSessionVoter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
@@ -26,11 +25,16 @@ class PtSessionController extends AbstractController
         private readonly PtSessionRepository $sessionRepository,
         private readonly CoachProfileRepository $coachProfiles,
         private readonly MemberProfileRepository $memberProfiles,
-        private readonly UserRepository $users,
     ) {
     }
 
-    /** roadmap Phase 6 / functional requirements §5.1: coach picker source. */
+    /**
+     * roadmap Phase 6 / functional requirements §5.1: coach picker source.
+     * Sourced from CoachProfile (not a role-filtered User query) so a
+     * coach User row without a profile — possible if it was ever seeded
+     * outside the invite/approve flow — never appears pickable only to
+     * 404 on every subsequent action (see CoachProfileRepository::findAllWithActiveUser).
+     */
     #[Route('/coaches', name: 'coaches_list', methods: ['GET'])]
     public function listCoaches(): JsonResponse
     {
@@ -39,10 +43,10 @@ class PtSessionController extends AbstractController
             return $this->unauthenticated();
         }
 
-        $coaches = array_map(fn (User $coach) => [
-            'id' => (string) $coach->getId(),
-            'name' => $coach->getName(),
-        ], $this->users->findActiveByRole(UserRole::COACH));
+        $coaches = array_map(fn (CoachProfile $coach) => [
+            'id' => (string) $coach->getUser()->getId(),
+            'name' => $coach->getUser()->getName(),
+        ], $this->coachProfiles->findAllWithActiveUser());
 
         return new JsonResponse(['coaches' => $coaches]);
     }

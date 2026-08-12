@@ -6,15 +6,17 @@ This file is the entry point for Claude Code working in this repository. Read it
 
 A single-gym management platform with three roles — Owner, Coach, Member — covering membership management, attendance, personal training, personal tracking, invitations/approval-based onboarding, OTP + password login, and notifications. Mobile-first responsive design throughout; Member-facing screens especially (check-in above all) must work well on a phone.
 
-## The three source-of-truth documents
+## The source-of-truth documents
 
-Don't improvise architecture, feature behavior, or sequencing — they're already decided. Use these documents in this order for every phase:
+Don't improvise architecture, feature behavior, sequencing, or visual design — they're already decided. Use these documents in this order for every phase:
 
-1. **`gym-management-system-development-roadmap.md`** — tells you **what phase you're on and in what order**. Work through its phases sequentially (Phase 0 → Phase 12). Do not start a phase's frontend work before its backend is done, and do not start the next phase until the current phase's "Definition of Done" checklist is fully met.
+1. **`gym-management-system-development-roadmap.md`** — tells you **what phase you're on and in what order**. Work through its phases sequentially (Phase 0 → Phase 13). Do not start a phase's frontend work before its backend is done, and do not start the next phase until the current phase's "Definition of Done" checklist is fully met.
 2. **`gym-management-system-functional-requirements.md`** — tells you **exactly how each feature must behave**. Every acceptance criterion (Given/When/Then) in the relevant section should have a corresponding test before you consider that piece of the phase done. If a feature's behavior is ambiguous, this doc is the tiebreaker before you guess.
 3. **`gym-management-system-architecture.md`** — tells you **how to build it**: entity definitions and the ER diagram (§5), tech stack (§4), full Voter class bodies (§9.1 — copy these, don't reinvent the permission logic), REST endpoint list (§7), and sequence diagrams for the non-obvious flows (§8). The Voters in §9.1 are written out in full — use them as-is unless a functional requirement forces a change.
+4. **`DESIGN-SYSTEM.md`** — tells you **what it should look like**: color tokens, typography, and component patterns (Card, Ticket, Badge, tag/pill, button variants). Use these tokens and patterns for every screen; don't invent new visual styles ad hoc. If a UI need doesn't fit an existing pattern, flag it rather than improvising one.
+5. **`gym-management-system-go-to-market.md`** — relevant specifically for Phase 9 (Growth & Retention Features), which implements features named directly in this doc's strategic pillars. Not needed for other phases.
 
-**Working pattern per phase:** read the phase's section in the roadmap → read the matching feature's acceptance criteria in the functional requirements doc → find the matching entities/Voters/endpoints in the architecture doc → implement → write tests against the acceptance criteria → check off the roadmap's Definition of Done → move on.
+**Working pattern per phase:** read the phase's section in the roadmap → read the matching feature's acceptance criteria in the functional requirements doc → find the matching entities/Voters/endpoints in the architecture doc → build UI from `DESIGN-SYSTEM.md`'s existing patterns → implement → write tests against the acceptance criteria → check off the roadmap's Definition of Done → move on.
 
 ## Tech stack (see architecture doc §4 for the full table and rationale)
 
@@ -59,3 +61,5 @@ Don't improvise architecture, feature behavior, or sequencing — they're alread
 | Know the entity fields / Voter code / endpoint shape | `gym-management-system-architecture.md` §5 / §9.1 / §7 |
 | Understand a multi-step flow (booking, OTP login, invitation approval) | `gym-management-system-architecture.md` §8 sequence diagrams |
 | Know the mobile-first rules | `gym-management-system-development-roadmap.md` Phase 1 |
+| Know what colors/fonts/component pattern to use | `DESIGN-SYSTEM.md` |
+| Understand why a Phase 9 feature exists | `gym-management-system-go-to-market.md` — matching pillar |

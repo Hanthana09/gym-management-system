@@ -31,11 +31,35 @@ export function HomePage() {
               </Card>
             </Link>
             <OwnerInvitationsPanel />
+            <Link to="/owner/members">
+              <Card className="transition-colors hover:bg-paper-dim">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-ink">Members</span>
+                  <span className="text-sm text-ink-soft">View roster →</span>
+                </div>
+              </Card>
+            </Link>
+            <Link to="/owner/import">
+              <Card className="transition-colors hover:bg-paper-dim">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-ink">Bulk Import Members</span>
+                  <span className="text-sm text-ink-soft">Upload CSV →</span>
+                </div>
+              </Card>
+            </Link>
             <Link to="/owner/plans">
               <Card className="transition-colors hover:bg-paper-dim">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-ink">Membership Plans</span>
                   <span className="text-sm text-ink-soft">Manage →</span>
+                </div>
+              </Card>
+            </Link>
+            <Link to="/owner/referrals">
+              <Card className="transition-colors hover:bg-paper-dim">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-ink">Referrals</span>
+                  <span className="text-sm text-ink-soft">Your code →</span>
                 </div>
               </Card>
             </Link>
@@ -52,17 +76,35 @@ export function HomePage() {
                   </Button>
                 </Link>
                 <MyMembershipCard />
+                <Link to="/member/invoices">
+                  <Card className="transition-colors hover:bg-paper-dim">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-ink">Billing</span>
+                      <span className="text-sm text-ink-soft">Invoice history →</span>
+                    </div>
+                  </Card>
+                </Link>
               </>
             ) : null}
             {user.role === 'coach' ? (
-              <Link to="/coach/sessions">
-                <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-ink">My schedule</span>
-                    <span className="text-sm text-ink-soft">Session requests →</span>
-                  </div>
-                </Card>
-              </Link>
+              <>
+                <Link to="/coach/sessions">
+                  <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-ink">My schedule</span>
+                      <span className="text-sm text-ink-soft">Session requests →</span>
+                    </div>
+                  </Card>
+                </Link>
+                <Link to="/coach/refer">
+                  <Card className="transition-colors hover:bg-paper-dim">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-ink">Recommend this to another gym</span>
+                      <span className="text-sm text-ink-soft">→</span>
+                    </div>
+                  </Card>
+                </Link>
+              </>
             ) : null}
           </>
         )}

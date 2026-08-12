@@ -1,7 +1,8 @@
 # Gym Management System — Development Roadmap
 
-**Companion to:** `gym-management-system-architecture.md` (data model, Voters, API design, sequence diagrams — this doc doesn't repeat those, it sequences building them).
+**Companion to:** `gym-management-system-architecture.md` (data model, Voters, API design, sequence diagrams — this doc doesn't repeat those, it sequences building them) and `gym-management-system-go-to-market.md` (Phase 9 specifically implements features named in that doc's strategic pillars — each Phase 9 item cross-references which pillar it supports).
 **How to use this file:** work top to bottom. Each phase ends with a **Definition of Done** — don't start the next phase until it's checked off. Every phase ships a working vertical slice (backend endpoint + a real, responsive screen), not backend-only work followed by a frontend catch-up at the end.
+**Status note:** Phases 0–8 are the core product. Phase 9 builds go-to-market-driven growth features once the core product works, before Billing — see Phase 9's intro for why it's sequenced there. Phase 11 (Analytics & Reporting) is sequenced after Billing (Phase 10) specifically because revenue forecasting needs real invoice history to be meaningful.
 
 ---
 
@@ -147,20 +148,100 @@
 
 ---
 
-## Phase 9 — Billing & Payments
+## Phase 9 — Growth & Retention Features
+
+**Goal:** build the product-side support for the go-to-market plan (`gym-management-system-go-to-market.md`) — these aren't generic features, each one maps directly to a named GTM pillar. Inserted here, after the core product is functional (Phases 0–8) and before Billing, because these features are what make the first real customer cohort (GTM §6, the 90-day plan) actually work in practice.
+
+### 9.1 Bulk member import (GTM Pillar A — remove switching cost)
 
 **Backend:**
-- [ ] `Invoice` entity, payment gateway integration (Stripe/PayHere), webhook handler for payment confirmation
+- [ ] `POST /invitations/bulk` — accepts a CSV (name, email/phone, role) and creates one `Invitation` per row, reusing the existing `Invitation` entity and `InvitationVoter` from Phase 3 as-is. **Do not bypass the invite/approve flow for bulk imports** — every imported person still explicitly approves before their account is active; bulk import only saves the Owner from filling out the single-invite form repeatedly.
+- [ ] Row-level validation and a per-row result report (created / duplicate / invalid), since real-world spreadsheets are messy — this is the actual value of the feature, not the CSV parsing itself.
 
 **Frontend:**
-- [ ] Payment flow using the gateway's mobile-optimized hosted checkout (don't hand-roll card input UI — use Stripe Elements or equivalent, which are already mobile-tested)
-- [ ] Invoice history as a simple list, receipts downloadable/viewable inline
+- [ ] Owner: CSV upload screen with a preview/mapping step (map spreadsheet columns to name/email/phone/role) before committing, and a clear per-row success/error summary after import.
 
-**Definition of Done:** a full enroll → pay → active-membership loop completes on a real mobile device including the payment step.
+**Definition of Done:** an Owner can upload a realistic messy spreadsheet (inconsistent columns, some missing phone numbers, a duplicate row) and get a clear report of what was imported vs. what needs fixing — no silent partial failures.
+
+### 9.2 Referral & lead capture (GTM Pillar B — Coach-led growth, Pillar F — Owner referral)
+
+**Backend:**
+- [ ] `ReferralLead` entity: submitted by a Coach or Owner, captures a prospective gym's name + contact info + who referred them.
+- [ ] `POST /referrals` — any authenticated Coach or Owner can submit a lead. This is deliberately a lightweight capture endpoint (notifies the team, doesn't attempt to auto-provision a new gym) — provisioning a new customer stays a manual/sales step at this stage.
+- [ ] `ReferralCode` entity for Owner-to-owner referral: a stable code per Owner, tracked usage count, for the "refer a gym, both get a free month" program (GTM §5 Pillar F). Credit application logic can be a manual admin action initially — don't over-build automated billing credit before Phase 10 (Billing) exists.
+
+**Frontend:**
+- [ ] Coach dashboard: a clearly visible "Recommend this to another gym" action — this is the direct product support for GTM Pillar B, and it's a Coach-facing flow specifically, separate from anything Owner-facing.
+- [ ] Owner dashboard: a referral screen showing their code/shareable link and the status of gyms they've referred.
+
+**Definition of Done:** a Coach can submit a lead in under 30 seconds from their dashboard, and an Owner can see their referral code and share it — both flows tested on mobile per the standard responsive rules.
+
+### 9.3 Member shareable milestones (GTM Pillar D)
+
+**Backend:**
+- [ ] Milestone detection: on relevant events (check-in streaks, workout count thresholds), emit a `member.milestone_reached` event via the existing EventDispatcher pattern — the Notification module (Phase 7) picks this up the same way it picks up every other event, no new coupling needed.
+- [ ] Keep the initial milestone set small and data-informed rather than guessed (per the go-to-market doc's §7 note: "don't guess this upfront, let early-cohort usage data inform it") — e.g. start with just check-in streaks, expand once Phase 9's first real users show what they actually respond to.
+
+**Frontend:**
+- [ ] Milestone celebration moment (toast/modal) when reached, with a "Share" action.
+- [ ] Share generates an image using the `Badge`/`Ticket` visual patterns from `DESIGN-SYSTEM.md` — this should look like it belongs to the same product as the membership badge, not a generic achievement graphic — and uses the native mobile share sheet where available.
+
+**Definition of Done:** a Member hitting a streak threshold sees a celebratory moment and can generate/share an on-brand image in one tap on mobile.
 
 ---
 
-## Phase 10 — Cross-Device Testing & QA
+## Phase 10 — Billing & Payments (Manual)
+
+**Scope note:** gateway integration (Stripe/PayHere) is deferred — see architecture doc §6.9 for why this is a clean later addition, not a shortcut that creates rework. This phase builds manual payment recording only.
+
+**Backend** (architecture doc §6.9, §9.1's `InvoiceVoter`, §7's `/invoices` endpoints):
+- [ ] `Invoice` entity + migration, including `payment_method`, `recorded_by`, `paid_at` per §5.1.
+- [ ] Copy `InvoiceVoter` from §9.1 — `VIEW` (Owner: any in-gym; Member: own only) and `MARK_PAID` (Owner only, no exceptions).
+- [ ] `PATCH /invoices/:id/mark-paid` — sets `status = paid`, `paid_at = now()`, `recorded_by = <Owner>`, records `payment_method`. This write must hit the audit log (§9) — it's a financial record with no gateway receipt behind it.
+- [ ] Apply `ReferralCode` credit (Phase 9.2) here, now that billing exists to apply it to.
+
+**Frontend:**
+- [ ] Owner: "Mark as paid" action on a pending invoice — payment method selector (cash/bank transfer), simple confirmation.
+- [ ] Member: invoice history — status, amount, and for paid invoices, method + recorded date.
+- [ ] Owner: outstanding-invoices view (pending, not yet marked paid) — this is the practical day-to-day screen for this phase, more so than history.
+
+**Definition of Done:** a Member enrolls, gets an invoice, the Owner marks it paid with a method recorded, the Member's membership activates and they're notified, and the action shows up in the audit log — verified end to end on mobile. `InvoiceVoter`'s `MARK_PAID` rejection of a Member attempting it themselves is tested explicitly.
+
+**Deferred to a later phase (not part of this one):** Stripe/PayHere gateway integration, automated webhook-driven payment confirmation, hosted checkout UI. When that's built, per §6.9 it slots in as a second path to `status = paid` without touching `InvoiceVoter`, the entity, or downstream analytics.
+
+---
+
+## Phase 11 — Analytics & Reporting
+
+**Goal:** turn the raw data every prior phase has been generating (attendance, memberships, invoices) into decision-making tools for the Owner. Sequenced after Billing specifically because revenue forecasting needs real `Invoice` history to be meaningful — building this earlier would mean forecasting off zero or fake data.
+
+**Backend** (architecture doc §6.8, §5.1's `DAILY_METRIC_SNAPSHOT`, extended `ReportVoter` in §9.1):
+- [ ] `DAILY_METRIC_SNAPSHOT` entity + migration.
+- [ ] Nightly Symfony Scheduler job aggregating `ATTENDANCE_LOG`/`MEMBERSHIP`/`INVOICE` into one snapshot row per gym per day. **Backfill historical snapshots from existing data** when this ships — Owners who've been live since Phase 5 need trend history to go back further than "since this feature launched" (functional requirements §10.2's explicit criterion).
+- [ ] Extend `ReportVoter` with the `EXPORT` attribute (already written in architecture doc §9.1 — copy it in) so exports are audit-logged separately from ordinary dashboard views.
+- [ ] `GET /reports/dashboard`, `/reports/attendance`, `/reports/revenue-forecast`, `/reports/retention`, `/reports/export` per §7.
+- [ ] Revenue forecast and churn/retention logic: **rules-based/statistical, not ML** (architecture doc §6.8 explains why) — a weighted moving average for revenue, explainable signals (declining visit frequency, expiry without renewal) for retention risk. Every "at risk" flag must come with a stated reason, not a bare score.
+- [ ] Live dashboard numbers (today's check-ins/revenue) reuse the Phase 5 Mercure/Redis pattern directly — don't build a second live-data mechanism.
+
+**Frontend:**
+- [ ] Dashboard: live counters (reusing the Phase 5 pattern) alongside the aggregated trend/forecast views.
+- [ ] Attendance trend and revenue forecast as charts, date-range filterable — forecast chart must visually distinguish historical data from projection (functional requirements §10.3 — never present a projection as equivalent to actuals).
+- [ ] "Not enough data yet" empty state for the forecast when a gym is too new for a meaningful projection.
+- [ ] Retention list: each at-risk member shown with their specific reason, not just flagged.
+- [ ] Export action: pick a report + date range + format (CSV/PDF), download.
+- [ ] All of the above uses `DESIGN-SYSTEM.md`'s existing card/table/chart conventions from earlier Owner-facing screens (Phase 4's plan management, Phase 9's referral screen) — this phase shouldn't need new visual patterns.
+
+**Testing:**
+- `ReportVoter`'s `EXPORT` attribute: pass case (Owner, own gym) + `403` (different Owner, or Coach/Member attempting export).
+- Every Given/When/Then in functional requirements §10.1–10.5, including the "not enough data" forecast state and the retention list's reason requirement.
+- Confirm the nightly aggregation job produces correct backfilled data against a known test dataset before trusting it for real gyms.
+
+**Definition of Done:** an Owner can view live today's-numbers, a multi-week attendance trend, a clearly-projected (not actual) revenue forecast, a retention list with specific reasons per member, and export any of it — all scoped strictly to their own gym, verified by the `403` test case.
+
+---
+
+## Phase 12 — Cross-Device Testing & QA
+
 
 - [ ] Manual pass on real devices: one iOS Safari phone, one Android Chrome phone, one tablet, one desktop browser — not just DevTools device emulation
 - [ ] Automated responsive smoke tests (Playwright) at 375px, 768px, 1280px for the core flows: login, check-in, booking
@@ -172,22 +253,22 @@
 
 ---
 
-## Phase 11 — Staging & Production Deployment
+## Phase 13 — Staging & Production Deployment
 
 - [ ] Provision production Postgres, Redis, and Mercure (managed or self-hosted per §4/§10)
 - [ ] Set up a staging environment mirroring production, deployed automatically on merge to a `staging` branch
 - [ ] CI pipeline (GitHub Actions): lint → test → build → deploy, blocking merge on failure
 - [ ] Domain + HTTPS (Let's Encrypt or platform-managed TLS)
-- [ ] Environment secrets (JWT keys, DB credentials, payment gateway keys) in a secrets manager, never committed
+- [ ] Environment secrets (JWT keys, DB credentials — payment gateway keys once/if that's added, per Phase 10's deferral note) in a secrets manager, never committed
 - [ ] Backups: database on a daily schedule, uploads directory backed up on the same schedule (per the local-storage note in the architecture doc §10)
 - [ ] Monitoring: Sentry wired for both frontend and backend errors, an uptime check on the production URL
-- [ ] Production smoke test: run the same core flows from Phase 10 against the live production URL before announcing launch
+- [ ] Production smoke test: run the same core flows from Phase 12 against the live production URL before announcing launch
 
 **Definition of Done:** a merge to `main` deploys to production automatically, a synthetic uptime check is green, and the core flows (login, check-in, booking) work on a real phone against the live URL.
 
 ---
 
-## Phase 12 — Post-Launch (optional, per architecture doc §11 Phase 4)
+## Phase 14 — Post-Launch (optional, per architecture doc §11 Phase 4)
 
 - [ ] Mobile app shell (React Native) reusing the same API and component logic patterns established in Phase 1
 - [ ] Push notifications (native, replacing/augmenting the in-app Mercure badge)

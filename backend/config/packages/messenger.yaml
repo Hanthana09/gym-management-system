@@ -22,11 +22,15 @@ framework:
             # (MembershipExpiryScannerTest calls the scanner service
             # directly, bypassing Messenger entirely).
             scheduler_membership: 'schedule://membership'
+            # Backs AnalyticsScheduleProvider's #[AsSchedule('analytics')]
+            # (architecture doc §6.8) — consumed by `messenger:consume scheduler_analytics`.
+            scheduler_analytics: 'schedule://analytics'
 
         routing:
             # Route your messages to the transports
             'App\Notification\SendNotificationEmailMessage': async
             'App\Membership\RunMembershipExpiryScanMessage': scheduler_membership
+            'App\Reporting\RunDailyMetricAggregationMessage': scheduler_analytics
 
 when@test:
     framework:

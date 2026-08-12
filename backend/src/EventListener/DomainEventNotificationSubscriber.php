@@ -7,6 +7,7 @@ use App\Enum\UserRole;
 use App\Event\InvitationApprovedEvent;
 use App\Event\InvitationDeclinedEvent;
 use App\Event\InvitationSentEvent;
+use App\Event\InvoiceMarkedPaidEvent;
 use App\Event\MembershipExpiringEvent;
 use App\Event\SessionConfirmedEvent;
 use App\Event\SessionDeclinedEvent;
@@ -37,6 +38,7 @@ class DomainEventNotificationSubscriber implements EventSubscriberInterface
             SessionConfirmedEvent::NAME => 'onSessionConfirmed',
             SessionDeclinedEvent::NAME => 'onSessionDeclined',
             MembershipExpiringEvent::NAME => 'onMembershipExpiring',
+            InvoiceMarkedPaidEvent::NAME => 'onInvoiceMarkedPaid',
         ];
     }
 
@@ -151,6 +153,22 @@ class DomainEventNotificationSubscriber implements EventSubscriberInterface
             'Membership expiring soon',
             sprintf('Your %s membership expires in %d day%s.', $membership->getPlan()->getName(), $days, $days === 1 ? '' : 's'),
             // No human actor for a scheduled reminder — sourceRole stays null.
+        );
+    }
+
+    /** architecture doc §6.9 / functional requirements §8.1: "the Member is notified." */
+    public function onInvoiceMarkedPaid(InvoiceMarkedPaidEvent $event): void
+    {
+        $invoice = $event->getInvoice();
+        $membership = $invoice->getMembership();
+        $memberUser = $membership->getMember()->getUser();
+
+        $this->notifications->notify(
+            $memberUser,
+            NotificationType::BILLING,
+            'Payment received',
+            sprintf('Your payment of $%s for %s has been recorded.', $invoice->getAmount(), $membership->getPlan()->getName()),
+            UserRole::OWNER,
         );
     }
 }

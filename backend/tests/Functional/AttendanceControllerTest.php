@@ -14,10 +14,12 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Covers functional requirements §4.1 (self check-in, including all
- * blocked-status reasons) and §4.2 (Owner visibility: live counter event
- * + date-range report). The network-failure retry criterion in §4.1 is a
- * client-side concern with nothing server-side to trigger — it's covered
- * by the frontend Playwright verification instead, not here.
+ * blocked-status reasons). §4.2's Owner-visibility report moved to
+ * ReportControllerTest in Phase 11, alongside the /reports/attendance
+ * route itself (see ReportController's docblock). The network-failure
+ * retry criterion in §4.1 is a client-side concern with nothing
+ * server-side to trigger — it's covered by the frontend Playwright
+ * verification instead, not here.
  */
 final class AttendanceControllerTest extends WebTestCase
 {
@@ -197,48 +199,4 @@ final class AttendanceControllerTest extends WebTestCase
         self::assertSame('no_membership', $result['body']['reason']);
     }
 
-    // ---- §4.2 Owner visibility ----------------------------------------------
-
-    public function test_given_date_range_filter_when_viewing_report_then_only_matching_entries_returned(): void
-    {
-        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
-        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
-        $this->createPlanAndEnroll($owner, $member);
-        $this->request('POST', '/members/me/checkin', $member);
-
-        $checkInId = $this->em->getConnection()->fetchOne('SELECT id FROM attendance_log LIMIT 1');
-        $this->em->getConnection()->executeStatement(
-            "UPDATE attendance_log SET check_in = current_date - interval '10 days' WHERE id = ?",
-            [$checkInId],
-        );
-
-        $inRange = $this->request(
-            'GET',
-            '/reports/attendance?from=' . (new \DateTimeImmutable('-15 days'))->format('Y-m-d')
-                . '&to=' . (new \DateTimeImmutable('-5 days'))->format('Y-m-d'),
-            $owner,
-        );
-        $outOfRange = $this->request(
-            'GET',
-            '/reports/attendance?from=' . (new \DateTimeImmutable('-4 days'))->format('Y-m-d')
-                . '&to=' . (new \DateTimeImmutable())->format('Y-m-d'),
-            $owner,
-        );
-
-        self::assertSame(200, $inRange['status']);
-        self::assertCount(1, $inRange['body']['entries']);
-        self::assertSame('Mia Member', $inRange['body']['entries'][0]['memberName']);
-
-        self::assertSame(200, $outOfRange['status']);
-        self::assertCount(0, $outOfRange['body']['entries']);
-    }
-
-    public function test_non_owner_cannot_view_attendance_report_403(): void
-    {
-        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
-
-        $result = $this->request('GET', '/reports/attendance', $member);
-
-        self::assertSame(403, $result['status']);
-    }
 }

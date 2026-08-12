@@ -82,7 +82,18 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/*
+        min-w-0 here is the actual fix for horizontal page overflow, not
+        the one on <main> below: this div is the flex item that sits
+        directly in the outer row (alongside the sidebar), so IT is what
+        needs to be allowed to shrink below its content's natural width.
+        Without it, any wide descendant deep inside main (e.g. a chart's
+        own overflow-x-auto scroll container) inflates this wrapper and
+        stretches the whole page — the inner container never gets the
+        chance to scroll on its own. Roadmap Phase 1: "no horizontal
+        scroll" at any viewport.
+      */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-card px-4">
           {!isMember ? (
             <button
@@ -98,7 +109,8 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
           <NotificationBell role={role} />
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        {/* overflow-x-hidden: a hard backstop, clipping anything that still slips past the min-w-0 fix above. */}
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6">{children}</main>
 
         {isMember ? (
           <nav className="flex shrink-0 border-t border-line bg-card lg:hidden">

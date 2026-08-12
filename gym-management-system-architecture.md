@@ -127,6 +127,7 @@ graph TD
 - **Event bus inside the monolith** (in-process pub/sub, backed by a Redis-based queue for anything async like reminders) means the Notification module never needs to know *why* it's firing — Membership just emits `membership.expiring`, Training emits `session.requested`, and Notify subscribes. This is what let the prototype's "book a session → coach sees it → member gets confirmed" loop work, and it's the same pattern in the real backend.
 - **Redis** does double duty: short-lived cache (today's attendance counts, dashboard stats) and the backing store for the background job queue (expiry checks, reminder emails).
 - **File storage lives on the same server as the app for now** (§4) — profile photos and documents (waivers, medical clearance forms) are still kept out of Postgres rows, just written to local disk instead of an external bucket. The storage adapter is abstracted (§4) specifically so this can move to S3 later without touching application code.
+- **The `Payment Gateway` box in §3.2's diagram represents the target design, not the current build** — billing currently runs on manual payment recording (§6.9), with no live connection to a gateway yet. The diagram shows where that connection will attach later without implying it's already wired up.
 
 ---
 
@@ -146,7 +147,7 @@ graph TD
 | Auth | Symfony **Security** component + `LexikJWTAuthenticationBundle` (JWT access + refresh tokens); password login (argon2 hashing) **and** OTP login (§6.1) both issue the same JWT pair | Standard, no vendor lock-in; OTP reuses the Email/SMS providers already in the architecture (§3.2) so no new external dependency |
 | Permissions (§2 table) | Symfony **Voters** | Purpose-built for "can this Coach access this PT_SESSION" style checks — maps directly onto the permission matrix |
 | File storage | **Local server disk** now, via `league/flysystem-bundle`'s local adapter — same API surface as S3, so switching later is a one-line config change, not a code change | Profile photos, waivers. Move to S3-compatible storage (AWS S3 / Cloudflare R2) once traffic or backup requirements justify it — flagged as a Phase 2+ infra task, not a Phase 1 blocker |
-| Payments | Stripe (or local gateway e.g. PayHere for Sri Lanka) | Subscription billing, one-off PT session payments |
+| Payments | **Manual recording for now** — Owner marks an invoice as paid (cash/bank transfer), no gateway integration yet. `Invoice` still gets created and populated correctly, so analytics (§6.8) work unaffected. Stripe/PayHere integration is a clean drop-in later (§6.9 explains why) | Subscription billing tracked accurately without gateway complexity for the initial launch |
 | Realtime | **Mercure** | Symfony's native real-time push protocol, pairs natively with API Platform; drives the live notification badge and Owner's live attendance count |
 | Infra | Docker (PHP-FPM + Nginx), deployed on a single VPS or managed platform (Platform.sh / AWS ECS) | No need for Kubernetes at this scale |
 | CI/CD | GitHub Actions | Test → build → deploy on merge to main |
@@ -166,6 +167,7 @@ erDiagram
     GYM ||--o{ USER : employs_or_hosts
     GYM ||--o{ ANNOUNCEMENT : publishes
     GYM ||--o{ INVITATION : sends
+    GYM ||--o{ DAILY_METRIC_SNAPSHOT : tracks
 
     USER ||--o| COACH_PROFILE : has
     USER ||--o| MEMBER_PROFILE : has
@@ -270,7 +272,10 @@ erDiagram
         uuid membership_id FK
         decimal amount
         enum status "paid | pending | failed"
+        enum payment_method "cash | bank_transfer | gateway"
+        uuid recorded_by FK "Owner who marked it paid — null until paid, never a Member"
         timestamp issued_at
+        timestamp paid_at "null until marked paid"
     }
 
     ATTENDANCE_LOG {
@@ -339,6 +344,18 @@ erDiagram
         text body
         timestamp created_at
     }
+
+    DAILY_METRIC_SNAPSHOT {
+        uuid id PK
+        uuid gym_id FK
+        date snapshot_date
+        int checkins_count
+        int active_members_count
+        int new_members_count
+        int cancelled_members_count
+        decimal revenue
+        int at_risk_members_count
+    }
 ```
 
 ### 5.2 Notes on key design choices
@@ -349,6 +366,8 @@ erDiagram
 - **`NOTIFICATION` is a single flat table** for all roles — type and user_id are enough to filter; no need for role-specific notification tables.
 - **`INVITATION` carries `email`/`phone` separately from `user_id`** because the invitee often doesn't have an account yet — the Owner invites by contact info, and `user_id` is filled in once the person registers/logs in and approves. `status = pending_approval` on `USER` mirrors this: the account can exist and even log in, but isn't linked to the gym (and so is invisible in gym-scoped queries) until the invitation is approved.
 - **`OTP_CODE.code_hash`, never the raw code** — same reasoning as `password_hash`. `user_id` is nullable because the very first OTP request (before an account exists, e.g. self-registering Member) has nothing to attach to yet.
+- **`DAILY_METRIC_SNAPSHOT` is a pre-aggregated read model, not a source of truth.** Attendance trends, revenue forecasts, and the live dashboard all need to answer "what happened over the last N days" fast — querying `ATTENDANCE_LOG`/`INVOICE` directly and re-aggregating on every dashboard load doesn't scale as history grows. A nightly job (§6.8) computes one row per gym per day; every other analytics feature reads from this table, never from raw logs. If the numbers are ever wrong, the nightly job is the one place to check — the source tables (`ATTENDANCE_LOG`, `MEMBERSHIP`, `INVOICE`) are still the ground truth it's computed from.
+- **`INVOICE.payment_method`/`recorded_by`/`paid_at` support manual payment recording** (§6.9) without requiring a gateway. `recorded_by` matters specifically because marking an invoice paid is a trust-sensitive, auditable action — it should always be traceable to the Owner who did it, the same way §9's audit log covers suspensions and plan changes. When gateway integration is added later, `payment_method = 'gateway'` and `recorded_by` becomes null (the webhook did it, not a person), so the schema doesn't need to change to support both paths simultaneously.
 
 ---
 
@@ -393,6 +412,25 @@ erDiagram
 - On decline or expiry (`expires_at` passed, recommend 7 days): the invitation is closed and no profile is created — the Owner sees the outcome but cannot retry the same invitation; they'd send a new one.
 - This module owns the only two writes to `USER.status` that aren't Owner-initiated suspensions: the initial `pending_approval → active` transition, and reverting to `pending_approval` if an invitation is later revoked before approval.
 
+### 6.8 Analytics & Reporting (Owner only)
+
+- **Nightly aggregation job** (Symfony Scheduler, same pattern as §8.3's expiry scan): computes one `DAILY_METRIC_SNAPSHOT` row per gym per day from `ATTENDANCE_LOG`, `MEMBERSHIP`, and `INVOICE`. Everything below reads from this table, not raw logs (§5.2).
+- **Live business dashboard**: today's numbers specifically (current check-ins, active members, today's revenue) are the one part of this module that *can't* wait for the nightly job — sourced live via the same Mercure/Redis pattern already used for the Phase 5 attendance counter, then reconciled into the snapshot at day's end.
+- **Attendance trend analysis**: a time-series read over `DAILY_METRIC_SNAPSHOT.checkins_count`, filterable by date range — the roadmap's Phase 5 already tracks raw check-ins; this module is the first thing that turns that history into a trend rather than a live counter.
+- **Revenue forecasting**: deliberately **statistical, not machine-learning**, at this scale. A weighted moving average over trailing `DAILY_METRIC_SNAPSHOT.revenue`, adjusted for known upcoming membership expirations/renewals from `MEMBERSHIP`, projected forward 30/60/90 days. This is a judgment call worth revisiting later — see the note at the end of this section.
+- **Retention & churn prediction**: also rules-based initially, not ML — a Member's `at_risk` flag is computed from a small set of explainable signals (days since last check-in trending up, membership nearing expiry without a renewal action, declining visit frequency vs. their own historical average). `at_risk_members_count` on the snapshot is the aggregate; the underlying per-member flag is computed on read for the Owner's retention list, not stored per-member (it would go stale immediately and isn't needed anywhere except that one screen).
+- **Exportable reports**: CSV/PDF generation of any of the above, scoped to a date range — server-rendered, downloaded on request, not pre-generated or emailed on a schedule (that's a reasonable Phase 14+ enhancement, not part of this phase).
+
+**A judgment call worth flagging to the team explicitly:** "prediction" here means transparent, explainable heuristics — an Owner can see *why* a member is flagged at-risk, which matters more at this scale than a marginally more accurate black-box model would. If real usage later shows the heuristic is meaningfully wrong, upgrading to an actual statistical/ML model is a contained change (it only touches this module's internals — the `DAILY_METRIC_SNAPSHOT` table and the API shape don't need to change to support a better model later).
+
+### 6.9 Billing & Payments (manual for now, gateway deferred)
+
+- **Current scope: manual payment recording, not gateway integration.** A `Membership` enrollment creates an `INVOICE` with `status = pending`. The Owner marks it paid via `PATCH /invoices/:id/mark-paid`, supplying `payment_method` (`cash`/`bank_transfer`). This sets `status = paid`, `paid_at = now()`, and `recorded_by = <Owner's user id>`.
+- **Why this doesn't block anything downstream:** §6.8's revenue forecasting and the live dashboard both read from `INVOICE`/`DAILY_METRIC_SNAPSHOT` regardless of *how* an invoice got marked paid. A manually-recorded cash payment and a future gateway webhook produce the identical row shape (`payment_method` differs, everything else is the same) — analytics doesn't need to know or care which path was used.
+- **Marking an invoice paid is an auditable action**, same tier as suspending a member or changing a plan (§9's audit log rule now explicitly includes this — see below). `recorded_by` is never null once `status = paid`, except for the future gateway path where the webhook sets it directly and no human "recorded" it.
+- **Gateway integration later is additive, not a rewrite:** when Stripe/PayHere is added, it becomes a second way to reach `status = paid` (via webhook instead of the Owner's manual action), using the same `INVOICE` entity, the same `InvoiceVoter` (§9.1), and the same downstream analytics. Nothing here needs to be redesigned to add it — it's a genuinely deferred feature, not a shortcut that creates rework later.
+- A Member can view their own invoices (`GET /members/me/invoices`) but can never mark one paid — that's true regardless of whether the eventual payment method is manual or gateway-driven; a Member confirming their own payment would defeat the point of the Owner's record-keeping.
+
 ---
 
 ## 7. API Design (overview)
@@ -424,12 +462,20 @@ GET    /api/v1/members/me/workouts     (Member)
 POST   /api/v1/members/me/workouts     (Member)
 GET    /api/v1/members/me/body-metrics (Member)
 
+GET    /api/v1/invoices                (Owner — all invoices for their gym)
+GET    /api/v1/members/me/invoices     (Member — own invoices only)
+PATCH  /api/v1/invoices/:id/mark-paid  (Owner — records payment_method, sets paid_at/recorded_by)
+
 POST   /api/v1/announcements           (Owner)
 GET    /api/v1/notifications           (any authenticated user, scoped to self)
 PATCH  /api/v1/notifications/:id/read  (any authenticated user, scoped to self)
 
-GET    /api/v1/reports/attendance      (Owner)
+GET    /api/v1/reports/dashboard       (Owner — live business dashboard summary)
+GET    /api/v1/reports/attendance      (Owner — attendance trend, date-range filterable)
 GET    /api/v1/reports/revenue         (Owner)
+GET    /api/v1/reports/revenue-forecast (Owner — 30/60/90-day projection)
+GET    /api/v1/reports/retention       (Owner — at-risk member list with reasons)
+GET    /api/v1/reports/export          (Owner — CSV/PDF, any of the above by date range)
 ```
 
 Every non-Owner endpoint enforces row-level scoping in the service layer, not just the controller guard — defense in depth against a missed check.
@@ -557,7 +603,7 @@ sequenceDiagram
 - Rate limiting on auth endpoints and check-in endpoint (prevent check-in spam / brute force).
 - **OTP-specific rules:** codes are 6 digits, hashed at rest (never stored or logged in plaintext), expire in 5 minutes, and are single-use (`consumed_at` set on success). Rate-limit `/auth/otp/request` per destination *and* per IP (e.g. max 3 requests / 10 minutes) to stop SMS-bombing; lock out `/auth/otp/verify` after 5 failed attempts on a given code.
 - **Invitation-specific rules:** `INVITATION.expires_at` defaults to 7 days — an unapproved invite can't be approved after expiry, closing a window where a stale invite might be accepted long after the Owner meant it. Only the invitee (matched by their authenticated `user_id`, not just by knowing the invitation ID) can approve/decline — enforced by `InvitationVoter` (§9.1), not just the frontend.
-- Full audit log (`actor_id`, `action`, `entity`, `timestamp`) for any Owner action that touches another user's account (suspension, plan changes, invitations sent) — useful for disputes.
+- Full audit log (`actor_id`, `action`, `entity`, `timestamp`) for any Owner action that touches another user's account (suspension, plan changes, invitations sent) **or financial record (marking an invoice paid, per §6.9)** — useful for disputes, and specifically important for manually-recorded payments since there's no gateway receipt backing them up.
 - **Decision needed from the team:** should Coaches see any of their clients' `WORKOUT_LOG`/`BODY_METRIC` data? The permission table in §2 currently says no by default; if coaching quality depends on seeing progress, this should be an explicit per-client opt-in the member controls, not a role-wide grant.
 
 ### 9.1 Voter Class Outline
@@ -743,21 +789,54 @@ final class PersonalTrackingVoter extends AppVoter
 }
 ```
 
-**ReportVoter** — revenue & attendance reports (§2 row 10, Owner only)
+**ReportVoter** — revenue, attendance, and analytics reports (§2 row 10, Owner only). Originally written for §6's basic reports; the same Voter now also gates every endpoint added by §6.8 Analytics & Reporting — no new Voter needed, since every one of those endpoints has the same shape ("Owner, own gym only").
 ```php
 final class ReportVoter extends AppVoter
 {
-    const VIEW = 'REPORT_VIEW';
+    const VIEW   = 'REPORT_VIEW';   // dashboard, trends, retention list, forecast
+    const EXPORT = 'REPORT_EXPORT'; // CSV/PDF export specifically — kept distinct from VIEW
+                                     // so exports (which leave the app as a file) can be
+                                     // audit-logged separately per §9's audit log rule,
+                                     // without over-logging every dashboard page view.
 
     protected function supports(string $attribute, mixed $subject): bool
     {
-        return $attribute === self::VIEW && $subject instanceof Gym;
+        return in_array($attribute, [self::VIEW, self::EXPORT]) && $subject instanceof Gym;
     }
 
     protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
     {
         $user = $token->getUser();
         return $this->isOwner($user) && $subject->getOwner() === $user;
+    }
+}
+```
+
+**InvoiceVoter** — Owner manages/marks paid, Member views own only (§6.9)
+```php
+final class InvoiceVoter extends AppVoter
+{
+    const VIEW      = 'INVOICE_VIEW';       // Owner: any in their gym; Member: own only
+    const MARK_PAID = 'INVOICE_MARK_PAID';  // Owner only — a Member can never confirm their own payment
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, [self::VIEW, self::MARK_PAID]) && $subject instanceof Invoice;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        $user = $token->getUser();
+        $gymOwnerMatches = $subject->getMembership()->getMember()->getUser()->getGym() === $user->getGym();
+
+        if ($attribute === self::MARK_PAID) {
+            return $this->isOwner($user) && $gymOwnerMatches;
+        }
+        // VIEW
+        if ($this->isOwner($user)) {
+            return $gymOwnerMatches;
+        }
+        return $this->isMember($user) && $subject->getMembership()->getMember()->getUser() === $user;
     }
 }
 ```
@@ -871,8 +950,9 @@ Each voter's `voteOnAttribute()` body is deliberately a direct translation of on
 
 1. **MVP:** Auth/RBAC (password **and** OTP login), Invitations & approval, Membership (plans + enrollment), Attendance check-in, basic Owner dashboard.
 2. **Phase 2:** Personal Training booking + Coach scheduling, Notifications (in-app + email).
-3. **Phase 3:** Personal Tracking (workouts + body metrics), Billing/Invoicing integration with a payment gateway.
-4. **Phase 4 (optional):** Mobile app for check-in and push notifications, class scheduling/group bookings.
+3. **Phase 3:** Personal Tracking (workouts + body metrics), Billing/Invoicing — **manual payment recording first** (§6.9); gateway integration is a later, additive step, not required for this phase.
+4. **Phase 4:** Analytics & Reporting (§6.8) — sequenced after Billing since revenue forecasting needs real invoice history.
+5. **Phase 5 (optional):** Payment gateway integration, mobile app for check-in and push notifications, class scheduling/group bookings.
 
 ---
 

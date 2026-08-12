@@ -3,6 +3,9 @@ import { MEMBER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card } from '../components/ui'
 import { CheckInIcon } from '../components/ui/icons'
 import { useCheckIn } from '../attendance/useCheckIn'
+import { useAuth } from '../auth/AuthContext'
+import { useMilestoneWatcher } from '../milestones/useMilestoneWatcher'
+import { MilestoneCelebrationModal } from '../milestones/MilestoneCelebrationModal'
 
 const BLOCKED_REASON_LABELS: Record<string, string> = {
   membership_expired: 'Membership expired',
@@ -19,10 +22,15 @@ const BLOCKED_REASON_LABELS: Record<string, string> = {
  */
 export function MemberCheckInPage() {
   const { state, checkIn, reset } = useCheckIn()
+  const { user } = useAuth()
+  const { milestone, dismiss } = useMilestoneWatcher()
 
   return (
     <div className="h-dvh">
       <NavShell role="member" title="Gym" navItems={MEMBER_NAV_ITEMS} activeHref="/member/check-in">
+        {milestone && user ? (
+          <MilestoneCelebrationModal memberName={user.name} streakDays={milestone.streakDays} onClose={dismiss} />
+        ) : null}
         <div className="flex h-full flex-col items-center justify-center gap-6">
           {state.status === 'success' ? (
             <Card className="w-full max-w-sm text-center">

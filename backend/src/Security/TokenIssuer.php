@@ -71,7 +71,13 @@ class TokenIssuer
         return Cookie::create(self::REFRESH_COOKIE_NAME)
             ->withValue(null)
             ->withExpires(1)
-            ->withPath('/auth')
+            // Root, not '/auth': the frontend dev server proxies API calls
+            // under a '/api' prefix (vite.config.ts) so the browser sees
+            // e.g. '/api/auth/refresh', not '/auth/refresh' — a cookie
+            // scoped to '/auth' would never match that request path and
+            // silently never get sent back. '/' has no such prefix
+            // assumption to keep in sync with the proxy config.
+            ->withPath('/')
             ->withHttpOnly(true)
             ->withSecure(true)
             // Frontend and backend are separate origins by design (architecture
@@ -87,7 +93,13 @@ class TokenIssuer
         return Cookie::create(self::REFRESH_COOKIE_NAME)
             ->withValue($rawToken)
             ->withExpires($expiresAt)
-            ->withPath('/auth')
+            // Root, not '/auth': the frontend dev server proxies API calls
+            // under a '/api' prefix (vite.config.ts) so the browser sees
+            // e.g. '/api/auth/refresh', not '/auth/refresh' — a cookie
+            // scoped to '/auth' would never match that request path and
+            // silently never get sent back. '/' has no such prefix
+            // assumption to keep in sync with the proxy config.
+            ->withPath('/')
             ->withHttpOnly(true)
             ->withSecure(true)
             // Frontend and backend are separate origins by design (architecture

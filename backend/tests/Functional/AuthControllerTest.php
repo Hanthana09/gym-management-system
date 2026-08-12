@@ -93,7 +93,7 @@ final class AuthControllerTest extends WebTestCase
     private function injectRawRefreshTokenCookie(string $rawToken): void
     {
         $this->client->getCookieJar()->set(
-            new BrowserKitCookie('refresh_token', $rawToken, null, '/auth', 'localhost', true, true, false, 'none'),
+            new BrowserKitCookie('refresh_token', $rawToken, null, '/', 'localhost', true, true, false, 'none'),
         );
     }
 
@@ -256,14 +256,14 @@ final class AuthControllerTest extends WebTestCase
     {
         $this->createUser('refresh@example.com', '+15550000011', 'correct-password');
         $this->postJson('/auth/login', ['email' => 'refresh@example.com', 'password' => 'correct-password']);
-        $oldRefreshCookie = $this->client->getCookieJar()->get('refresh_token', '/auth', 'localhost');
+        $oldRefreshCookie = $this->client->getCookieJar()->get('refresh_token', '/', 'localhost');
 
         $refreshResult = $this->postJson('/auth/refresh', []);
 
         self::assertSame(200, $refreshResult['status']);
         self::assertMatchesRegularExpression('/^[\w-]+\.[\w-]+\.[\w-]+$/', $refreshResult['body']['accessToken']);
         self::assertSame('refresh@example.com', $refreshResult['body']['user']['email']);
-        $newRefreshCookie = $this->client->getCookieJar()->get('refresh_token', '/auth', 'localhost');
+        $newRefreshCookie = $this->client->getCookieJar()->get('refresh_token', '/', 'localhost');
         self::assertNotSame($oldRefreshCookie->getValue(), $newRefreshCookie->getValue(), 'The refresh token itself must rotate on use.');
     }
 
@@ -306,7 +306,7 @@ final class AuthControllerTest extends WebTestCase
     {
         $this->createUser('rotate@example.com', '+15550000013', 'correct-password');
         $this->postJson('/auth/login', ['email' => 'rotate@example.com', 'password' => 'correct-password']);
-        $oldCookie = $this->client->getCookieJar()->get('refresh_token', '/auth', 'localhost');
+        $oldCookie = $this->client->getCookieJar()->get('refresh_token', '/', 'localhost');
 
         $this->postJson('/auth/refresh', []); // rotates: old token is now revoked
 
