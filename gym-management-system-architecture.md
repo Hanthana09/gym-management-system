@@ -126,7 +126,7 @@ graph TD
 
 - **Event bus inside the monolith** (in-process pub/sub, backed by a Redis-based queue for anything async like reminders) means the Notification module never needs to know *why* it's firing — Membership just emits `membership.expiring`, Training emits `session.requested`, and Notify subscribes. This is what let the prototype's "book a session → coach sees it → member gets confirmed" loop work, and it's the same pattern in the real backend.
 - **Redis** does double duty: short-lived cache (today's attendance counts, dashboard stats) and the backing store for the background job queue (expiry checks, reminder emails).
-- **File storage lives on the same server as the app for now** (§4) — profile photos and documents (waivers, medical clearance forms) are still kept out of Postgres rows, just written to local disk instead of an external bucket. The storage adapter is abstracted (§4) specifically so this can move to S3 later without touching application code.
+- **File storage lives on the same server as the app for now** (§4) — profile photos and documents (waivers, medical clearance forms) are still kept out of Postgres rows, just written to local disk instead of an external bucket. The storage adapter is abstracted (§4) specifically so this can move to DigitalOcean Spaces later without touching application code.
 - **The `Payment Gateway` box in §3.2's diagram represents the target design, not the current build** — billing currently runs on manual payment recording (§6.9), with no live connection to a gateway yet. The diagram shows where that connection will attach later without implying it's already wired up.
 
 ---
@@ -146,10 +146,10 @@ graph TD
 | Internal event bus (§3.2, §6) | **Symfony EventDispatcher** | Native to the framework — modules emit/subscribe to domain events with no extra package |
 | Auth | Symfony **Security** component + `LexikJWTAuthenticationBundle` (JWT access + refresh tokens); password login (argon2 hashing) **and** OTP login (§6.1) both issue the same JWT pair | Standard, no vendor lock-in; OTP reuses the Email/SMS providers already in the architecture (§3.2) so no new external dependency |
 | Permissions (§2 table) | Symfony **Voters** | Purpose-built for "can this Coach access this PT_SESSION" style checks — maps directly onto the permission matrix |
-| File storage | **Local server disk** now, via `league/flysystem-bundle`'s local adapter — same API surface as S3, so switching later is a one-line config change, not a code change | Profile photos, waivers. Move to S3-compatible storage (AWS S3 / Cloudflare R2) once traffic or backup requirements justify it — flagged as a Phase 2+ infra task, not a Phase 1 blocker |
+| File storage | **Local server disk** now, via `league/flysystem-bundle`'s local adapter — same API surface as S3-compatible storage, so switching later is a one-line config change, not a code change | Profile photos, waivers. Move to **DigitalOcean Spaces** (S3-API-compatible, same region as the Droplet) once traffic or backup requirements justify it — flagged as a Phase 2+ infra task, not a Phase 1 blocker |
 | Payments | **Manual recording for now** — Owner marks an invoice as paid (cash/bank transfer), no gateway integration yet. `Invoice` still gets created and populated correctly, so analytics (§6.8) work unaffected. Stripe/PayHere integration is a clean drop-in later (§6.9 explains why) | Subscription billing tracked accurately without gateway complexity for the initial launch |
 | Realtime | **Mercure** | Symfony's native real-time push protocol, pairs natively with API Platform; drives the live notification badge and Owner's live attendance count |
-| Infra | Docker (PHP-FPM + Nginx), deployed on a single VPS or managed platform (Platform.sh / AWS ECS) | No need for Kubernetes at this scale |
+| Infra | Docker (PHP-FPM + Nginx), deployed on a single DigitalOcean Droplet | No need for Kubernetes at this scale — a single VPS matches §10's guidance directly |
 | CI/CD | GitHub Actions | Test → build → deploy on merge to main |
 | Monitoring | Sentry (errors) + a hosted uptime check | Minimal viable observability for a small system |
 
@@ -939,9 +939,11 @@ Each voter's `voteOnAttribute()` body is deliberately a direct translation of on
 
 ## 10. Deployment & Scalability
 
+- **Hosting: a single DigitalOcean Droplet** (Docker running the PHP-FPM/Nginx app, Postgres, Redis, and Mercure together) is sufficient for one gym (hundreds to low thousands of members) — matches this section's own "no need for read replicas or service splitting yet" guidance, and DigitalOcean's flat, no-regional-penalty bandwidth pricing fits a Sri Lanka-facing deployment better than some alternatives' Asia-Pacific bandwidth restrictions.
+- **Region: Bangalore (`BLR1`)** — DigitalOcean's closest region to Sri Lanka, comparable latency to what an AWS Mumbai deployment would have offered.
 - Single containerized backend + single Postgres instance is sufficient for one gym (hundreds to low thousands of members). No need for read replicas or service splitting yet.
 - Background workers (Symfony Messenger consumers) run as a separate container/process from the API so a burst of reminder emails never slows down live requests.
-- **Local file storage (§4) means uploaded files live on the same disk as the app container.** Two practical consequences worth planning for even at this stage: (1) back up the upload directory on the same schedule as the database — a DB backup alone won't recover photos/waivers; (2) if the app ever needs to scale to more than one backend instance, local disk storage won't be shared between instances, which is the trigger to move to S3 rather than a fixed timeline.
+- **Local file storage (§4) means uploaded files live on the same disk as the app container.** Two practical consequences worth planning for even at this stage: (1) back up the upload directory on the same schedule as the database — a DB backup alone won't recover photos/waivers; (2) if the app ever needs to scale to more than one backend instance, local disk storage won't be shared between instances, which is the trigger to move to DigitalOcean Spaces rather than a fixed timeline.
 - If the "connect multiple gyms" direction returns later, the module boundaries in §3 are what make that tractable: `Membership`, `Attendance`, etc. can be extracted into services behind the same event bus pattern, and `GYM` is already a first-class entity in the data model rather than assumed to be singular.
 
 ---

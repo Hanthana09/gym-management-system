@@ -255,12 +255,12 @@
 
 ## Phase 13 — Staging & Production Deployment
 
-- [ ] Provision production Postgres, Redis, and Mercure (managed or self-hosted per §4/§10)
+- [ ] Provision a production DigitalOcean Droplet (Bangalore region) running Postgres, Redis, and Mercure alongside the app — self-hosted on the Droplet is the default per §10; only move Postgres to DigitalOcean's Managed Database product if the operational overhead of self-managing it becomes a real problem, not preemptively.
 - [ ] Set up a staging environment mirroring production, deployed automatically on merge to a `staging` branch
 - [ ] CI pipeline (GitHub Actions): lint → test → build → deploy, blocking merge on failure
-- [ ] Domain + HTTPS (Let's Encrypt or platform-managed TLS)
+- [ ] Domain + HTTPS (Let's Encrypt) — point `setly.fit`'s DNS A record at the Droplet's IP
 - [ ] Environment secrets (JWT keys, DB credentials — payment gateway keys once/if that's added, per Phase 10's deferral note) in a secrets manager, never committed
-- [ ] Backups: database on a daily schedule, uploads directory backed up on the same schedule (per the local-storage note in the architecture doc §10)
+- [ ] Backups: enable DigitalOcean's Droplet backup toggle (daily, ~20% of Droplet cost) for full-server recovery, plus a separate database dump schedule matching §10's guidance — a Droplet backup alone is coarser-grained than a proper DB backup/restore workflow
 - [ ] Monitoring: Sentry wired for both frontend and backend errors, an uptime check on the production URL
 - [ ] Production smoke test: run the same core flows from Phase 12 against the live production URL before announcing launch
 
@@ -273,7 +273,7 @@
 - [ ] Mobile app shell (React Native) reusing the same API and component logic patterns established in Phase 1
 - [ ] Push notifications (native, replacing/augmenting the in-app Mercure badge)
 - [ ] Group class scheduling (`Class`/`ClassBooking` entities)
-- [ ] Move file storage from local disk to S3 once traffic or multi-instance scaling makes it necessary (§4, §10)
+- [ ] Move file storage from local disk to DigitalOcean Spaces once traffic or multi-instance scaling makes it necessary (§4, §10)
 
 ---
 

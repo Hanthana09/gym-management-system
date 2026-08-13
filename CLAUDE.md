@@ -10,7 +10,7 @@ A single-gym management platform with three roles — Owner, Coach, Member — c
 
 Don't improvise architecture, feature behavior, sequencing, or visual design — they're already decided. Use these documents in this order for every phase:
 
-1. **`gym-management-system-development-roadmap.md`** — tells you **what phase you're on and in what order**. Work through its phases sequentially (Phase 0 → Phase 13). Do not start a phase's frontend work before its backend is done, and do not start the next phase until the current phase's "Definition of Done" checklist is fully met.
+1. **`gym-management-system-development-roadmap.md`** — tells you **what phase you're on and in what order**. Work through its phases sequentially (Phase 0 → Phase 14). Do not start a phase's frontend work before its backend is done, and do not start the next phase until the current phase's "Definition of Done" checklist is fully met.
 2. **`gym-management-system-functional-requirements.md`** — tells you **exactly how each feature must behave**. Every acceptance criterion (Given/When/Then) in the relevant section should have a corresponding test before you consider that piece of the phase done. If a feature's behavior is ambiguous, this doc is the tiebreaker before you guess.
 3. **`gym-management-system-architecture.md`** — tells you **how to build it**: entity definitions and the ER diagram (§5), tech stack (§4), full Voter class bodies (§9.1 — copy these, don't reinvent the permission logic), REST endpoint list (§7), and sequence diagrams for the non-obvious flows (§8). The Voters in §9.1 are written out in full — use them as-is unless a functional requirement forces a change.
 4. **`DESIGN-SYSTEM.md`** — tells you **what it should look like**: color tokens, typography, and component patterns (Card, Ticket, Badge, tag/pill, button variants). Use these tokens and patterns for every screen; don't invent new visual styles ad hoc. If a UI need doesn't fit an existing pattern, flag it rather than improvising one.
@@ -25,7 +25,7 @@ Don't improvise architecture, feature behavior, sequencing, or visual design —
 - Async/scheduling: Symfony Messenger, Symfony Scheduler
 - Realtime: Mercure
 - Database: PostgreSQL, cache/queue: Redis
-- File storage: local disk via Flysystem (local adapter) for now — see architecture §4/§10 before touching storage code; don't add S3 code speculatively
+- File storage: local disk via Flysystem (local adapter) for now — see architecture §4/§10 before touching storage code; don't add DigitalOcean Spaces (or any cloud storage) code speculatively
 - Frontend: React + TypeScript, Tailwind CSS, TanStack Query
 - Mobile-first responsive rules: see roadmap Phase 1 — build every component at 375px first, widen with `sm:`/`md:`/`lg:`
 
@@ -47,7 +47,7 @@ Don't improvise architecture, feature behavior, sequencing, or visual design —
 ## What NOT to do
 
 - Don't build features the roadmap hasn't reached yet, even if they seem quick — sequencing matters because later phases assume earlier ones (e.g. Attendance assumes Membership status checks exist).
-- Don't add S3/cloud storage code — local disk via Flysystem is the current decision; the abstraction is deliberately there so this is a config change later, not something to build now.
+- Don't add DigitalOcean Spaces/cloud storage code — local disk via Flysystem is the current decision; the abstraction is deliberately there so this is a config change later, not something to build now.
 - Don't let Owners directly create active Coach/Member accounts — onboarding is always invite → explicit approval by the invitee (architecture doc §6.7, functional requirements §2). This is a common shortcut to avoid: it's tempting to add a simple "add member" button, but it violates the approval requirement.
 - Don't skip the OTP flow's rate limiting or expiry logic "for now" — it's a named acceptance criterion (functional requirements §1.2), not an enhancement.
 - Don't build desktop-first and adapt down. If a component doesn't work at 375px, it's not done, regardless of how it looks at 1280px.
