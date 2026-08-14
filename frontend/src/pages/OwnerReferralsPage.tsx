@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { NavShell } from '../components/NavShell'
+import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Input } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useReferralCode } from '../referrals/useReferralCode'
@@ -41,14 +42,10 @@ export function OwnerReferralsPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-paper px-4 py-6">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-4">
-          <Link to="/" className="text-sm text-ink-soft hover:underline">
-            ← Back
-          </Link>
-          <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Referrals</h1>
-        </div>
+    <div className="h-dvh">
+      <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/referrals">
+        <div className="mx-auto max-w-2xl">
+        <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">Referrals</h1>
 
         <Card>
           <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
@@ -95,7 +92,8 @@ export function OwnerReferralsPage() {
             </ul>
           )}
         </Card>
-      </div>
+        </div>
+      </NavShell>
     </div>
   )
 }

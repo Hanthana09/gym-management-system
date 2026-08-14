@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { cn } from '../lib/cn'
-import { MenuIcon, XIcon } from './ui/icons'
+import { LogoutIcon, MenuIcon, XIcon } from './ui/icons'
 import { NotificationBell } from '../notifications/NotificationBell'
+import { useGymBranding } from '../gym/useGymBranding'
 
 export interface NavItem {
   label: string
@@ -11,7 +13,7 @@ export interface NavItem {
 }
 
 interface NavShellProps {
-  role: 'owner' | 'coach' | 'member'
+  role: 'owner' | 'coach' | 'member' | 'staff'
   title: string
   navItems: NavItem[]
   activeHref: string
@@ -28,6 +30,8 @@ interface NavShellProps {
  * h-dvh) and inside a bounded preview frame (e.g. /dev/components).
  */
 export function NavShell({ role, title, navItems, activeHref, children }: NavShellProps) {
+  const { logout } = useAuth()
+  const { branding } = useGymBranding()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isMember = role === 'member'
 
@@ -47,6 +51,9 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
             <SidebarLink key={item.href} item={item} active={item.href === activeHref} />
           ))}
         </nav>
+        <div className="shrink-0 border-t border-line p-3">
+          <LogoutButton onClick={logout} />
+        </div>
       </aside>
 
       {!isMember && drawerOpen ? (
@@ -78,6 +85,14 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
                 />
               ))}
             </nav>
+            <div className="shrink-0 border-t border-line p-3">
+              <LogoutButton
+                onClick={() => {
+                  setDrawerOpen(false)
+                  logout()
+                }}
+              />
+            </div>
           </div>
         </div>
       ) : null}
@@ -94,7 +109,22 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
         scroll" at any viewport.
       */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-card px-4">
+        {/*
+          DESIGN-SYSTEM.md §4.1: the nav header is one of exactly two
+          places a gym's brand color is allowed to appear — a colored
+          accent border, not a repainted background (keeps `text-ink`
+          contrast safe regardless of what hex an Owner picks). The
+          logo, when set, sits in the header's "logo area" per the same
+          rule. Nothing else in this header (menu icon, title text,
+          NotificationBell) reads brandColor.
+        */}
+        <header
+          className={cn(
+            'flex h-14 shrink-0 items-center gap-3 bg-card px-4',
+            branding.brandColor ? 'border-b-[3px]' : 'border-b border-line',
+          )}
+          style={branding.brandColor ? { borderBottomColor: branding.brandColor } : undefined}
+        >
           {!isMember ? (
             <button
               type="button"
@@ -104,6 +134,9 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
             >
               <MenuIcon />
             </button>
+          ) : null}
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded object-contain" />
           ) : null}
           <h1 className="font-display text-base font-semibold tracking-wide text-ink uppercase">{title}</h1>
           <NotificationBell role={role} />
@@ -121,6 +154,20 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
         ) : null}
       </div>
     </div>
+  )
+}
+
+/** Same footprint/spacing as SidebarLink, but a <button> (an action, not a route) with no active state. */
+function LogoutButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-touch w-full items-center gap-3 rounded-md border-l-[3px] border-transparent pl-3 pr-3 text-sm font-medium text-ink-soft hover:bg-paper-dim hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
+    >
+      <LogoutIcon />
+      Log out
+    </button>
   )
 }
 

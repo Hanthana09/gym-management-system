@@ -6,6 +6,7 @@ use App\Attendance\AttendanceService;
 use App\Attendance\CheckInBlockedException;
 use App\Entity\AttendanceLog;
 use App\Entity\User;
+use App\Enum\CheckInMethod;
 use App\Repository\MemberProfileRepository;
 use App\Security\Voter\AttendanceVoter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -39,6 +40,37 @@ class AttendanceController extends AbstractController
 
         try {
             $log = $this->attendance->checkIn($member);
+        } catch (CheckInBlockedException $exception) {
+            return new JsonResponse([
+                'error' => 'checkin_blocked',
+                'reason' => $exception->reason->value,
+                'message' => $exception->getMessage(),
+            ], 409);
+        }
+
+        return new JsonResponse($this->serializeLog($log), 201);
+    }
+
+    /** architecture doc §7: front-desk variant — Owner or Staff checking a member in on their behalf (roadmap Phase 15.1). */
+    #[Route('/members/{id}/checkin', name: 'members_checkin_front_desk', methods: ['POST'])]
+    public function checkInFrontDesk(string $id): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $member = $this->memberProfiles->find($id);
+        if ($member === null) {
+            return $this->notFound('Member not found.');
+        }
+
+        if (!$this->isGranted(AttendanceVoter::CHECK_IN, $member)) {
+            return $this->forbidden();
+        }
+
+        try {
+            $log = $this->attendance->checkIn($member, CheckInMethod::FRONT_DESK);
         } catch (CheckInBlockedException $exception) {
             return new JsonResponse([
                 'error' => 'checkin_blocked',

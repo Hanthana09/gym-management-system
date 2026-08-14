@@ -19,27 +19,30 @@
 
 ## 2. User Roles & Permissions
 
-Three roles, enforced via RBAC middleware on every API request (JWT carries `role` + `userId`; row-level checks scope Coaches and Members to their own data).
+**Four roles as of Phase 15** (Owner, Coach, Member, and the new **Staff** role — front-desk/assistant-manager), enforced via RBAC middleware on every API request (JWT carries `role` + `userId`; row-level checks scope Coach, Member, and Staff to their own data/permitted actions).
 
-| Capability | Owner | Coach | Member |
-|---|---|---|---|
-| Manage gym profile, plans, pricing | Full | — | — |
-| Invite / remove / suspend staff (coaches) | Full (send invite) | — | — |
-| Invite / suspend / remove members | Full (send invite) | — | — |
-| **Approve / decline own invitation to join the gym** | — (cannot self-approve) | **Own invitation only** | **Own invitation only** |
-| View all members & attendance | Full | Own clients only | Own record only |
-| Manage class schedule | Full | Own sessions | View only |
-| Accept / decline PT session requests | View all | Own requests | Request only |
-| Log session notes | — | Own clients | — |
-| Check in / out | Can check in others (front desk) | Self | Self |
-| Personal workout & body-metric tracking | — | — | Own data |
-| View revenue & reports | Full | — | — |
-| Send announcements | Gym-wide | To own clients | — |
-| Manage own profile & billing | — | Own | Own |
-| Log in via OTP or password | Both | Both | Both |
-| Receive notifications | Admin + billing alerts | Client bookings, announcements | Bookings, billing, announcements |
+| Capability | Owner | Coach | Staff | Member |
+|---|---|---|---|---|
+| Manage gym profile, plans, pricing, branding | Full | — | — | — |
+| Invite / remove / suspend coaches | Full (send invite) | — | — | — |
+| Invite / remove / suspend **staff** | Full (send invite) | — | — | — |
+| Invite / suspend / remove members | Full (send invite) | — | — | — |
+| **Approve / decline own invitation to join the gym** | — (cannot self-approve) | **Own invitation only** | **Own invitation only** | **Own invitation only** |
+| View all members & attendance | Full | Own clients only | **Full (view only — no manage)** | Own record only |
+| Manage class schedule | Full | Own sessions | — | View only |
+| Accept / decline PT session requests | View all | Own requests | — | Request only |
+| Log session notes | — | Own clients | — | — |
+| Check in / out | Can check in others (front desk) | Self | **Can check in others (front desk)** | Self |
+| Personal workout & body-metric tracking | — | — | — | Own data |
+| View revenue & reports | Full | — | **— (explicitly excluded)** | — |
+| Send announcements | Gym-wide | To own clients | — | — |
+| Manage own profile & billing | — | Own | Own | Own |
+| Log in via OTP or password | Both | Both | Both | Both |
+| Receive notifications | Admin + billing alerts | Client bookings, announcements | Front-desk/check-in alerts, announcements | Bookings, billing, announcements |
 
-**Onboarding note:** an Owner never creates a fully active Coach/Member account directly — they send an **invitation**. The invitee must explicitly approve it (§6.7) before their account is active and linked to the gym. This keeps the Owner from being able to unilaterally attach someone to their gym without consent, and gives Coaches/Members an auditable accept/decline decision.
+**Staff is deliberately the narrowest role in the system** — it exists to cover front-desk/assistant-manager work (checking members in, looking someone up) without touching anything financial, staff-management, or gym-configuration related. If a capability isn't explicitly marked for Staff above, assume they don't have it — this role should never accumulate permissions by default the way a "just give them Coach access" shortcut would.
+
+**Onboarding note:** an Owner never creates a fully active Coach/Staff/Member account directly — they send an **invitation**. The invitee must explicitly approve it (§6.7) before their account is active and linked to the gym. This keeps the Owner from being able to unilaterally attach someone to their gym without consent, and gives Coaches/Staff/Members an auditable accept/decline decision.
 
 This table is the source of truth for the permission-checking middleware described in §9.1 — every new endpoint should map to a row here before being built.
 
@@ -196,8 +199,9 @@ erDiagram
         string email
         string phone
         string password_hash "nullable — OTP-only users may never set one"
-        enum role "owner | coach | member"
+        enum role "owner | coach | staff | member"
         enum status "pending_approval | active | suspended"
+        bool whatsapp_opt_in "default false — see §6.6's WhatsApp channel note"
         timestamp created_at
     }
 
@@ -208,7 +212,7 @@ erDiagram
         uuid user_id FK "nullable until account exists"
         string email
         string phone
-        enum role "coach | member"
+        enum role "coach | staff | member"
         enum status "pending | approved | declined | expired"
         timestamp created_at
         timestamp responded_at
@@ -231,6 +235,8 @@ erDiagram
         string name
         string address
         uuid owner_id FK
+        string logo_url "nullable — Flysystem-stored, same pattern as profile photos"
+        string brand_color "nullable hex — see DESIGN-SYSTEM.md's white-label boundary rule"
     }
 
     COACH_PROFILE {
@@ -366,6 +372,9 @@ erDiagram
 - **`NOTIFICATION` is a single flat table** for all roles — type and user_id are enough to filter; no need for role-specific notification tables.
 - **`INVITATION` carries `email`/`phone` separately from `user_id`** because the invitee often doesn't have an account yet — the Owner invites by contact info, and `user_id` is filled in once the person registers/logs in and approves. `status = pending_approval` on `USER` mirrors this: the account can exist and even log in, but isn't linked to the gym (and so is invisible in gym-scoped queries) until the invitation is approved.
 - **`OTP_CODE.code_hash`, never the raw code** — same reasoning as `password_hash`. `user_id` is nullable because the very first OTP request (before an account exists, e.g. self-registering Member) has nothing to attach to yet.
+- **Staff deliberately has no dedicated profile table**, unlike `COACH_PROFILE`/`MEMBER_PROFILE`. There's no Staff-specific data to store beyond the role itself — if that changes later (e.g. shift schedules), add `STAFF_PROFILE` then, following the same one-to-one pattern; don't add an empty table speculatively now.
+- **`GYM.logo_url`/`brand_color` are deliberately narrow-scoped fields, not a full theming system.** White-labeling here means a logo and one accent color, applied in specific, bounded places (§6.11) — not letting each gym override the product's own design system wholesale. This is a design decision worth being explicit about, since "let the customer theme everything" is an easy scope creep trap.
+- **`USER.whatsapp_opt_in` reuses the existing `phone` field** rather than adding a separate WhatsApp-specific number column — WhatsApp messaging uses the same phone number already collected for OTP login, so there's nothing new to collect, just a delivery-channel preference to store.
 - **`DAILY_METRIC_SNAPSHOT` is a pre-aggregated read model, not a source of truth.** Attendance trends, revenue forecasts, and the live dashboard all need to answer "what happened over the last N days" fast — querying `ATTENDANCE_LOG`/`INVOICE` directly and re-aggregating on every dashboard load doesn't scale as history grows. A nightly job (§6.8) computes one row per gym per day; every other analytics feature reads from this table, never from raw logs. If the numbers are ever wrong, the nightly job is the one place to check — the source tables (`ATTENDANCE_LOG`, `MEMBERSHIP`, `INVOICE`) are still the ground truth it's computed from.
 - **`INVOICE.payment_method`/`recorded_by`/`paid_at` support manual payment recording** (§6.9) without requiring a gateway. `recorded_by` matters specifically because marking an invoice paid is a trust-sensitive, auditable action — it should always be traceable to the Owner who did it, the same way §9's audit log covers suspensions and plan changes. When gateway integration is added later, `payment_method = 'gateway'` and `recorded_by` becomes null (the webhook did it, not a person), so the schema doesn't need to change to support both paths simultaneously.
 
@@ -386,7 +395,7 @@ erDiagram
 - Emits `membership.created`, `membership.expiring` (fired by a scheduled job 7/3/1 days before `end_date`), `membership.expired`.
 
 ### 6.3 Attendance
-- Check-in/out, either self-service (QR code scan at gym entrance, mobile) or front-desk-assisted (Owner/staff).
+- Check-in/out, either self-service (QR code scan at gym entrance, mobile) or front-desk-assisted (Owner or, as of Phase 15, **Staff**).
 - Emits `attendance.checked_in` — used for Owner's live dashboard count via WebSocket push.
 
 ### 6.4 Personal Training
@@ -401,7 +410,8 @@ erDiagram
 ### 6.6 Notifications
 - Subscribes to events from every other module (§3.2).
 - Fans out to in-app (always), and email/SMS/push based on user notification preferences.
-- Delivery is async via a Symfony Messenger queue so a slow email provider never blocks the API request that triggered it.
+- **WhatsApp as a fourth delivery channel (Phase 15).** Not a new module — a new adapter in the same fan-out step, gated by `USER.whatsapp_opt_in`. Uses the WhatsApp Business Cloud API (or a provider like Twilio's WhatsApp API) to send outbound-only messages; no inbound/two-way chat handling in this phase — that would be a materially different feature (a support inbox), not a notification channel, and is explicitly out of scope here.
+- Delivery is async via a Symfony Messenger queue so a slow email/SMS/WhatsApp provider never blocks the API request that triggered it.
 
 ### 6.7 Invitations & Approval
 - An Owner never creates an active Coach/Member directly — they submit `POST /invitations` (email or phone + role). This creates an `INVITATION` row with `status = pending`, and either:
@@ -431,6 +441,19 @@ erDiagram
 - **Gateway integration later is additive, not a rewrite:** when Stripe/PayHere is added, it becomes a second way to reach `status = paid` (via webhook instead of the Owner's manual action), using the same `INVOICE` entity, the same `InvoiceVoter` (§9.1), and the same downstream analytics. Nothing here needs to be redesigned to add it — it's a genuinely deferred feature, not a shortcut that creates rework later.
 - A Member can view their own invoices (`GET /members/me/invoices`) but can never mark one paid — that's true regardless of whether the eventual payment method is manual or gateway-driven; a Member confirming their own payment would defeat the point of the Owner's record-keeping.
 
+### 6.10 Staff Role (front-desk / assistant-manager)
+
+- A fourth role, deliberately the narrowest one in the system (§2). Onboards through the exact same invite/approve flow as Coach and Member (§6.7) — `INVITATION.role` now accepts `staff`, nothing else about that flow changes.
+- **What Staff can do:** check members in/out (same action Owner's front-desk capability already covers, §6.3), view the member list and attendance (read-only — no manage/suspend, no financial visibility).
+- **What Staff explicitly cannot do, by design, not by omission:** manage gym profile/plans/pricing/branding, manage other staff or coaches, view revenue/reports, send announcements, respond to PT sessions. If a future request wants to grant Staff one of these, that's a deliberate edit to §2's table and the relevant Voter — not something that should happen by a Staff member being quietly granted a broader role because it was easier.
+- No dedicated `STAFF_PROFILE` table (§5.2) — the role enum alone is sufficient for what Staff currently does.
+
+### 6.11 White-Label Branding (Owner-configurable)
+
+- `GYM.logo_url` and `GYM.brand_color` — an Owner can upload a logo (stored via the same Flysystem local-disk pattern as profile photos, §4) and pick one accent color.
+- **Where these appear is intentionally bounded, not a full theming system:** the logo appears in the app's navigation header and on the Member's digital membership badge (§9.1's `Badge` pattern reference in `DESIGN-SYSTEM.md`); the brand color applies to a specific, limited set of surfaces tied to that gym's identity (e.g. the badge's accent stripe) — it does **not** override the product's own core design tokens (the `hivis` primary-action color, the Owner/Coach/Member role-tag colors) documented in `DESIGN-SYSTEM.md`. Letting every gym re-theme the whole product would undermine the consistent, recognizable UI that makes the app usable across different gyms' staff — this is a deliberate constraint, not a v1 limitation to relax later without discussion.
+- Managed via `GymVoter::MANAGE` (§9.1, already written — no new Voter needed) since it's just more fields on the same `Gym` entity Owners already manage.
+
 ---
 
 ## 7. API Design (overview)
@@ -443,16 +466,17 @@ POST   /api/v1/auth/otp/request        (email or phone → sends OTP)
 POST   /api/v1/auth/otp/verify         (email/phone + code → JWT pair)
 POST   /api/v1/auth/refresh
 
-POST   /api/v1/invitations             (Owner — invite a coach or member)
-GET    /api/v1/invitations/me          (Coach/Member — view own pending invitation)
-PATCH  /api/v1/invitations/:id/approve (Coach/Member — approve own invitation only)
-PATCH  /api/v1/invitations/:id/decline (Coach/Member — decline own invitation only)
+POST   /api/v1/invitations             (Owner — invite a coach, staff, or member)
+GET    /api/v1/invitations/me          (Coach/Staff/Member — view own pending invitation)
+PATCH  /api/v1/invitations/:id/approve (Coach/Staff/Member — approve own invitation only)
+PATCH  /api/v1/invitations/:id/decline (Coach/Staff/Member — decline own invitation only)
 
-GET    /api/v1/members                 (Owner)
-PATCH  /api/v1/members/:id/status      (Owner — suspend/remove; not initial add, see /invitations)
+GET    /api/v1/members                 (Owner, Staff — read-only for Staff)
+PATCH  /api/v1/members/:id/status      (Owner only — suspend/remove; not initial add, see /invitations)
 
 GET    /api/v1/members/me/membership   (Member)
 POST   /api/v1/members/me/checkin      (Member)
+POST   /api/v1/members/:id/checkin     (Owner, Staff — front-desk check-in on a member's behalf)
 
 GET    /api/v1/coaches/:id/schedule    (Coach — own; Owner — any)
 POST   /api/v1/pt-sessions             (Member — request)
@@ -465,6 +489,9 @@ GET    /api/v1/members/me/body-metrics (Member)
 GET    /api/v1/invoices                (Owner — all invoices for their gym)
 GET    /api/v1/members/me/invoices     (Member — own invoices only)
 PATCH  /api/v1/invoices/:id/mark-paid  (Owner — records payment_method, sets paid_at/recorded_by)
+
+PATCH  /api/v1/gym/branding            (Owner — logo_url, brand_color)
+PATCH  /api/v1/users/me/notification-preferences  (any authenticated user — toggle whatsapp_opt_in, etc.)
 
 POST   /api/v1/announcements           (Owner)
 GET    /api/v1/notifications           (any authenticated user, scoped to self)
@@ -626,6 +653,11 @@ abstract class AppVoter extends Voter
         return $user instanceof User && $user->getRole() === Role::COACH;
     }
 
+    protected function isStaff(UserInterface $user): bool
+    {
+        return $user instanceof User && $user->getRole() === Role::STAFF;
+    }
+
     protected function isMember(UserInterface $user): bool
     {
         return $user instanceof User && $user->getRole() === Role::MEMBER;
@@ -633,7 +665,7 @@ abstract class AppVoter extends Voter
 }
 ```
 
-**GymVoter** — gym profile, plans, pricing (Owner only, §2 row 1)
+**GymVoter** — gym profile, plans, pricing, branding (Owner only, §2 row 1)
 ```php
 final class GymVoter extends AppVoter
 {
@@ -652,11 +684,11 @@ final class GymVoter extends AppVoter
 }
 ```
 
-**StaffVoter** — add/remove/suspend coaches (Owner only, §2 row 2)
+**CoachManagementVoter** — add/remove/suspend coaches (Owner only, §2 row 2). **Renamed from `StaffVoter`** as of Phase 15 — the old name meant "staff" loosely as "coaches"; now that a distinct Staff role exists, that name would be actively misleading. If you copied the old `StaffVoter` class into code before Phase 15, rename it to match — it's the same logic, just a clearer name.
 ```php
-final class StaffVoter extends AppVoter
+final class CoachManagementVoter extends AppVoter
 {
-    const MANAGE = 'STAFF_MANAGE';
+    const MANAGE = 'COACH_MANAGE';
 
     protected function supports(string $attribute, mixed $subject): bool
     {
@@ -671,7 +703,26 @@ final class StaffVoter extends AppVoter
 }
 ```
 
-**MemberVoter** — add/suspend/remove members; view member records (§2 rows 3, 4)
+**StaffManagementVoter** — add/remove/suspend Staff role accounts (Owner only, §2 row 3, new in Phase 15 — mirrors `CoachManagementVoter`'s structure exactly)
+```php
+final class StaffManagementVoter extends AppVoter
+{
+    const MANAGE = 'STAFF_ACCOUNT_MANAGE';
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return $attribute === self::MANAGE && $subject instanceof User && $subject->getRole() === Role::STAFF;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        $user = $token->getUser();
+        return $this->isOwner($user) && $subject->getGym() === $user->getGym();
+    }
+}
+```
+
+**MemberVoter** — add/suspend/remove members; view member records (§2 rows 4, 5 — Staff granted read-only `VIEW` as of Phase 15)
 ```php
 final class MemberVoter extends AppVoter
 {
@@ -696,6 +747,14 @@ final class MemberVoter extends AppVoter
             return $subject->hasCoach($user); // "own clients only"
         }
 
+        // Staff (Phase 15): read-only, gym-scoped — same visibility as Owner,
+        // but only ever VIEW, never MANAGE. Deliberately no `isStaff` branch
+        // under MANAGE above — if that ever needs to change, it's a §2 table
+        // edit first, not a quiet addition here.
+        if ($attribute === self::VIEW && $this->isStaff($user)) {
+            return $subject->getUser()->getGym() === $user->getGym();
+        }
+
         if ($attribute === self::VIEW && $this->isMember($user)) {
             return $subject->getUser() === $user; // "own record only"
         }
@@ -705,11 +764,11 @@ final class MemberVoter extends AppVoter
 }
 ```
 
-**AttendanceVoter** — check in/out, view attendance (§2 rows 5, 6)
+**AttendanceVoter** — check in/out, view attendance (§2 rows 6, 7 — Staff granted `CHECK_IN` as of Phase 15, matching Owner's front-desk capability)
 ```php
 final class AttendanceVoter extends AppVoter
 {
-    const CHECK_IN     = 'ATTENDANCE_CHECK_IN'; // self, or Owner on behalf of a member (front desk)
+    const CHECK_IN     = 'ATTENDANCE_CHECK_IN'; // self, or Owner/Staff on behalf of a member (front desk)
     const VIEW         = 'ATTENDANCE_VIEW';
     const VIEW_ALL     = 'ATTENDANCE_VIEW_ALL'; // Owner dashboard / reports
 
@@ -723,14 +782,19 @@ final class AttendanceVoter extends AppVoter
         $user = $token->getUser();
 
         if ($attribute === self::VIEW_ALL) {
-            return $this->isOwner($user);
+            return $this->isOwner($user); // Staff explicitly excluded — §2's "no reports" rule
         }
         if ($attribute === self::CHECK_IN) {
-            return $this->isOwner($user) || ($subject instanceof MemberProfile && $subject->getUser() === $user);
+            return $this->isOwner($user)
+                || $this->isStaff($user)
+                || ($subject instanceof MemberProfile && $subject->getUser() === $user);
         }
-        // VIEW: Coach sees own clients, Member sees self, Owner covered by VIEW_ALL above
+        // VIEW: Coach sees own clients, Staff sees any (read-only, gym-scoped), Member sees self
         if ($this->isCoach($user)) {
             return $subject instanceof MemberProfile && $subject->hasCoach($user);
+        }
+        if ($this->isStaff($user)) {
+            return $subject instanceof MemberProfile && $subject->getUser()->getGym() === $user->getGym();
         }
         return $subject instanceof MemberProfile && $subject->getUser() === $user;
     }

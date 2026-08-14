@@ -7,6 +7,14 @@ interface BadgeProps extends HTMLAttributes<HTMLDivElement> {
   role: BadgeRole
   name: string
   badgeNumber: string
+  /**
+   * DESIGN-SYSTEM.md §4.1: the ONE place a gym's brand color is allowed
+   * to appear on this card — the accent stripe only. The avatar circle
+   * and every other role color on this component stay role-colored
+   * regardless; never thread this prop any further than the stripe div
+   * below.
+   */
+  brandColor?: string | null
   children?: ReactNode
 }
 
@@ -37,10 +45,14 @@ function initialsFor(name: string): string {
  * (Member's "My membership", roadmap Phase 4) so it keeps feeling like a
  * single special object rather than a reused card style.
  */
-export function Badge({ role, name, badgeNumber, children, className, ...rest }: BadgeProps) {
+export function Badge({ role, name, badgeNumber, brandColor, children, className, ...rest }: BadgeProps) {
   return (
     <div className={cn('overflow-hidden rounded-xl bg-card shadow-sm', className)} {...rest}>
-      <div className={cn('h-2.5 w-full', STRIPE_CLASSES[role])} aria-hidden="true" />
+      <div
+        className={cn('h-2.5 w-full', !brandColor && STRIPE_CLASSES[role])}
+        style={brandColor ? { backgroundColor: brandColor } : undefined}
+        aria-hidden="true"
+      />
       <div className="p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">

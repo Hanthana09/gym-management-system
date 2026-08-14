@@ -7,9 +7,11 @@ use App\Entity\MemberProfile;
 use App\Entity\User;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
+use App\Repository\AuditLogRepository;
 use App\Security\TokenIssuer;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Covers architecture doc §7's GET /members (Owner) — the roster page
@@ -200,5 +202,126 @@ final class MemberControllerTest extends WebTestCase
         $result = $this->request('GET', '/members', $member);
 
         self::assertSame(403, $result['status']);
+    }
+
+    // ---- PATCH /members/:id/status (Update/Delete: suspend, reactivate) ----
+
+    public function test_owner_can_suspend_a_member(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'suspended']);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('suspended', $result['body']['status']);
+    }
+
+    public function test_owner_can_reactivate_a_suspended_member(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'suspended']);
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'active']);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('active', $result['body']['status']);
+    }
+
+    public function test_a_member_cannot_suspend_themselves_403(): void
+    {
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}/status", $member, ['status' => 'suspended']);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_a_coach_cannot_suspend_a_member_403(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}/status", $coach, ['status' => 'suspended']);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_status_update_rejects_pending_approval_as_a_target(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'pending_approval']);
+
+        self::assertSame(400, $result['status']);
+    }
+
+    public function test_status_update_rejects_an_invalid_value(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'banned']);
+
+        self::assertSame(400, $result['status']);
+    }
+
+    public function test_status_update_for_a_nonexistent_member_404(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+
+        $result = $this->request('PATCH', '/members/' . Uuid::v7() . '/status', $owner, ['status' => 'suspended']);
+
+        self::assertSame(404, $result['status']);
+    }
+
+    public function test_suspending_a_member_creates_an_audit_log_entry(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'suspended']);
+
+        $entries = static::getContainer()->get(AuditLogRepository::class)
+            ->findForEntity('User', Uuid::fromString((string) $member->getId()));
+
+        self::assertCount(1, $entries);
+        self::assertSame('member.status_changed', $entries[0]->getAction());
+        self::assertSame((string) $owner->getId(), (string) $entries[0]->getActor()->getId());
+        self::assertSame('active', $entries[0]->getMetadata()['previousStatus']);
+        self::assertSame('suspended', $entries[0]->getMetadata()['newStatus']);
+    }
+
+    /** Re-requesting the same status is a no-op — no duplicate audit noise. */
+    public function test_setting_the_same_status_again_does_not_duplicate_the_audit_entry(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'suspended']);
+        $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'suspended']);
+
+        $entries = static::getContainer()->get(AuditLogRepository::class)
+            ->findForEntity('User', Uuid::fromString((string) $member->getId()));
+
+        self::assertCount(1, $entries);
+    }
+
+    /** Proves the Update action has real effect, not just a status label — functional requirements §4.1's "suspended... blocked" criterion. */
+    public function test_a_suspended_member_is_then_blocked_from_checkin(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $plan = $this->request('POST', '/membership-plans', $owner, ['name' => 'Gold', 'price' => '49.99', 'durationDays' => 30, 'features' => []]);
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $member->getId(), 'planId' => $plan['body']['id']]);
+
+        $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'suspended']);
+        $checkin = $this->request('POST', '/members/me/checkin', $member);
+
+        self::assertSame(409, $checkin['status']);
+        self::assertSame('checkin_blocked', $checkin['body']['error']);
+        self::assertSame('account_suspended', $checkin['body']['reason']);
     }
 }

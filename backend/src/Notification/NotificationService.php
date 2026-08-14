@@ -38,6 +38,12 @@ class NotificationService
 
         $this->dispatcher->dispatch(new NotificationCreatedEvent($notification), NotificationCreatedEvent::NAME);
         $this->bus->dispatch(new SendNotificationEmailMessage((string) $notification->getId()));
+        // roadmap Phase 15.3: the ONE touch point this phase is allowed to
+        // change — every event-emitting module (Membership, Attendance, PT
+        // sessions) still just calls notify() exactly as before. Eligibility
+        // (opt-in + has a phone) is decided inside the handler, not here —
+        // same division as the email dispatch above.
+        $this->bus->dispatch(new SendNotificationWhatsAppMessage((string) $notification->getId()));
 
         return $notification;
     }

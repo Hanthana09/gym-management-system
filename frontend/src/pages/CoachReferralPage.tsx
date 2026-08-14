@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { NavShell } from '../components/NavShell'
+import { COACH_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Input } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useReferrals } from '../referrals/useReferrals'
@@ -31,36 +32,33 @@ export function CoachReferralPage() {
   const { leads, loaded, submitLead } = useReferrals()
 
   return (
-    <div className="min-h-dvh bg-paper px-4 py-6">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-4">
-          <Link to="/" className="text-sm text-ink-soft hover:underline">
-            ← Back
-          </Link>
-          <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">
+    <div className="h-dvh">
+      <NavShell role="coach" title="Gym" navItems={COACH_NAV_ITEMS} activeHref="/coach/refer">
+        <div className="mx-auto max-w-2xl">
+          <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">
             Recommend This Gym
           </h1>
+
+          <LeadForm onSubmit={submitLead} />
+
+          <Card className="mt-4">
+            <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
+              Your referrals
+            </h2>
+            {!loaded ? (
+              <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
+            ) : leads.length === 0 ? (
+              <p className="py-6 text-center text-sm text-ink-soft">No referrals submitted yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {leads.map((lead) => (
+                  <LeadRow key={lead.id} lead={lead} />
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
-
-        <LeadForm onSubmit={submitLead} />
-
-        <Card className="mt-4">
-          <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
-            Your referrals
-          </h2>
-          {!loaded ? (
-            <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
-          ) : leads.length === 0 ? (
-            <p className="py-6 text-center text-sm text-ink-soft">No referrals submitted yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {leads.map((lead) => (
-                <LeadRow key={lead.id} lead={lead} />
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
+      </NavShell>
     </div>
   )
 }

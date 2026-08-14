@@ -161,6 +161,7 @@ function InviteModal({ open, onClose, onSent }: InviteModalProps) {
             options={[
               { value: 'member', label: 'Member' },
               { value: 'coach', label: 'Coach' },
+              { value: 'staff', label: 'Staff' },
             ]}
           />
           {error ? <p className="text-sm text-red-600">{error}</p> : null}

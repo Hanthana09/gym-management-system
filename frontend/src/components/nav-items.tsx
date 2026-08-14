@@ -32,3 +32,10 @@ export const COACH_NAV_ITEMS: NavItem[] = [
   { label: 'Sessions', href: '/coach/sessions', icon: <SessionsIcon /> },
   { label: 'Members', href: '/coach/members', icon: <MembersIcon /> },
 ]
+
+// roadmap Phase 15.1: Staff's whole app is this one screen — a
+// scoped-down Owner view (read-only member list + check-in action),
+// not a full Owner-style multi-section nav.
+export const STAFF_NAV_ITEMS: NavItem[] = [
+  { label: 'Members', href: '/staff/members', icon: <MembersIcon /> },
+]

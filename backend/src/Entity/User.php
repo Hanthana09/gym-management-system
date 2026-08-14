@@ -48,6 +48,10 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
 
+    /** roadmap Phase 15.3 / architecture doc §6.6: opt-in, not opt-out — defaults false so no user starts receiving a channel they never asked for. */
+    #[ORM\Column(options: ['default' => false])]
+    private bool $whatsappOptIn = false;
+
     public function __construct(string $name, ?string $email, ?string $phone, UserRole $role, UserStatus $status)
     {
         $this->id = Uuid::v7();
@@ -107,6 +111,16 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function isWhatsappOptIn(): bool
+    {
+        return $this->whatsappOptIn;
+    }
+
+    public function setWhatsappOptIn(bool $whatsappOptIn): void
+    {
+        $this->whatsappOptIn = $whatsappOptIn;
     }
 
     // --- Symfony Security integration ---

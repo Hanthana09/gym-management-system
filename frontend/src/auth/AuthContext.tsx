@@ -7,15 +7,16 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { apiRequest, apiRequestBlob, ApiError } from '../lib/apiClient'
+import { apiRequest, apiRequestBlob, apiRequestForm, ApiError } from '../lib/apiClient'
 
 export interface AuthUser {
   id: string
   name: string
   email: string | null
   phone: string | null
-  role: 'owner' | 'coach' | 'member'
+  role: 'owner' | 'coach' | 'member' | 'staff'
   status: 'pending_approval' | 'active' | 'suspended'
+  whatsappOptIn: boolean
 }
 
 interface TokenResponse {
@@ -41,6 +42,8 @@ interface AuthContextValue {
   authFetch: <T>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>
   /** Same auth/refresh handling as authFetch, for endpoints that return a file (roadmap Phase 11's report export) instead of JSON. */
   authFetchBlob: (path: string) => Promise<{ blob: Blob; filename: string }>
+  /** Same auth/refresh handling as authFetch, for endpoints that take a file (roadmap Phase 15.2's logo upload) instead of a JSON body. */
+  authFetchForm: <T>(path: string, formData: FormData) => Promise<T>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -164,8 +167,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   )
 
+  const authFetchForm = useCallback(
+    async <T,>(path: string, formData: FormData): Promise<T> => {
+      try {
+        return await apiRequestForm<T>(path, formData, accessTokenRef.current)
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          const refreshed = await refresh()
+          if (refreshed) {
+            return apiRequestForm<T>(path, formData, accessTokenRef.current)
+          }
+        }
+        throw error
+      }
+    },
+    [refresh],
+  )
+
   return (
-    <AuthContext.Provider value={{ status, user, login, requestOtp, verifyOtp, logout, authFetch, authFetchBlob }}>
+    <AuthContext.Provider
+      value={{ status, user, login, requestOtp, verifyOtp, logout, authFetch, authFetchBlob, authFetchForm }}
+    >
       {children}
     </AuthContext.Provider>
   )

@@ -17,5 +17,16 @@ export function useMembers() {
     void refresh()
   }, [refresh])
 
-  return { members, loaded, refresh }
+  /** architecture doc §7: PATCH /members/:id/status — suspend/reactivate (Update/Delete: there's no hard-delete, see backend MemberService's docblock). */
+  const updateStatus = useCallback(
+    async (id: string, status: 'active' | 'suspended') => {
+      const updated = await authFetch<MemberListItemDto>(`/members/${id}/status`, { method: 'PATCH', body: { status } })
+      setMembers((prev) => prev.map((member) => (member.id === id ? { ...member, status: updated.status } : member)))
+
+      return updated
+    },
+    [authFetch],
+  )
+
+  return { members, loaded, refresh, updateStatus }
 }

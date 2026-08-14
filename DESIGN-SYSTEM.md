@@ -79,6 +79,14 @@ The original concept's throughline was **"one badge, every station"** — a tran
 - The **badge pattern** belongs on the Member's "My membership" screen (Phase 4) and nowhere else — it's meant to feel like a single, special object, not a generic card style reused everywhere.
 - Resist the urge to reintroduce the network-map SVG hero — that was specific to the multi-gym hub concept and doesn't fit the single-gym product; the color/type/card system is what's worth keeping.
 
+## 4.1 White-label boundary rule (Phase 15)
+
+Owners can set a logo and one brand color (architecture doc §6.11). This is a **bounded** customization, not a theming system — the rule to hold the line on:
+
+- **Never overridden by a gym's brand color:** the `hivis` accent (used for primary CTAs — check-in, "send request," etc.) and the `owner`/`coach`/`member` role-tag colors. These exist to make the product recognizable and consistent *across* gyms — a Staff member who's worked at two different gyms using this product should still recognize where the primary action button is.
+- **Where a gym's brand color *is* allowed to appear:** the membership Badge's accent stripe (§3's Badge pattern) specifically, and optionally the navigation header background/logo area. Both are places that reinforce "this is my gym's copy of the app," not places that change how the interface functions.
+- If a future request asks to expand this (e.g. "let gyms customize the whole color scheme"), that's a real product conversation to have explicitly — not something to grant incrementally by relaxing this rule one component at a time.
+
 ## 5. Applying this to already-built phases
 
 Phases 1–4 were built before this doc existed, so they're on generic styling. Retrofitting is mechanical, not a redesign — same components, same structure, new tokens:

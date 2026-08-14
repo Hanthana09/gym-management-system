@@ -186,6 +186,41 @@ Format: **Given / When / Then** per criterion. Role in brackets after each story
 
 ---
 
+## 11. Staff Role (front-desk / assistant-manager)
+
+### 11.1 Staff onboarding
+**As an** Owner, **I want to** invite trusted staff with limited access, **so that** I can delegate front-desk work without giving away financial or management control.
+- Given I invite someone with role `staff`, when they approve the invitation, then they get exactly the access defined in architecture doc §2's table — no more, no less.
+- Given a Staff invitation is pending, when the invitee views it, then it's presented the same way a Coach or Member invitation is — same approve/decline UI, just a different role label.
+
+### 11.2 Staff day-to-day access
+**As a** Staff member, **I want to** check members in and look up their status, **so that** I can do front-desk work.
+- Given I check a member in, when the action completes, then it behaves identically to an Owner-performed front-desk check-in (same `AttendanceLog` creation, same membership-status validation from §4.1).
+- Given I try to access revenue reports, plan pricing, or staff management, when I attempt it, then I get a permission error — these are Owner-only regardless of how directly I try to reach them (e.g. a manipulated request to a reports endpoint, not just a hidden UI element).
+- Given I view the member list, when it loads, then I can see it (name, status, attendance) but have no edit/suspend/remove actions available.
+
+---
+
+## 12. White-Label Branding (Owner)
+
+### 12.1 Logo and brand color
+**As an** Owner, **I want to** add my gym's logo and pick a brand color, **so that** the app feels like my gym's, not a generic template.
+- Given I upload a logo and set a brand color, when I save, then they appear on the navigation header and the Member's membership badge (per `DESIGN-SYSTEM.md`'s bounded rule) within a normal page load — no separate publish step.
+- Given I haven't set a logo/color, when a Member views the app, then a sensible default (the product's own branding) is shown — never a broken image or empty color swatch.
+- Given my brand color is set, when I view any primary action button (check-in, "send request," etc.), then it still shows the product's standard `hivis` color, not my brand color — this is enforced by design, not something I can override even if I try (e.g. via a crafted API request setting an unexpected field).
+
+---
+
+## 13. WhatsApp Notifications
+
+### 13.1 Opt-in and delivery
+**As a** user of any role, **I want to** optionally receive notifications via WhatsApp, **so that** I don't have to rely on checking the app.
+- Given I opt in to WhatsApp notifications, when a notification event fires for me (booking confirmed, membership expiring, announcement, etc.), then I receive it via WhatsApp in addition to the in-app notification — not instead of it.
+- Given I haven't opted in, when a notification event fires, then I receive it through the channels already configured (in-app, email, SMS) with no WhatsApp message sent.
+- Given I reply to a WhatsApp notification message, when that happens, then nothing is expected to process that reply — this is an outbound-only channel; a two-way WhatsApp inbox is explicitly not part of this feature (architecture doc §6.6).
+
+---
+
 ## Non-functional acceptance criteria (apply across all features above)
 
 - Every screen above must be usable at a 375px viewport with no horizontal scroll and no touch target under 44×44px (per the development roadmap's Phase 1 rules).

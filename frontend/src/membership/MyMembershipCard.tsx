@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Badge, Button } from '../components/ui'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/apiClient'
+import { useGymBranding } from '../gym/useGymBranding'
 import { useMyMembership } from './useMyMembership'
 import type { MembershipStatus } from './types'
 
@@ -32,6 +33,7 @@ type PendingAction = 'pause' | 'resume' | 'cancel' | null
  */
 export function MyMembershipCard() {
   const { user } = useAuth()
+  const { branding } = useGymBranding()
   const { membership, loaded, pause, resume, cancel } = useMyMembership()
   const [confirming, setConfirming] = useState<PendingAction>(null)
   const [busy, setBusy] = useState(false)
@@ -57,7 +59,7 @@ export function MyMembershipCard() {
   }
 
   return (
-    <Badge role="member" name={user.name} badgeNumber={badgeNumber}>
+    <Badge role="member" name={user.name} badgeNumber={badgeNumber} brandColor={branding.brandColor}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-ink">{membership.plan.name}</h2>

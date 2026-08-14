@@ -1,6 +1,6 @@
 export type NotificationType = 'booking' | 'billing' | 'announcement' | 'system'
 
-export type SourceRole = 'owner' | 'coach' | 'member'
+export type SourceRole = 'owner' | 'coach' | 'staff' | 'member'
 
 export interface NotificationDto {
   id: string

@@ -85,6 +85,17 @@ final class MemberVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
+    /** roadmap Phase 15.1: Staff gets read-only VIEW, gym-scoped same as Owner. */
+    public function test_staff_can_view_any_member(): void
+    {
+        $staff = $this->user(UserRole::STAFF);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+
+        $result = $this->voter->vote($this->tokenFor($staff), $profile, [MemberVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
     // ---- MANAGE ---------------------------------------------------------
 
     public function test_owner_can_manage_any_member(): void
@@ -113,6 +124,17 @@ final class MemberVoterTest extends TestCase
         $profile = new MemberProfile($this->user(UserRole::MEMBER));
 
         $result = $this->voter->vote($this->tokenFor($coach), $profile, [MemberVoter::MANAGE]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /** functional requirements §11.2: Staff has "no edit/suspend/remove actions available." */
+    public function test_staff_cannot_manage_a_member_403(): void
+    {
+        $staff = $this->user(UserRole::STAFF);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+
+        $result = $this->voter->vote($this->tokenFor($staff), $profile, [MemberVoter::MANAGE]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }

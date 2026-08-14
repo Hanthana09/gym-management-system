@@ -277,6 +277,65 @@
 
 ---
 
+## Phase 15 — Owner Experience Expansion
+
+**Goal:** three Owner-facing features formalized from real feature ideas, chosen specifically because they either touch core RBAC (Staff role — needs the same rigor as every other permission decision) or have genuine go-to-market leverage (branding, WhatsApp) rather than being generic nice-to-haves. Sequenced after Post-Launch's optional items since none of these three block anything else, but before them in priority if you're choosing where to spend time first.
+
+### 15.1 Staff Role (front-desk / assistant-manager)
+
+**Backend** (architecture doc §6.10, §2's updated 4-role permission table, §9.1's `isStaff()` helper and updated `MemberVoter`/`AttendanceVoter`, new `StaffManagementVoter`):
+- [ ] Add `staff` to `USER.role` enum and `INVITATION.role` enum — migration required.
+- [ ] Add `isStaff()` to the shared `AppVoter` base class.
+- [ ] Update `MemberVoter` and `AttendanceVoter` per the exact bodies in architecture doc §9.1 — Staff gets read-only `VIEW` on members/attendance and `CHECK_IN`, nothing else.
+- [ ] Add `StaffManagementVoter` (new, Owner-only — mirrors the renamed `CoachManagementVoter`'s structure).
+- [ ] **Rename the existing `StaffVoter` to `CoachManagementVoter`** if it was already built in earlier phases — the old name is now actively confusing with a real Staff role in the system. This is a find-and-rename, not new logic.
+- [ ] `POST /members/:id/checkin` (Owner/Staff front-desk variant) per §7.
+
+**Frontend:**
+- [ ] Staff sees a scoped-down version of the Owner dashboard — member list (read-only) and check-in action only, using `NavShell`'s existing role-based pattern (extend it for a 4th role rather than building a separate shell).
+- [ ] Invitation flow already supports role selection (Phase 3) — just add `staff` as an option in the Owner's invite form.
+
+**Testing:**
+- `MemberVoter`, `AttendanceVoter`, `StaffManagementVoter`: every Staff pass case (view members, check someone in) and every Staff `403` case (reports, plan management, staff/coach management, PT session response) from functional requirements §11.2 — the `403` list matters more here than the pass cases, since Staff being *narrow* is the entire point of the role.
+
+**Definition of Done:** a Staff account, once approved, can view members and check people in, and is rejected (`403`, not just a hidden button) from every capability §2's table doesn't explicitly grant it.
+
+### 15.2 White-Label Branding
+
+**Backend** (architecture doc §6.11, §5.1's `GYM.logo_url`/`brand_color`, existing `GymVoter`):
+- [ ] Add `logo_url`, `brand_color` columns to `Gym` — migration required.
+- [ ] `PATCH /gym/branding` per §7 — reuses `GymVoter::MANAGE` as-is, no new Voter.
+- [ ] Logo upload goes through the existing Flysystem local-disk pattern (same as profile photos) — no new storage code.
+
+**Frontend:**
+- [ ] Owner: branding settings screen (logo upload, color picker).
+- [ ] Apply the logo/brand color **only** where `DESIGN-SYSTEM.md` §4.1 specifies — navigation header and the Badge component's accent stripe. **Do not** thread the brand color into `hivis` CTAs or role-tag colors anywhere in the codebase — this is the one place in this phase where "just make it configurable everywhere" is the wrong instinct, even though it'd be technically easy.
+
+**Testing:**
+- Confirm a Member's badge and the nav header reflect a test gym's branding.
+- Confirm the primary check-in button and role tags render in the product's standard colors regardless of what brand color is set — this is the functional requirements §12.1 criterion worth a dedicated visual regression check, not just a manual glance.
+
+**Definition of Done:** an Owner's logo/color appear exactly where `DESIGN-SYSTEM.md` specifies and nowhere else, verified against the design doc's boundary rule, not just "looks branded."
+
+### 15.3 WhatsApp Notification Channel
+
+**Backend** (architecture doc §6.6's extended Notifications module):
+- [ ] Add `whatsapp_opt_in` to `User` — migration required.
+- [ ] New Messenger-based delivery adapter using the WhatsApp Business Cloud API (or a provider like Twilio) — fans out alongside the existing email/SMS/in-app adapters, triggered by the same events every other notification already subscribes to. **No changes to any event-emitting module** — if this touches Membership, Attendance, or PT session code, something's wrong with how it's wired in.
+- [ ] `PATCH /users/me/notification-preferences` per §7.
+- [ ] Outbound-only — explicitly do not build inbound message handling/webhook processing for replies. That's a different feature (a support inbox), not in scope here.
+
+**Frontend:**
+- [ ] Notification preferences screen — a simple toggle per channel, reachable from account settings.
+
+**Testing:**
+- Confirm an opted-in user receives a WhatsApp message when a notification event fires, and an opted-out user doesn't.
+- Confirm no existing module's code changed to support this — same verification instinct as Phase 7's notification wiring.
+
+**Definition of Done:** a test event (e.g. a PT session confirmation) delivers via WhatsApp to an opted-in user within the same timeframe as the other channels, with zero changes to any event-emitting module's code.
+
+---
+
 ## Quick reference — what "mobile-first" means in practice for this project
 
 1. Write the 375px layout first, always. Widen with `sm:`/`md:`/`lg:`, never shrink down from desktop.

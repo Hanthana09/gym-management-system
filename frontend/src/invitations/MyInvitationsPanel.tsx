@@ -40,7 +40,7 @@ export function MyInvitationsPanel() {
 
 interface InvitationCardProps {
   id: string
-  role: 'coach' | 'member'
+  role: 'coach' | 'staff' | 'member'
   status: InvitationStatus
   approve: (id: string) => Promise<void>
   decline: (id: string) => Promise<void>

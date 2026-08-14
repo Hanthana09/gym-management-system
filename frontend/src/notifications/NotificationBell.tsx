@@ -10,9 +10,13 @@ import type { AnnouncementAudience, NotificationDto, SourceRole } from './types'
 // DESIGN-SYSTEM.md §1: role colors are for identity, reused here as the
 // "source role" tag color per this phase's spec — an Owner announcement
 // gets the owner tag, a Coach-driven booking notification gets coach.
+// Staff (Phase 15) has no identity color in DESIGN-SYSTEM.md §1's token
+// set — a neutral gray, not a fourth invented brand color, same
+// treatment already used for "no strong status" elsewhere (e.g. expired).
 const SOURCE_ROLE_TAG: Record<SourceRole, string> = {
   owner: 'bg-owner-soft text-owner',
   coach: 'bg-coach-soft text-coach',
+  staff: 'bg-gray-100 text-gray-600',
   member: 'bg-member-soft text-member',
 }
 
@@ -25,7 +29,7 @@ const SOURCE_ROLE_TAG: Record<SourceRole, string> = {
  * which was about CTA buttons specifically) — the small count dot is the
  * only hivis in this component.
  */
-export function NotificationBell({ role }: { role: 'owner' | 'coach' | 'member' }) {
+export function NotificationBell({ role }: { role: 'owner' | 'coach' | 'member' | 'staff' }) {
   const { notifications, unreadCount, loaded, markRead } = useNotifications()
   const { publish } = useAnnouncements()
   const [open, setOpen] = useState(false)

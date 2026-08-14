@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL as string
+export const API_URL = import.meta.env.VITE_API_URL as string
 
 // Mercure hub is mounted on the same origin as the API (proxied through
 // the dev server too — see vite.config.ts) — no separate env var needed.
@@ -88,4 +88,32 @@ export async function apiRequestBlob(path: string, accessToken: string | null): 
   const match = disposition.match(/filename="?([^"]+)"?/)
 
   return { blob: await response.blob(), filename: match ? match[1] : 'export' }
+}
+
+/**
+ * roadmap Phase 15.2: PATCH /gym/branding takes an optional logo file,
+ * so it needs multipart/form-data — apiRequest()'s JSON.stringify body
+ * can't express that. No explicit Content-Type header here on purpose:
+ * the browser sets `multipart/form-data; boundary=...` itself only when
+ * left to infer it from a FormData body.
+ */
+export async function apiRequestForm<T>(path: string, formData: FormData, accessToken: string | null): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    body: formData,
+  })
+
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      typeof data.error === 'string' ? data.error : 'unknown_error',
+      typeof data.message === 'string' ? data.message : 'Something went wrong.',
+    )
+  }
+
+  return data as T
 }

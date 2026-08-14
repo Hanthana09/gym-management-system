@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { NavShell } from '../components/NavShell'
+import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Input, Modal } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useOwnerPlans, type PlanInput } from '../membership/useOwnerPlans'
@@ -26,13 +27,11 @@ export function OwnerPlansPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-paper px-4 py-6">
-      <div className="mx-auto max-w-4xl">
+    <div className="h-dvh">
+      <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/plans">
+        <div className="mx-auto max-w-4xl">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <Link to="/" className="text-sm text-ink-soft hover:underline">
-              ← Back
-            </Link>
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">
               Membership Plans
             </h1>
@@ -124,7 +123,8 @@ export function OwnerPlansPage() {
           onCreate={createPlan}
           onUpdate={updatePlan}
         />
-      </div>
+        </div>
+      </NavShell>
     </div>
   )
 }

@@ -116,6 +116,15 @@ export function BillingIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function LogoutIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M9.75 20.25H5.25a1.5 1.5 0 0 1-1.5-1.5V5.25a1.5 1.5 0 0 1 1.5-1.5h4.5" />
+      <path d="M15.75 16.5 20.25 12l-4.5-4.5M20.25 12H9.75" />
+    </IconBase>
+  )
+}
+
 export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <IconBase {...props}>

@@ -156,6 +156,7 @@ class AuthController
             'phone' => $user->getPhone(),
             'role' => $user->getRole()->value,
             'status' => $user->getStatus()->value,
+            'whatsappOptIn' => $user->isWhatsappOptIn(),
         ];
     }
 

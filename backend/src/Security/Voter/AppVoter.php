@@ -24,6 +24,12 @@ abstract class AppVoter extends Voter
         return $user instanceof User && $user->getRole() === UserRole::COACH;
     }
 
+    /** roadmap Phase 15.1: the fourth, deliberately narrowest role (architecture doc §2). */
+    protected function isStaff(UserInterface $user): bool
+    {
+        return $user instanceof User && $user->getRole() === UserRole::STAFF;
+    }
+
     protected function isMember(UserInterface $user): bool
     {
         return $user instanceof User && $user->getRole() === UserRole::MEMBER;

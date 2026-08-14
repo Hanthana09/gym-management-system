@@ -28,7 +28,13 @@ class AttendanceService
     ) {
     }
 
-    public function checkIn(MemberProfile $member): AttendanceLog
+    /**
+     * $method defaults to MANUAL (the Member's own self-checkin, Phase
+     * 5). roadmap Phase 15.1's front-desk variant (Owner/Staff checking a
+     * member in) passes CheckInMethod::FRONT_DESK explicitly — same
+     * validation, same event, only the recorded method differs.
+     */
+    public function checkIn(MemberProfile $member, CheckInMethod $method = CheckInMethod::MANUAL): AttendanceLog
     {
         $user = $member->getUser();
         if ($user->getStatus() === UserStatus::SUSPENDED) {
@@ -55,7 +61,7 @@ class AttendanceService
             throw $this->blocked($blockedReason);
         }
 
-        $log = new AttendanceLog($member, new \DateTimeImmutable(), CheckInMethod::MANUAL);
+        $log = new AttendanceLog($member, new \DateTimeImmutable(), $method);
         $this->em->persist($log);
         $this->em->flush();
 

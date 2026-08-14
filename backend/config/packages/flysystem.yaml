@@ -1,0 +1,12 @@
+# Read the documentation at https://github.com/thephpleague/flysystem-bundle/blob/master/docs/1-getting-started.md
+flysystem:
+    storages:
+        # roadmap Phase 15.2: local-disk adapter (CLAUDE.md — no cloud
+        # storage). Lives under public/ deliberately, not var/storage/ —
+        # Caddy (frankenphp/Caddyfile) serves any existing file under
+        # public/ directly, so a gym's logo needs no dedicated download
+        # controller, just a path the frontend can <img src> as-is.
+        gym_logos.storage:
+            adapter: 'local'
+            options:
+                directory: '%kernel.project_dir%/public/uploads/gym-logos'

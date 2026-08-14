@@ -91,6 +91,18 @@ final class AttendanceVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
+    /** roadmap Phase 15.1: Staff gets the same front-desk check-in capability as Owner. */
+    public function test_staff_can_check_in_on_behalf_of_a_member_front_desk(): void
+    {
+        $staff = $this->user(UserRole::STAFF);
+        $memberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($memberUser);
+
+        $result = $this->voter->vote($this->tokenFor($staff), $profile, [AttendanceVoter::CHECK_IN]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
     // ---- VIEW_ALL (Owner dashboard/reports) --------------------------------
 
     public function test_owner_can_view_all(): void
@@ -107,6 +119,16 @@ final class AttendanceVoterTest extends TestCase
         $member = $this->user(UserRole::MEMBER);
 
         $result = $this->voter->vote($this->tokenFor($member), null, [AttendanceVoter::VIEW_ALL]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /** functional requirements §11.2 / architecture doc §2: Staff is explicitly excluded from reports, even attendance's own VIEW_ALL. */
+    public function test_staff_cannot_view_all_403(): void
+    {
+        $staff = $this->user(UserRole::STAFF);
+
+        $result = $this->voter->vote($this->tokenFor($staff), null, [AttendanceVoter::VIEW_ALL]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
@@ -148,5 +170,17 @@ final class AttendanceVoterTest extends TestCase
         $result = $this->voter->vote($this->tokenFor($coach), $profile, [AttendanceVoter::VIEW]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /** roadmap Phase 15.1: Staff gets read-only VIEW, gym-scoped, like Owner (but never VIEW_ALL — see above). */
+    public function test_staff_can_view_any_members_attendance(): void
+    {
+        $staff = $this->user(UserRole::STAFF);
+        $memberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($memberUser);
+
+        $result = $this->voter->vote($this->tokenFor($staff), $profile, [AttendanceVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
     }
 }

@@ -87,7 +87,7 @@ function compareBy(field: SortField, a: MemberListItemDto, b: MemberListItemDto)
  * viewport crosses the lg: breakpoint.
  */
 export function OwnerMembersPage() {
-  const { members, loaded, refresh } = useMembers()
+  const { members, loaded, refresh, updateStatus } = useMembers()
   const { plans, loaded: plansLoaded } = useOwnerPlans()
   const { enroll } = useEnrollMember()
   const [search, setSearch] = useState('')
@@ -96,6 +96,34 @@ export function OwnerMembersPage() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [page, setPage] = useState(1)
   const [enrollingMember, setEnrollingMember] = useState<MemberListItemDto | null>(null)
+  const [confirmingSuspendId, setConfirmingSuspendId] = useState<string | null>(null)
+  const [statusError, setStatusError] = useState<string | null>(null)
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null)
+
+  async function handleReactivate(id: string) {
+    setStatusError(null)
+    setStatusUpdatingId(id)
+    try {
+      await updateStatus(id, 'active')
+    } catch (err) {
+      setStatusError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setStatusUpdatingId(null)
+    }
+  }
+
+  async function handleConfirmSuspend(id: string) {
+    setStatusError(null)
+    setStatusUpdatingId(id)
+    try {
+      await updateStatus(id, 'suspended')
+      setConfirmingSuspendId(null)
+    } catch (err) {
+      setStatusError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setStatusUpdatingId(null)
+    }
+  }
 
   const visibleMembers = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -189,6 +217,8 @@ export function OwnerMembersPage() {
             </Card>
           ) : null}
 
+          {statusError ? <p className="text-sm text-red-600">{statusError}</p> : null}
+
           {/* Card list — default (mobile/tablet) */}
           <div className="flex flex-col gap-3 lg:hidden">
             {pagedMembers.map((member) => (
@@ -223,6 +253,22 @@ export function OwnerMembersPage() {
                     {new Date(member.joinedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                   </span>
                 </div>
+                {member.role === 'member' ? (
+                  <div className="mt-3 border-t border-line pt-3">
+                    <MemberStatusAction
+                      member={member}
+                      confirming={confirmingSuspendId === member.id}
+                      updating={statusUpdatingId === member.id}
+                      onRequestSuspend={() => {
+                        setStatusError(null)
+                        setConfirmingSuspendId(member.id)
+                      }}
+                      onCancelSuspend={() => setConfirmingSuspendId(null)}
+                      onConfirmSuspend={() => handleConfirmSuspend(member.id)}
+                      onReactivate={() => handleReactivate(member.id)}
+                    />
+                  </div>
+                ) : null}
               </Card>
             ))}
           </div>
@@ -238,6 +284,7 @@ export function OwnerMembersPage() {
                   <SortableHeader field="status" label="Status" active={sortField === 'status'} indicator={sortIndicator} onClick={toggleSort} />
                   <SortableHeader field="plan" label="Plan" active={sortField === 'plan'} indicator={sortIndicator} onClick={toggleSort} />
                   <SortableHeader field="joined" label="Joined" active={sortField === 'joined'} indicator={sortIndicator} onClick={toggleSort} />
+                  <th className="border-b border-line px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -270,6 +317,25 @@ export function OwnerMembersPage() {
                     </td>
                     <td className="border-b border-line/60 px-4 py-3 font-mono text-xs text-ink-soft">
                       {new Date(member.joinedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3">
+                      {member.role === 'member' ? (
+                        <MemberStatusAction
+                          member={member}
+                          confirming={confirmingSuspendId === member.id}
+                          updating={statusUpdatingId === member.id}
+                          onRequestSuspend={() => {
+                            setStatusError(null)
+                            setConfirmingSuspendId(member.id)
+                          }}
+                          onCancelSuspend={() => setConfirmingSuspendId(null)}
+                          onConfirmSuspend={() => handleConfirmSuspend(member.id)}
+                          onReactivate={() => handleReactivate(member.id)}
+                          compact
+                        />
+                      ) : (
+                        <span className="text-ink-soft">—</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -388,6 +454,65 @@ function EnrollModal({ member, plans, plansLoaded, onClose, onEnroll, onEnrolled
         </div>
       ) : null}
     </Modal>
+  )
+}
+
+interface MemberStatusActionProps {
+  member: MemberListItemDto
+  confirming: boolean
+  updating: boolean
+  onRequestSuspend: () => void
+  onCancelSuspend: () => void
+  onConfirmSuspend: () => void
+  onReactivate: () => void
+  compact?: boolean
+}
+
+/**
+ * architecture doc §7: PATCH /members/:id/status. Suspending removes
+ * access (blocks check-in — Phase 5's AttendanceService), so it gets the
+ * same inline confirm step as OwnerPlansPage's delete action; reactivating
+ * only restores access, so it's a single tap, same asymmetry as
+ * MyMembershipCard's pause/resume.
+ */
+function MemberStatusAction({
+  member,
+  confirming,
+  updating,
+  onRequestSuspend,
+  onCancelSuspend,
+  onConfirmSuspend,
+  onReactivate,
+  compact,
+}: MemberStatusActionProps) {
+  if (member.status === 'suspended') {
+    return (
+      <Button variant="secondary" fullWidth={!compact} onClick={onReactivate} disabled={updating}>
+        {updating ? 'Reactivating…' : 'Reactivate'}
+      </Button>
+    )
+  }
+
+  if (confirming) {
+    return (
+      <div className={compact ? 'flex flex-col gap-2' : ''}>
+        <p className="text-sm text-ink">Suspend {member.name}?</p>
+        <div className="flex gap-2">
+          <Button variant="secondary" fullWidth={!compact} onClick={onCancelSuspend} disabled={updating}>
+            Cancel
+          </Button>
+          <Button variant="danger" fullWidth={!compact} onClick={onConfirmSuspend} disabled={updating}>
+            {updating ? 'Suspending…' : 'Suspend'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Button variant="danger" fullWidth={!compact} onClick={onRequestSuspend}>
+      Suspend
+    </Button>
   )
 }
 

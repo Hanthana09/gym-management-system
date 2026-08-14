@@ -29,6 +29,7 @@ framework:
         routing:
             # Route your messages to the transports
             'App\Notification\SendNotificationEmailMessage': async
+            'App\Notification\SendNotificationWhatsAppMessage': async
             'App\Membership\RunMembershipExpiryScanMessage': scheduler_membership
             'App\Reporting\RunDailyMetricAggregationMessage': scheduler_analytics
 

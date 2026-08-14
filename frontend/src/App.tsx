@@ -18,6 +18,8 @@ import { CoachSchedulePage } from './pages/CoachSchedulePage'
 import { MemberTrackingPage } from './pages/MemberTrackingPage'
 import { ComingSoonPage } from './pages/ComingSoonPage'
 import { DevComponentsPage } from './pages/DevComponentsPage'
+import { StaffDashboardPage } from './pages/StaffDashboardPage'
+import { OwnerSettingsPage } from './pages/OwnerSettingsPage'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth()
@@ -181,6 +183,22 @@ function App() {
         element={
           <RequireAuth>
             <ComingSoonPage title="Members" activeHref="/coach/members" role="coach" />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/settings"
+        element={
+          <RequireAuth>
+            <OwnerSettingsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/members"
+        element={
+          <RequireAuth>
+            <StaffDashboardPage />
           </RequireAuth>
         }
       />

@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom'
+import { NavShell } from '../components/NavShell'
+import { MEMBER_NAV_ITEMS } from '../components/nav-items'
 import { Card, Ticket } from '../components/ui'
 import { useMyInvoices } from '../invoices/useMyInvoices'
 import type { InvoiceDto, InvoiceStatus } from '../invoices/types'
@@ -23,36 +24,36 @@ function formatDate(iso: string): string {
 
 /**
  * functional requirements §8.2: date, amount, status, and — for paid
- * invoices — payment method + when it was recorded. Not a bottom-nav tab
- * (roadmap Phase 1 fixes the Member tab bar to Check-in/Sessions/
+ * invoices — payment method + when it was recorded. Not one of the
+ * bottom tab bar's 4 fixed slots (roadmap Phase 1: Check-in/Sessions/
  * Tracking/Notifications) — reached from a HomePage card, same pattern
- * as MyMembershipCard.
+ * as MyMembershipCard — but still wrapped in NavShell like every other
+ * authenticated page so the tab bar stays visible while browsing here.
  */
 export function MemberInvoicesPage() {
   const { invoices, loaded } = useMyInvoices()
 
   return (
-    <div className="min-h-dvh bg-paper px-4 py-6">
-      <div className="mx-auto max-w-2xl">
-        <Link to="/" className="text-sm text-ink-soft hover:underline">
-          ← Back
-        </Link>
-        <h1 className="mt-1 mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">Billing</h1>
+    <div className="h-dvh">
+      <NavShell role="member" title="Gym" navItems={MEMBER_NAV_ITEMS} activeHref="/member/invoices">
+        <div className="mx-auto max-w-2xl">
+          <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">Billing</h1>
 
-        {loaded && invoices.length === 0 ? (
-          <Card>
-            <p className="py-6 text-center text-sm text-ink-soft">No invoices yet.</p>
-          </Card>
-        ) : null}
+          {loaded && invoices.length === 0 ? (
+            <Card>
+              <p className="py-6 text-center text-sm text-ink-soft">No invoices yet.</p>
+            </Card>
+          ) : null}
 
-        <ul className="flex flex-col gap-3">
-          {invoices.map((invoice) => (
-            <li key={invoice.id}>
-              <InvoiceRow invoice={invoice} />
-            </li>
-          ))}
-        </ul>
-      </div>
+          <ul className="flex flex-col gap-3">
+            {invoices.map((invoice) => (
+              <li key={invoice.id}>
+                <InvoiceRow invoice={invoice} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      </NavShell>
     </div>
   )
 }

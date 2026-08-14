@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import Papa from 'papaparse'
+import { NavShell } from '../components/NavShell'
+import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Select } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useBulkImport, type BulkImportResponse, type BulkImportOutcome } from '../invitations/useBulkImport'
@@ -122,33 +123,30 @@ export function OwnerBulkImportPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-paper px-4 py-6">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-4">
-          <Link to="/" className="text-sm text-ink-soft hover:underline">
-            ← Back
-          </Link>
-          <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">
+    <div className="h-dvh">
+      <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/import">
+        <div className="mx-auto max-w-2xl">
+          <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">
             Bulk import members
           </h1>
-        </div>
 
-        {result ? (
-          <ResultSummary result={result} onImportAnother={reset} />
-        ) : parsed ? (
-          <MappingPreview
-            parsed={parsed}
-            mapping={mapping}
-            onChangeMapping={updateMapping}
-            onConfirm={handleImport}
-            onCancel={reset}
-            submitting={submitting}
-            error={error}
-          />
-        ) : (
-          <UploadStep onFile={handleFile} error={error} />
-        )}
-      </div>
+          {result ? (
+            <ResultSummary result={result} onImportAnother={reset} />
+          ) : parsed ? (
+            <MappingPreview
+              parsed={parsed}
+              mapping={mapping}
+              onChangeMapping={updateMapping}
+              onConfirm={handleImport}
+              onCancel={reset}
+              submitting={submitting}
+              error={error}
+            />
+          ) : (
+            <UploadStep onFile={handleFile} error={error} />
+          )}
+        </div>
+      </NavShell>
     </div>
   )
 }
