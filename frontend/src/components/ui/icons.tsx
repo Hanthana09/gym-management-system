@@ -76,6 +76,15 @@ export function BellIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function HomeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 11.5 12 4l8 7.5" />
+      <path d="M6.25 9.75V19.5a.75.75 0 0 0 .75.75h4V15h2v5.25h4a.75.75 0 0 0 .75-.75V9.75" />
+    </IconBase>
+  )
+}
+
 export function DashboardIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <IconBase {...props}>

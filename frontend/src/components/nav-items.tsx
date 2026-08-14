@@ -4,6 +4,7 @@ import {
   BillingIcon,
   CheckInIcon,
   DashboardIcon,
+  HomeIcon,
   MembersIcon,
   PlansIcon,
   SessionsIcon,
@@ -11,7 +12,10 @@ import {
   TrackingIcon,
 } from './ui/icons'
 
-// Per roadmap Phase 1: Member's four bottom-tab items.
+// Per roadmap Phase 1: Member's four bottom-tab items. Check-in is
+// already the first tab and doubles as Member's "home" — no separate
+// Home entry needed here (this is the sidebar-menu request's scope,
+// not the bottom tab bar).
 export const MEMBER_NAV_ITEMS: NavItem[] = [
   { label: 'Check-in', href: '/member/check-in', icon: <CheckInIcon /> },
   { label: 'Sessions', href: '/member/sessions', icon: <SessionsIcon /> },
@@ -19,7 +23,12 @@ export const MEMBER_NAV_ITEMS: NavItem[] = [
   { label: 'Notifications', href: '/member/notifications', icon: <BellIcon /> },
 ]
 
+// "/" (HomePage) was previously unreachable from the sidebar once an
+// Owner/Coach/Staff navigated away from it — NavShell's header title
+// isn't a link, so this was the only way back short of the browser's
+// own back button.
 export const OWNER_NAV_ITEMS: NavItem[] = [
+  { label: 'Home', href: '/', icon: <HomeIcon /> },
   { label: 'Dashboard', href: '/owner/dashboard', icon: <DashboardIcon /> },
   { label: 'Members', href: '/owner/members', icon: <MembersIcon /> },
   { label: 'Plans', href: '/owner/plans', icon: <PlansIcon /> },
@@ -28,6 +37,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
 ]
 
 export const COACH_NAV_ITEMS: NavItem[] = [
+  { label: 'Home', href: '/', icon: <HomeIcon /> },
   { label: 'Dashboard', href: '/coach/dashboard', icon: <DashboardIcon /> },
   { label: 'Sessions', href: '/coach/sessions', icon: <SessionsIcon /> },
   { label: 'Members', href: '/coach/members', icon: <MembersIcon /> },
@@ -35,7 +45,9 @@ export const COACH_NAV_ITEMS: NavItem[] = [
 
 // roadmap Phase 15.1: Staff's whole app is this one screen — a
 // scoped-down Owner view (read-only member list + check-in action),
-// not a full Owner-style multi-section nav.
+// not a full Owner-style multi-section nav. Still gets Home for the
+// same "was previously unreachable" reason as Owner/Coach above.
 export const STAFF_NAV_ITEMS: NavItem[] = [
+  { label: 'Home', href: '/', icon: <HomeIcon /> },
   { label: 'Members', href: '/staff/members', icon: <MembersIcon /> },
 ]
