@@ -1,14 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavShell } from '../components/NavShell'
 import { STAFF_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input } from '../components/ui'
+import { Button, Card, Input, Pagination } from '../components/ui'
 import { CheckInIcon } from '../components/ui/icons'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/apiClient'
+import { usePagination } from '../lib/usePagination'
 import { useMembers } from '../members/useMembers'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import type { MemberAccountStatus, MemberListItemDto } from '../members/types'
+
+const PAGE_SIZE = 20
 
 // Same palette as OwnerMembersPage's Pill — one status vocabulary
 // across every screen that shows account/membership status.
@@ -81,6 +84,18 @@ export function StaffDashboardPage() {
     return members.filter((member) => member.role === 'member' && matchesSearch(member, query))
   }, [members, search])
 
+  const { page, pageCount, paged: pagedMembers, rangeStart, rangeEnd, total, setPage } = usePagination(
+    visibleMembers,
+    PAGE_SIZE,
+  )
+
+  // A new search query can shrink the result set or reorder it entirely —
+  // always land back on page 1 rather than risk stranding Staff on a
+  // now-empty or now-mismatched page.
+  useEffect(() => {
+    setPage(1)
+  }, [search, setPage])
+
   async function handleCheckIn(member: MemberListItemDto) {
     setRowState((prev) => ({ ...prev, [member.id]: { status: 'checking', message: '' } }))
 
@@ -129,7 +144,7 @@ export function StaffDashboardPage() {
           ) : null}
 
           <div className="flex flex-col gap-3">
-            {visibleMembers.map((member) => {
+            {pagedMembers.map((member) => {
               const state = rowState[member.id]
 
               return (
@@ -182,6 +197,8 @@ export function StaffDashboardPage() {
               )
             })}
           </div>
+
+          <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
         </div>
       </NavShell>
     </div>

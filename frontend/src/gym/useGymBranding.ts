@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 
 export interface GymBrandingDto {
+  name: string | null
   logoUrl: string | null
   brandColor: string | null
 }
@@ -15,7 +16,7 @@ export interface GymBrandingDto {
  */
 export function useGymBranding() {
   const { authFetch, authFetchForm } = useAuth()
-  const [branding, setBranding] = useState<GymBrandingDto>({ logoUrl: null, brandColor: null })
+  const [branding, setBranding] = useState<GymBrandingDto>({ name: null, logoUrl: null, brandColor: null })
   const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(async () => {
@@ -29,8 +30,9 @@ export function useGymBranding() {
   }, [refresh])
 
   const updateBranding = useCallback(
-    async (options: { logo?: File; brandColor?: string }) => {
+    async (options: { name?: string; logo?: File; brandColor?: string }) => {
       const formData = new FormData()
+      if (options.name !== undefined) formData.append('name', options.name)
       if (options.logo) formData.append('logo', options.logo)
       if (options.brandColor !== undefined) formData.append('brandColor', options.brandColor)
 

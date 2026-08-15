@@ -63,5 +63,21 @@ export function useOwnerBranches() {
     [authFetch, refresh],
   )
 
-  return { branches, assignableUsers, loaded, refresh, createBranch, updateBranch, assign, unassign }
+  /**
+   * Branch delete facility: a genuine hard delete, only ever possible for
+   * a branch the backend confirms has never been used (no attendance,
+   * plans, or PT sessions) and isn't the primary branch — otherwise a 409
+   * (`branch_in_use` / `primary_branch`) surfaces as an ApiError for the
+   * page to show. Deactivate (already on this page) is still the tool for
+   * removing a branch that HAS been used.
+   */
+  const deleteBranch = useCallback(
+    async (id: string) => {
+      await authFetch<null>(`/branches/${id}`, { method: 'DELETE' })
+      await refresh()
+    },
+    [authFetch, refresh],
+  )
+
+  return { branches, assignableUsers, loaded, refresh, createBranch, updateBranch, assign, unassign, deleteBranch }
 }

@@ -1,10 +1,20 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input, Modal, Select } from '../components/ui'
+import { Button, Card, Input, Modal, Pagination, Select } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
+import { usePagination } from '../lib/usePagination'
 import { useOwnerBranches } from '../branches/useOwnerBranches'
 import type { BranchDto } from '../branches/types'
+
+const PAGE_SIZE = 20
+
+function matchesSearch(branch: BranchDto, query: string): boolean {
+  if (query === '') return true
+  const haystack = [branch.name, branch.address].filter(Boolean).join(' ').toLowerCase()
+
+  return haystack.includes(query)
+}
 
 function Pill({ label, styles }: { label: string; styles: string }) {
   return (
@@ -19,11 +29,33 @@ function Pill({ label, styles }: { label: string; styles: string }) {
  * is small enough that a dense table adds no value here.
  */
 export function OwnerBranchesPage() {
-  const { branches, assignableUsers, loaded, createBranch, updateBranch, assign, unassign } = useOwnerBranches()
+  const { branches, assignableUsers, loaded, createBranch, updateBranch, assign, unassign, deleteBranch } =
+    useOwnerBranches()
+  const [search, setSearch] = useState('')
   const [editingBranch, setEditingBranch] = useState<BranchDto | 'new' | null>(null)
   const [assigningBranch, setAssigningBranch] = useState<BranchDto | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [busyBranchId, setBusyBranchId] = useState<string | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const visibleBranches = useMemo(() => {
+    const query = search.trim().toLowerCase()
+
+    return branches.filter((branch) => matchesSearch(branch, query))
+  }, [branches, search])
+
+  const { page, pageCount, paged: pagedBranches, rangeStart, rangeEnd, total, setPage } = usePagination(
+    visibleBranches,
+    PAGE_SIZE,
+  )
+
+  // A new search query can shrink the result set or reorder it entirely —
+  // always land back on page 1 rather than risk stranding the Owner on a
+  // now-empty or now-mismatched page.
+  useEffect(() => {
+    setPage(1)
+  }, [search, setPage])
 
   async function handleToggleStatus(branch: BranchDto) {
     setStatusError(null)
@@ -32,6 +64,23 @@ export function OwnerBranchesPage() {
       await updateBranch(branch.id, { status: branch.status === 'active' ? 'inactive' : 'active' })
     } catch (err) {
       setStatusError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setBusyBranchId(null)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeleteError(null)
+    setBusyBranchId(id)
+    try {
+      await deleteBranch(id)
+      setConfirmingDeleteId(null)
+    } catch (err) {
+      // functional requirements §14.1: a branch with real history (or the
+      // primary branch) can't be hard-deleted — the backend's message
+      // already says so specifically ("...Deactivate it instead."), so
+      // it's shown as-is rather than replaced with a generic one.
+      setDeleteError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
     } finally {
       setBusyBranchId(null)
     }
@@ -46,16 +95,29 @@ export function OwnerBranchesPage() {
             <Button onClick={() => setEditingBranch('new')}>New branch</Button>
           </div>
 
+          <div className="mb-4">
+            <Input
+              label="Search"
+              placeholder="Search by name or address"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
           {statusError ? <p className="mb-3 text-sm text-red-600">{statusError}</p> : null}
 
           {loaded && branches.length === 0 ? (
             <Card>
               <p className="py-6 text-center text-sm text-ink-soft">No branches yet.</p>
             </Card>
+          ) : loaded && visibleBranches.length === 0 ? (
+            <Card>
+              <p className="py-6 text-center text-sm text-ink-soft">No branches match this search.</p>
+            </Card>
           ) : null}
 
           <div className="flex flex-col gap-4">
-            {branches.map((branch) => (
+            {pagedBranches.map((branch) => (
               <Card key={branch.id}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -98,24 +160,68 @@ export function OwnerBranchesPage() {
                   )}
                 </div>
 
-                <div className="mt-3 flex gap-2">
-                  <Button variant="secondary" fullWidth onClick={() => setEditingBranch(branch)}>
-                    Edit
-                  </Button>
-                  <Button variant="secondary" fullWidth onClick={() => setAssigningBranch(branch)}>
-                    Assign
-                  </Button>
-                  <Button
-                    variant={branch.status === 'active' ? 'danger' : 'secondary'}
-                    fullWidth
-                    disabled={busyBranchId === branch.id}
-                    onClick={() => handleToggleStatus(branch)}
-                  >
-                    {branch.status === 'active' ? 'Deactivate' : 'Activate'}
-                  </Button>
-                </div>
+                {confirmingDeleteId === branch.id ? (
+                  <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+                    <p className="text-sm text-ink">Delete {branch.name}? This can't be undone.</p>
+                    {deleteError ? <p className="text-sm text-red-600">{deleteError}</p> : null}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        fullWidth
+                        onClick={() => {
+                          setConfirmingDeleteId(null)
+                          setDeleteError(null)
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="danger"
+                        fullWidth
+                        disabled={busyBranchId === branch.id}
+                        onClick={() => handleDelete(branch.id)}
+                      >
+                        {busyBranchId === branch.id ? 'Deleting…' : 'Delete'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex gap-2">
+                    <Button variant="secondary" fullWidth onClick={() => setEditingBranch(branch)}>
+                      Edit
+                    </Button>
+                    <Button variant="secondary" fullWidth onClick={() => setAssigningBranch(branch)}>
+                      Assign
+                    </Button>
+                    <Button
+                      variant={branch.status === 'active' ? 'danger' : 'secondary'}
+                      fullWidth
+                      disabled={busyBranchId === branch.id}
+                      onClick={() => handleToggleStatus(branch)}
+                    >
+                      {branch.status === 'active' ? 'Deactivate' : 'Activate'}
+                    </Button>
+                    {/* Primary branch can never be deleted (every gym must always have exactly one) — no affordance for an action that would only ever 409. */}
+                    {!branch.isPrimary ? (
+                      <Button
+                        variant="danger"
+                        fullWidth
+                        onClick={() => {
+                          setDeleteError(null)
+                          setConfirmingDeleteId(branch.id)
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
               </Card>
             ))}
+          </div>
+
+          <div className="mt-4">
+            <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
           </div>
 
           <BranchFormModal

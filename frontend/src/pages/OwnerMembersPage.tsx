@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input, Modal, Select } from '../components/ui'
+import { Button, Card, Input, Modal, Pagination, Select } from '../components/ui'
 import { CheckInIcon } from '../components/ui/icons'
 import { ApiError } from '../lib/apiClient'
 import { useAuth } from '../auth/AuthContext'
@@ -10,6 +10,7 @@ import { useOwnerPlans } from '../membership/useOwnerPlans'
 import { useEnrollMember } from '../membership/useEnrollMember'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
+import { usePagination } from '../lib/usePagination'
 import type { MemberAccountStatus, MemberListItemDto, RosterRole } from '../members/types'
 
 const BLOCKED_REASON_LABELS: Record<string, string> = {
@@ -108,7 +109,6 @@ export function OwnerMembersPage() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [page, setPage] = useState(1)
   const [enrollingMember, setEnrollingMember] = useState<MemberListItemDto | null>(null)
   const [confirmingSuspendId, setConfirmingSuspendId] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
@@ -116,9 +116,12 @@ export function OwnerMembersPage() {
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
   const [checkInState, setCheckInState] = useState<Record<string, { status: 'checking' | 'success' | 'blocked' | 'error'; message: string }>>({})
 
-  // functional requirements §14.3: an Owner front-desking at any branch —
-  // unlike Staff (scoped to their own assignments), an Owner may check a
-  // member in at any of their branches, defaulting to the primary one.
+  // One switcher, two jobs: filters the roster below (null = every
+  // branch, same as the Owner dashboard's reports switcher — a Member
+  // isn't branch-restricted, this is purely a "who's at branch X" view),
+  // and doubles as "which branch am I working from" for front-desk
+  // check-in, which always needs one concrete branch — falls back to the
+  // primary branch while the filter is on "All branches".
   const activeBranchId = selectedBranchId ?? defaultBranchId(branches)
 
   async function handleCheckIn(member: MemberListItemDto) {
@@ -173,9 +176,15 @@ export function OwnerMembersPage() {
 
     return members
       .filter((member) => roleFilter === 'all' || member.role === roleFilter)
+      .filter((member) => selectedBranchId === null || member.branchIds.includes(selectedBranchId))
       .filter((member) => matchesSearch(member, query))
       .sort((a, b) => direction * compareBy(sortField, a, b))
-  }, [members, search, roleFilter, sortField, sortDirection])
+  }, [members, search, roleFilter, selectedBranchId, sortField, sortDirection])
+
+  const { page: currentPage, pageCount, paged: pagedMembers, rangeStart, rangeEnd, total, setPage } = usePagination(
+    visibleMembers,
+    PAGE_SIZE,
+  )
 
   // Any change to what's being shown or how it's ordered can move a
   // given row to a different page (or shrink the result set entirely) —
@@ -183,13 +192,7 @@ export function OwnerMembersPage() {
   // now-empty page.
   useEffect(() => {
     setPage(1)
-  }, [search, roleFilter, sortField, sortDirection])
-
-  const pageCount = Math.max(1, Math.ceil(visibleMembers.length / PAGE_SIZE))
-  const currentPage = Math.min(page, pageCount)
-  const pagedMembers = visibleMembers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-  const rangeStart = visibleMembers.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
-  const rangeEnd = Math.min(currentPage * PAGE_SIZE, visibleMembers.length)
+  }, [search, roleFilter, selectedBranchId, sortField, sortDirection, setPage])
 
   function toggleSort(field: SortField) {
     if (field === sortField) {
@@ -208,8 +211,8 @@ export function OwnerMembersPage() {
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
           <div className="flex items-center gap-3">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
-            {/* Front-desk check-in branch — absent for single-branch gyms (DESIGN-SYSTEM.md §4.2). */}
-            <BranchSwitcher branches={branches} value={activeBranchId} onChange={setSelectedBranchId} />
+            {/* Filters the roster below and picks the front-desk check-in branch — absent for single-branch gyms (DESIGN-SYSTEM.md §4.2). */}
+            <BranchSwitcher branches={branches} value={selectedBranchId} onChange={setSelectedBranchId} allowAll />
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -342,34 +345,44 @@ export function OwnerMembersPage() {
             ))}
           </div>
 
-          {/* Table — lg: and up, with sortable column headers */}
+          {/*
+            Table — lg: and up, with sortable column headers. table-fixed +
+            an explicit width per column (summing to 100%) is the actual
+            fix here: with the default table-layout: auto, a long
+            unbroken name or email had no break opportunity and forced
+            its column — and the whole table — wider than the page
+            (CLAUDE.md: no horizontal page overflow at any viewport).
+            break-words on every cell lets that same long text wrap
+            within its now-fixed column instead.
+          */}
           {pagedMembers.length > 0 ? (
-            <table className="hidden w-full border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
+            <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
               <thead>
                 <tr className="text-left text-sm text-ink-soft">
-                  <SortableHeader field="name" label="Name" active={sortField === 'name'} indicator={sortIndicator} onClick={toggleSort} />
-                  <th className="border-b border-line px-4 py-3">Contact</th>
-                  <SortableHeader field="role" label="Role" active={sortField === 'role'} indicator={sortIndicator} onClick={toggleSort} />
-                  <SortableHeader field="status" label="Status" active={sortField === 'status'} indicator={sortIndicator} onClick={toggleSort} />
-                  <SortableHeader field="plan" label="Plan" active={sortField === 'plan'} indicator={sortIndicator} onClick={toggleSort} />
-                  <SortableHeader field="joined" label="Joined" active={sortField === 'joined'} indicator={sortIndicator} onClick={toggleSort} />
-                  <th className="border-b border-line px-4 py-3">Actions</th>
+                  <SortableHeader field="name" label="Name" active={sortField === 'name'} indicator={sortIndicator} onClick={toggleSort} className="w-[14%]" />
+                  <th className="w-[16%] border-b border-line px-4 py-3">Contact</th>
+                  <SortableHeader field="role" label="Role" active={sortField === 'role'} indicator={sortIndicator} onClick={toggleSort} className="w-[7%]" />
+                  <SortableHeader field="status" label="Status" active={sortField === 'status'} indicator={sortIndicator} onClick={toggleSort} className="w-[8%]" />
+                  <SortableHeader field="plan" label="Plan" active={sortField === 'plan'} indicator={sortIndicator} onClick={toggleSort} className="w-[14%]" />
+                  <SortableHeader field="joined" label="Joined" active={sortField === 'joined'} indicator={sortIndicator} onClick={toggleSort} className="w-[9%]" />
+                  {/* Widest column on purpose — this is the only one holding two buttons (or, mid-confirm, "Suspend {name}?" text plus two more), not just a badge or a date. */}
+                  <th className="w-[32%] border-b border-line px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedMembers.map((member) => (
                   <tr key={member.id} className="text-sm text-ink">
-                    <td className="border-b border-line/60 px-4 py-3 font-medium">{member.name}</td>
-                    <td className="border-b border-line/60 px-4 py-3 text-ink-soft">{member.email ?? member.phone}</td>
+                    <td className="border-b border-line/60 px-4 py-3 font-medium break-words">{member.name}</td>
+                    <td className="border-b border-line/60 px-4 py-3 text-ink-soft break-words">{member.email ?? member.phone}</td>
                     <td className="border-b border-line/60 px-4 py-3">
                       <Pill label={member.role} styles={ROLE_STYLES[member.role]} />
                     </td>
                     <td className="border-b border-line/60 px-4 py-3">
                       <Pill label={member.status} styles={ACCOUNT_STATUS_STYLES[member.status]} />
                     </td>
-                    <td className="border-b border-line/60 px-4 py-3">
+                    <td className="border-b border-line/60 px-4 py-3 break-words">
                       {member.membership ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span>{member.membership.planName}</span>
                           <Pill
                             label={member.membership.status}
@@ -390,7 +403,7 @@ export function OwnerMembersPage() {
                     <td className="border-b border-line/60 px-4 py-3">
                       {member.role === 'member' ? (
                         <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <MemberStatusAction
                               member={member}
                               confirming={confirmingSuspendId === member.id}
@@ -437,32 +450,14 @@ export function OwnerMembersPage() {
             </table>
           ) : null}
 
-          {visibleMembers.length > 0 ? (
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-ink-soft">
-                {rangeStart}–{rangeEnd} of {visibleMembers.length}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1}
-                >
-                  Prev
-                </Button>
-                <p className="text-sm text-ink-soft">
-                  Page {currentPage} of {pageCount}
-                </p>
-                <Button
-                  variant="secondary"
-                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                  disabled={currentPage >= pageCount}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          ) : null}
+          <Pagination
+            page={currentPage}
+            pageCount={pageCount}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            total={total}
+            onChange={setPage}
+          />
         </div>
 
         <EnrollModal
@@ -590,8 +585,8 @@ function MemberStatusAction({
   if (confirming) {
     return (
       <div className={compact ? 'flex flex-col gap-2' : ''}>
-        <p className="text-sm text-ink">Suspend {member.name}?</p>
-        <div className="flex gap-2">
+        <p className="text-sm text-ink break-words">Suspend {member.name}?</p>
+        <div className="flex flex-wrap gap-2">
           <Button variant="secondary" fullWidth={!compact} onClick={onCancelSuspend} disabled={updating}>
             Cancel
           </Button>
@@ -616,11 +611,12 @@ interface SortableHeaderProps {
   active: boolean
   indicator: string
   onClick: (field: SortField) => void
+  className?: string
 }
 
-function SortableHeader({ field, label, active, indicator, onClick }: SortableHeaderProps) {
+function SortableHeader({ field, label, active, indicator, onClick, className }: SortableHeaderProps) {
   return (
-    <th className="border-b border-line px-4 py-3">
+    <th className={`border-b border-line px-4 py-3 ${className ?? ''}`}>
       <button type="button" onClick={() => onClick(field)} className="flex items-center gap-1 hover:text-ink">
         {label}
         {active ? <span aria-hidden="true">{indicator}</span> : null}

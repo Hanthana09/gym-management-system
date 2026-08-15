@@ -32,7 +32,7 @@ final class MemberControllerTest extends WebTestCase
         $this->client = static::createClient([], ['HTTPS' => 'on']);
         $this->em = static::getContainer()->get(EntityManagerInterface::class);
         $this->em->getConnection()->executeStatement(
-            'TRUNCATE membership, membership_plan, coach_profile, member_profile, invitation, gym, otp_code, refresh_token, "user" CASCADE',
+            'TRUNCATE branch_assignment, branch, membership, membership_plan, coach_profile, member_profile, invitation, gym, otp_code, refresh_token, "user" CASCADE',
         );
     }
 
@@ -168,6 +168,50 @@ final class MemberControllerTest extends WebTestCase
         self::assertSame(200, $result['status']);
         self::assertSame('Gold', $result['body']['members'][0]['membership']['planName']);
         self::assertSame('active', $result['body']['members'][0]['membership']['status']);
+    }
+
+    /**
+     * Bug fix: the Owner Members page's branch switcher never actually
+     * filtered the roster — it only fed the front-desk check-in call. The
+     * frontend fix filters client-side on this field, which didn't exist
+     * before; this proves the backend actually supplies it.
+     */
+    public function test_roster_includes_the_members_enrolling_branch(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $downtown = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $plan = $this->request('POST', '/membership-plans', $owner, [
+            'name' => 'Gold', 'price' => '79.99', 'durationDays' => 30, 'features' => [], 'branchId' => $downtown['id'],
+        ]);
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $member->getId(), 'planId' => $plan['body']['id']]);
+
+        $result = $this->request('GET', '/members', $owner);
+
+        self::assertSame([$downtown['id']], $result['body']['members'][0]['branchIds']);
+    }
+
+    public function test_an_unenrolled_member_has_no_branch_ids(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', '/members', $owner);
+
+        self::assertSame([], $result['body']['members'][0]['branchIds']);
+    }
+
+    public function test_roster_includes_a_coachs_assigned_branches(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $coach = $this->createApprovedCoach('Carlos Coach', 'carlos@example.com');
+        $downtown = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $this->request('POST', "/branches/{$downtown['id']}/assign", $owner, ['userId' => (string) $coach->getId()]);
+
+        $result = $this->request('GET', '/members', $owner);
+
+        $roster = array_values(array_filter($result['body']['members'], fn (array $m) => $m['role'] === 'coach'));
+        self::assertSame([$downtown['id']], $roster[0]['branchIds']);
     }
 
     public function test_an_expired_membership_shows_as_expired_not_stale_active(): void

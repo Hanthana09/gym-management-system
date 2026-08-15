@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Badge, Button, Card, Input, Modal, Select, Ticket } from '../components/ui'
+import { Badge, Button, Card, Input, Modal, Pagination, Select, Tabs, Ticket } from '../components/ui'
 import { NavShell } from '../components/NavShell'
 import { MEMBER_NAV_ITEMS, OWNER_NAV_ITEMS } from '../components/nav-items'
 import { BranchSwitcher } from '../branches/BranchSwitcher'
@@ -22,6 +22,8 @@ const TWO_BRANCHES: BranchDto[] = [
  */
 export function DevComponentsPage() {
   const [modalOpen, setModalOpen] = useState(false)
+  const [tab, setTab] = useState('one')
+  const [paginationPage, setPaginationPage] = useState(1)
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -137,6 +139,37 @@ export function DevComponentsPage() {
             </div>
           </div>
         </div>
+      </Section>
+
+      <Section title="Tabs">
+        <p className="mb-3 text-sm text-ink-soft">
+          Border-accent active state — same visual language as NavShell's own bottom tab bar, used here for in-page
+          sections (Owner dashboard) instead of top-level navigation.
+        </p>
+        <Tabs
+          items={[
+            { value: 'one', label: 'Attendance' },
+            { value: 'two', label: 'Revenue' },
+            { value: 'three', label: 'At-risk members' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      </Section>
+
+      <Section title="Pagination">
+        <p className="mb-3 text-sm text-ink-soft">
+          Owner Members roster, and the Owner dashboard's Attendance / At-risk members tabs — client-side pagination
+          over an already-fetched list.
+        </p>
+        <Pagination
+          page={paginationPage}
+          pageCount={5}
+          rangeStart={(paginationPage - 1) * 20 + 1}
+          rangeEnd={Math.min(paginationPage * 20, 97)}
+          total={97}
+          onChange={setPaginationPage}
+        />
       </Section>
 
       <Section title="Badge (ID card)">

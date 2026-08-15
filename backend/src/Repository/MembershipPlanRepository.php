@@ -22,4 +22,10 @@ class MembershipPlanRepository extends ServiceEntityRepository
     {
         return $this->findBy(['branch' => $branch], ['name' => 'ASC']);
     }
+
+    /** Branch delete facility: a branch with any plan (past or present) ever created against it can't be hard-deleted — those plans, and any membership/invoice history through them, must stay intact. */
+    public function existsForBranch(Branch $branch): bool
+    {
+        return $this->count(['branch' => $branch]) > 0;
+    }
 }

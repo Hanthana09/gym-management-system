@@ -2,6 +2,7 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\MemberProfile;
 use App\Entity\User;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
@@ -27,7 +28,7 @@ final class BranchControllerTest extends WebTestCase
         $this->client = static::createClient([], ['HTTPS' => 'on']);
         $this->em = static::getContainer()->get(EntityManagerInterface::class);
         $this->em->getConnection()->executeStatement(
-            'TRUNCATE branch_assignment, branch, gym, "user" CASCADE',
+            'TRUNCATE attendance_log, membership, membership_plan, member_profile, branch_assignment, branch, gym, "user" CASCADE',
         );
     }
 
@@ -205,6 +206,92 @@ final class BranchControllerTest extends WebTestCase
         $otherOwner = $this->createUser('Oscar Owner', UserRole::OWNER);
 
         $result = $this->request('PATCH', "/branches/{$branch['id']}", $otherOwner, ['name' => 'Hijacked']);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    // ---- branch delete facility --------------------------------------------
+
+    public function test_owner_can_delete_an_unused_non_primary_branch(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}", $owner);
+
+        self::assertSame(204, $result['status']);
+        $list = $this->request('GET', '/branches', $owner);
+        self::assertCount(1, $list['body']['branches']); // just the primary now
+    }
+
+    public function test_deleting_a_branch_removes_its_coach_assignment_too(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $coach = $this->createUser('Carlos Coach', UserRole::COACH);
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $this->request('POST', "/branches/{$branch['id']}/assign", $owner, ['userId' => (string) $coach->getId()]);
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}", $owner);
+
+        self::assertSame(204, $result['status']);
+        $rowCount = $this->em->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM branch_assignment WHERE branch_id = ?',
+            [$branch['id']],
+        );
+        self::assertSame('0', (string) $rowCount);
+    }
+
+    public function test_deleting_the_primary_branch_is_blocked_409(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $primary = $this->request('GET', '/branches', $owner)['body']['branches'][0];
+
+        $result = $this->request('DELETE', "/branches/{$primary['id']}", $owner);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('primary_branch', $result['body']['error']);
+    }
+
+    public function test_deleting_a_branch_with_a_membership_plan_is_blocked_409(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $this->request('POST', '/membership-plans', $owner, [
+            'name' => 'Downtown Plan', 'price' => '49.99', 'durationDays' => 30, 'features' => [], 'branchId' => $branch['id'],
+        ]);
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}", $owner);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('branch_in_use', $result['body']['error']);
+    }
+
+    public function test_deleting_a_branch_with_attendance_history_is_blocked_409(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $member = $this->createUser('Mia Member', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($member));
+        $this->em->flush();
+        $plan = $this->request('POST', '/membership-plans', $owner, [
+            'name' => 'Downtown Plan', 'price' => '49.99', 'durationDays' => 30, 'features' => [], 'branchId' => $branch['id'],
+        ])['body'];
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $member->getId(), 'planId' => $plan['id']]);
+        $this->request('POST', "/members/{$member->getId()}/checkin", $owner, ['branchId' => $branch['id']]);
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}", $owner);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('branch_in_use', $result['body']['error']);
+    }
+
+    public function test_non_owner_cannot_delete_a_branch_403(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $staff = $this->createUser('Sam Staff', UserRole::STAFF);
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}", $staff);
 
         self::assertSame(403, $result['status']);
     }

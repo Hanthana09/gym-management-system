@@ -16,4 +16,8 @@ export interface MemberListItemDto {
   joinedAt: string
   // Coaches never have a Membership — always null for role: 'coach'.
   membership: MemberMembershipSummary | null
+  // A Member's enrolling branch (0 or 1 entries) or a Coach's assigned
+  // branches (0+ entries) — what the Owner roster's branch filter matches
+  // against. Never a restriction on the Member themselves (hub model).
+  branchIds: string[]
 }

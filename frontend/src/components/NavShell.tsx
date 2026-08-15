@@ -35,6 +35,10 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
   const { branding } = useGymBranding()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isMember = role === 'member'
+  // Owner Settings: "Gym name" field. Falls back to the caller's `title`
+  // prop (always "Gym" today) until branding has loaded or a name has
+  // ever been set.
+  const gymName = branding.name ?? title
 
   return (
     <div className="flex h-full w-full bg-paper">
@@ -44,8 +48,18 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
           isMember ? 'lg:flex lg:w-56' : 'md:flex md:w-56',
         )}
       >
-        <div className="flex h-14 shrink-0 items-center border-b border-line px-4 font-display font-semibold tracking-wide text-ink uppercase">
-          {title}
+        {/*
+          On direct request, the gym name itself now picks up the brand
+          color too (not just the header's border accent below) — falls
+          back to text-ink when no brand color is set. Shown as entered,
+          no uppercase transform — unlike every other nav label here,
+          this one is a name someone typed, not a fixed UI string.
+        */}
+        <div
+          className="flex h-14 shrink-0 items-center truncate border-b border-line px-4 font-display font-semibold tracking-wide text-ink"
+          style={branding.brandColor ? { color: branding.brandColor } : undefined}
+        >
+          {gymName}
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
           {navItems.map((item) => (
@@ -66,7 +80,12 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
           />
           <div className="relative flex h-full w-64 flex-col bg-card shadow-lg">
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
-              <span className="font-display font-semibold tracking-wide text-ink uppercase">{title}</span>
+              <span
+                className="truncate font-display font-semibold tracking-wide text-ink"
+                style={branding.brandColor ? { color: branding.brandColor } : undefined}
+              >
+                {gymName}
+              </span>
               <button
                 type="button"
                 aria-label="Close menu"
@@ -116,8 +135,11 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
           accent border, not a repainted background (keeps `text-ink`
           contrast safe regardless of what hex an Owner picks). The
           logo, when set, sits in the header's "logo area" per the same
-          rule. Nothing else in this header (menu icon, title text,
-          NotificationBell) reads brandColor.
+          rule. Nothing else in this header (menu icon, CheckInTimer,
+          NotificationBell) reads brandColor. The gym name itself isn't
+          repeated here — it's already shown once, in the sidebar's top
+          corner (or the mobile drawer's header) — so a logo with no
+          adjacent text carries its own accessible name via `alt`.
         */}
         <header
           className={cn(
@@ -137,9 +159,8 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
             </button>
           ) : null}
           {branding.logoUrl ? (
-            <img src={branding.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded object-contain" />
+            <img src={branding.logoUrl} alt={gymName} className="h-8 w-8 shrink-0 rounded object-contain" />
           ) : null}
-          <h1 className="font-display text-base font-semibold tracking-wide text-ink uppercase">{title}</h1>
           {isMember ? <CheckInTimer /> : null}
           <NotificationBell role={role} />
         </header>

@@ -16,6 +16,7 @@ const DEFAULT_BRAND_COLOR = '#1F2937'
  */
 export function OwnerSettingsPage() {
   const { branding, loaded, updateBranding } = useGymBranding()
+  const [name, setName] = useState<string | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [brandColor, setBrandColor] = useState<string | null>(null)
@@ -23,6 +24,7 @@ export function OwnerSettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
+  const effectiveName = name ?? branding.name ?? ''
   const effectiveColor = brandColor ?? branding.brandColor ?? DEFAULT_BRAND_COLOR
 
   function handleLogoChange(file: File | null) {
@@ -35,10 +37,17 @@ export function OwnerSettingsPage() {
     event.preventDefault()
     setError(null)
     setSuccess(false)
+
+    if (effectiveName.trim() === '') {
+      setError('Gym name cannot be empty.')
+      return
+    }
+
     setSubmitting(true)
 
     try {
       await updateBranding({
+        name: effectiveName.trim(),
         logo: logoFile ?? undefined,
         brandColor: brandColor ?? undefined,
       })
@@ -58,12 +67,23 @@ export function OwnerSettingsPage() {
         <div className="mx-auto flex max-w-lg flex-col gap-4">
           <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Branding</h1>
           <p className="text-sm text-ink-soft">
-            Your logo and accent color appear on the navigation header and on members' digital membership
-            badges. The check-in button and role colors always stay the product's standard colors.
+            Your gym name appears in the top-left corner of every screen. Your logo and accent color appear on
+            the navigation header and on members' digital membership badges. The check-in button and role
+            colors always stay the product's standard colors.
           </p>
 
           <Card>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <Input
+                label="Gym name"
+                value={effectiveName}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  setSuccess(false)
+                }}
+                required
+              />
+
               <div>
                 <label htmlFor="logo-upload" className="mb-1.5 block text-sm font-medium text-ink">
                   Logo

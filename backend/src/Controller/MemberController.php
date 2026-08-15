@@ -143,6 +143,12 @@ class MemberController extends AbstractController
             'status' => $user->getStatus()->value,
             'joinedAt' => $user->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'membership' => $membership !== null ? $this->serializeMembership($membership) : null,
+            // roadmap Phase 16 hub model: a Member isn't restricted to a
+            // branch, but the Owner's roster filter still needs *some*
+            // branch to filter by — their enrolling branch (the one their
+            // active plan belongs to) is the only one that means anything
+            // here, same source MemberVoter's Staff branch already uses.
+            'branchIds' => $membership !== null ? [(string) $membership->getPlan()->getBranch()->getId()] : [],
         ];
     }
 
@@ -159,6 +165,13 @@ class MemberController extends AbstractController
             'status' => $user->getStatus()->value,
             'joinedAt' => $user->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'membership' => null,
+            // Unlike a Member's single enrolling branch, a Coach can be
+            // assigned to more than one — the roster filter matches on
+            // any of them.
+            'branchIds' => array_map(
+                fn ($assignment) => (string) $assignment->getBranch()->getId(),
+                $user->getBranchAssignments()->toArray(),
+            ),
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Repository;
 
+use App\Entity\Branch;
 use App\Entity\CoachProfile;
 use App\Entity\MemberProfile;
 use App\Entity\PtSession;
@@ -41,5 +42,11 @@ class PtSessionRepository extends ServiceEntityRepository
             ->orderBy('s.scheduledAt', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    /** Branch delete facility: a branch with any PT session (any status, past or present) recorded against it can't be hard-deleted. */
+    public function existsForBranch(Branch $branch): bool
+    {
+        return $this->count(['branch' => $branch]) > 0;
     }
 }

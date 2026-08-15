@@ -7,7 +7,10 @@ use App\Entity\BranchAssignment;
 use App\Entity\Gym;
 use App\Entity\User;
 use App\Enum\UserRole;
+use App\Repository\AttendanceLogRepository;
 use App\Repository\BranchAssignmentRepository;
+use App\Repository\MembershipPlanRepository;
+use App\Repository\PtSessionRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -20,6 +23,9 @@ class BranchService
 {
     public function __construct(
         private readonly BranchAssignmentRepository $assignments,
+        private readonly AttendanceLogRepository $attendanceLogs,
+        private readonly MembershipPlanRepository $membershipPlans,
+        private readonly PtSessionRepository $ptSessions,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -57,6 +63,46 @@ class BranchService
     public function activate(Branch $branch): void
     {
         $branch->activate();
+        $this->em->flush();
+    }
+
+    /**
+     * Branch delete facility: a genuine hard delete, but only ever for a
+     * branch that's never actually been used — the primary branch (every
+     * gym must always have exactly one, roadmap Phase 16.1's Definition
+     * of Done) and any branch with attendance/plan/PT-session history are
+     * both rejected outright. Deactivate (above) is still the tool for
+     * removing a branch that HAS been used — functional requirements
+     * §14.1 is explicit that deactivating must leave historical data
+     * intact and reportable, which a hard delete cascading through
+     * NOT NULL branch_id foreign keys could never do.
+     *
+     * Existing BranchAssignment rows ARE removed as part of this — unlike
+     * attendance/plans/sessions, an assignment isn't a historical fact
+     * worth preserving, just current Coach/Staff placement, so requiring
+     * the Owner to manually unassign everyone first would be pure
+     * friction with no data-integrity benefit.
+     */
+    public function delete(Branch $branch): void
+    {
+        if ($branch->isPrimary()) {
+            throw new BranchDeletionConflictException('primary_branch', 'The primary branch cannot be deleted.');
+        }
+
+        if ($this->attendanceLogs->existsForBranch($branch)
+            || $this->membershipPlans->existsForBranch($branch)
+            || $this->ptSessions->existsForBranch($branch)
+        ) {
+            throw new BranchDeletionConflictException(
+                'branch_in_use',
+                'This branch has attendance, plans, or PT sessions recorded against it and cannot be deleted. Deactivate it instead.',
+            );
+        }
+
+        foreach ($this->assignments->findByBranch($branch) as $assignment) {
+            $this->em->remove($assignment);
+        }
+        $this->em->remove($branch);
         $this->em->flush();
     }
 

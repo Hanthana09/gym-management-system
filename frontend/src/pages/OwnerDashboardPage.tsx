@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input, Select, Ticket } from '../components/ui'
+import { Button, Card, Input, Pagination, Select, Tabs, Ticket } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
+import { usePagination } from '../lib/usePagination'
 import { useLiveAttendanceCount } from '../attendance/useLiveAttendanceCount'
 import { useAttendanceReport } from '../attendance/useAttendanceReport'
 import { useDashboardSummary } from '../analytics/useDashboardSummary'
@@ -32,6 +33,18 @@ const HORIZON_OPTIONS: { value: string; label: string }[] = [
   { value: '90', label: '90 days' },
 ]
 
+/** Both the Attendance and At-risk members tabs paginate at this size — long lists were hard to scan before this. */
+const PAGE_SIZE = 20
+
+type DashboardTab = 'attendance' | 'revenue' | 'retention' | 'export'
+
+const DASHBOARD_TABS: { value: DashboardTab; label: string }[] = [
+  { value: 'attendance', label: 'Attendance' },
+  { value: 'revenue', label: 'Revenue' },
+  { value: 'retention', label: 'At-risk members' },
+  { value: 'export', label: 'Export' },
+]
+
 /**
  * roadmap Phase 5 (live counter + date-range report) extended in Phase 11
  * with the aggregated trend/forecast/retention/export views — "Dashboard:
@@ -39,6 +52,13 @@ const HORIZON_OPTIONS: { value: string; label: string }[] = [
  * roadmap, rather than a separate screen. Every number and chart below
  * REPORT_VIEW-gates through ReportVoter server-side; this page just
  * renders what the API already scoped to the Owner's own gym.
+ *
+ * The three "today" stat cards stay always visible above the tabs — the
+ * roadmap's own framing is "live counters alongside the aggregated
+ * views," i.e. at-a-glance context, not something to bury a click away.
+ * Everything below (date-range attendance, forecast, retention, export)
+ * was a long vertical stack of unrelated sections; tabs group each into
+ * its own view instead.
  */
 export function OwnerDashboardPage() {
   const { branches } = useBranches()
@@ -46,11 +66,28 @@ export function OwnerDashboardPage() {
   // (null), not a single branch — the opposite default from front-desk
   // check-in / plans / PT booking, which default to the primary branch.
   const [branchId, setBranchId] = useState<string | null>(null)
+  const [tab, setTab] = useState<DashboardTab>('attendance')
   const liveCount = useLiveAttendanceCount()
   const { summary } = useDashboardSummary(branchId)
   const [from, setFrom] = useState(daysAgo(7))
   const [to, setTo] = useState(today())
   const { entries, dailyCounts, loading } = useAttendanceReport(from, to, branchId)
+  const {
+    page: entriesPage,
+    pageCount: entriesPageCount,
+    paged: pagedEntries,
+    rangeStart: entriesRangeStart,
+    rangeEnd: entriesRangeEnd,
+    total: entriesTotal,
+    setPage: setEntriesPage,
+  } = usePagination(entries, PAGE_SIZE)
+
+  // A new date range/branch can shrink the result set or just reorder it
+  // entirely — always land back on page 1 rather than risk stranding the
+  // Owner on a now-empty or now-mismatched page.
+  useEffect(() => {
+    setEntriesPage(1)
+  }, [from, to, branchId, setEntriesPage])
 
   return (
     <div className="h-dvh">
@@ -83,50 +120,68 @@ export function OwnerDashboardPage() {
             </Card>
           </div>
 
-          <Card>
-            <h2 className="mb-3 text-base font-semibold text-ink">Attendance report</h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-              <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </div>
+          <Tabs items={DASHBOARD_TABS} value={tab} onChange={(value) => setTab(value as DashboardTab)} />
 
-            {loading ? (
-              <p className="mt-4 text-sm text-ink-soft">Loading…</p>
-            ) : (
-              <>
-                {/* functional requirements §10.2: "check-in counts per day... as a chart." */}
-                <div className="mt-4">
-                  <AttendanceTrendChart data={dailyCounts} />
-                </div>
+          {tab === 'attendance' ? (
+            <Card>
+              <h2 className="mb-3 text-base font-semibold text-ink">Attendance report</h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+                <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+              </div>
 
-                {entries.length === 0 ? (
-                  <p className="mt-4 text-sm text-ink-soft">No check-ins in this range.</p>
-                ) : (
-                  <ul className="mt-4 flex flex-col gap-3">
-                    {entries.map((entry) => (
-                      <li key={entry.id}>
-                        <Ticket className="flex items-center justify-between text-sm">
-                          <span className="font-medium text-ink">{entry.memberName}</span>
-                          <span className="font-mono text-xs text-ink-soft">
-                            {new Date(entry.checkInAt).toLocaleString([], {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </Ticket>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </Card>
+              {loading ? (
+                <p className="mt-4 text-sm text-ink-soft">Loading…</p>
+              ) : (
+                <>
+                  {/* functional requirements §10.2: "check-in counts per day... as a chart." */}
+                  <div className="mt-4">
+                    <AttendanceTrendChart data={dailyCounts} />
+                  </div>
 
-          <RevenueForecastCard branchId={branchId} />
-          <RetentionCard branchId={branchId} />
-          <ExportCard from={from} to={to} branchId={branchId} />
+                  {entries.length === 0 ? (
+                    <p className="mt-4 text-sm text-ink-soft">No check-ins in this range.</p>
+                  ) : (
+                    <>
+                      <ul className="mt-4 flex flex-col gap-3">
+                        {pagedEntries.map((entry) => (
+                          <li key={entry.id}>
+                            <Ticket className="flex items-center justify-between text-sm">
+                              <span className="font-medium text-ink">{entry.memberName}</span>
+                              <span className="font-mono text-xs text-ink-soft">
+                                {new Date(entry.checkInAt).toLocaleString([], {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </Ticket>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="mt-4">
+                        <Pagination
+                          page={entriesPage}
+                          pageCount={entriesPageCount}
+                          rangeStart={entriesRangeStart}
+                          rangeEnd={entriesRangeEnd}
+                          total={entriesTotal}
+                          onChange={setEntriesPage}
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </Card>
+          ) : tab === 'revenue' ? (
+            <RevenueForecastCard branchId={branchId} />
+          ) : tab === 'retention' ? (
+            <RetentionCard branchId={branchId} />
+          ) : (
+            <ExportCard from={from} to={to} branchId={branchId} />
+          )}
         </div>
       </NavShell>
     </div>
@@ -172,6 +227,14 @@ function RevenueForecastCard({ branchId }: { branchId: string | null }) {
 /** functional requirements §10.4: each at-risk member with their specific reason(s), never a bare score. */
 function RetentionCard({ branchId }: { branchId: string | null }) {
   const { members, loaded } = useRetention(branchId)
+  const { page, pageCount, paged, rangeStart, rangeEnd, total, setPage } = usePagination(members, PAGE_SIZE)
+
+  // A branch change can shrink the result set or reorder it entirely —
+  // always land back on page 1 rather than risk stranding the Owner on a
+  // now-empty or now-mismatched page.
+  useEffect(() => {
+    setPage(1)
+  }, [branchId, setPage])
 
   return (
     <Card>
@@ -181,20 +244,25 @@ function RetentionCard({ branchId }: { branchId: string | null }) {
       ) : members.length === 0 ? (
         <p className="py-6 text-center text-sm text-ink-soft">No one's showing risk signals right now.</p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {members.map((member) => (
-            <li key={member.memberId}>
-              <Ticket>
-                <p className="text-sm font-medium text-ink">{member.memberName}</p>
-                <ul className="mt-1.5 list-inside list-disc text-sm text-ink-soft">
-                  {member.reasons.map((reason) => (
-                    <li key={reason}>{reason}</li>
-                  ))}
-                </ul>
-              </Ticket>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="flex flex-col gap-3">
+            {paged.map((member) => (
+              <li key={member.memberId}>
+                <Ticket>
+                  <p className="text-sm font-medium text-ink">{member.memberName}</p>
+                  <ul className="mt-1.5 list-inside list-disc text-sm text-ink-soft">
+                    {member.reasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                </Ticket>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4">
+            <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
+          </div>
+        </>
       )}
     </Card>
   )

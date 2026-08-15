@@ -89,6 +89,18 @@ class AttendanceLogRepository extends ServiceEntityRepository
         return $this->findBy(['member' => $member], ['checkIn' => 'DESC']);
     }
 
+    /** Branch delete facility: a branch with any attendance ever recorded against it can't be hard-deleted (functional requirements §14.1 — history must stay reportable). */
+    public function existsForBranch(Branch $branch): bool
+    {
+        return $this->createQueryBuilder('a')
+            ->select('1')
+            ->andWhere('a.branch = :branch')
+            ->setParameter('branch', $branch)
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult() !== null;
+    }
+
     /**
      * Top-bar check-in timer feature: "today's active session" (a member
      * still checked in — no checkOut yet). Scoped to today so a session

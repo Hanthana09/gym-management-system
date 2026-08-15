@@ -22,6 +22,14 @@ use League\Flysystem\FilesystemOperator;
  * required by functional requirements §12.1 ("when a Member views the
  * app, the branding appears on the nav header") — every authenticated
  * role needs to read it, not just the Owner who sets it.
+ *
+ * `name` was added directly on request, on this same endpoint rather
+ * than a new one — it isn't a "branding/white-label" concern the way
+ * logo/brandColor are (DESIGN-SYSTEM.md §4.1's bounded-customization
+ * rule doesn't apply to it at all), but it's the same "Owner-writable,
+ * everyone-readable, shown in NavShell" shape, so it reuses the same
+ * Voter check and read-for-all GET rather than standing up a parallel
+ * identity-settings endpoint for one field.
  */
 class GymBrandingController extends AbstractController
 {
@@ -47,6 +55,7 @@ class GymBrandingController extends AbstractController
         $gym = $this->gyms->findTheOnlyGym();
 
         return new JsonResponse([
+            'name' => $gym?->getName(),
             'logoUrl' => $gym?->getLogoUrl(),
             'brandColor' => $gym?->getBrandColor(),
         ]);
@@ -68,6 +77,14 @@ class GymBrandingController extends AbstractController
 
         if (!$this->isGranted(GymVoter::MANAGE, $gym)) {
             return $this->forbidden();
+        }
+
+        if ($request->request->has('name')) {
+            $name = trim((string) $request->request->get('name'));
+            if ($name === '') {
+                return new JsonResponse(['error' => 'invalid_request', 'message' => 'name cannot be empty.'], 400);
+            }
+            $gym->setName($name);
         }
 
         if ($request->request->has('brandColor')) {
@@ -109,6 +126,7 @@ class GymBrandingController extends AbstractController
         $this->em()->flush();
 
         return new JsonResponse([
+            'name' => $gym->getName(),
             'logoUrl' => $gym->getLogoUrl(),
             'brandColor' => $gym->getBrandColor(),
         ]);

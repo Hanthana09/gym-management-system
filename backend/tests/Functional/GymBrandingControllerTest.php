@@ -62,6 +62,47 @@ final class GymBrandingControllerTest extends WebTestCase
         return new UploadedFile($path, 'logo.png', $mimeType, null, true);
     }
 
+    public function test_owner_can_set_the_gym_name(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+
+        $this->client->request('PATCH', '/gym/branding', ['name' => 'Iron Temple Gym'], [], $this->authHeaders($owner));
+        $result = json_decode($this->client->getResponse()->getContent(), true);
+
+        self::assertSame(200, $this->client->getResponse()->getStatusCode());
+        self::assertSame('Iron Temple Gym', $result['name']);
+    }
+
+    public function test_an_empty_gym_name_is_rejected_400(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+
+        $this->client->request('PATCH', '/gym/branding', ['name' => '   '], [], $this->authHeaders($owner));
+
+        self::assertSame(400, $this->client->getResponse()->getStatusCode());
+    }
+
+    public function test_coach_cannot_set_the_gym_name_403(): void
+    {
+        $coach = $this->createUser('Cara Coach', 'coach@example.com', UserRole::COACH);
+
+        $this->client->request('PATCH', '/gym/branding', ['name' => 'Hijacked Gym'], [], $this->authHeaders($coach));
+
+        self::assertSame(403, $this->client->getResponse()->getStatusCode());
+    }
+
+    public function test_member_sees_the_gym_name_once_set(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createUser('Mia Member', 'mia@example.com', UserRole::MEMBER);
+        $this->client->request('PATCH', '/gym/branding', ['name' => 'Iron Temple Gym'], [], $this->authHeaders($owner));
+
+        $this->client->request('GET', '/gym/branding', server: $this->authHeaders($member));
+        $result = json_decode($this->client->getResponse()->getContent(), true);
+
+        self::assertSame('Iron Temple Gym', $result['name']);
+    }
+
     public function test_owner_can_set_brand_color(): void
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);

@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Branch\BranchAssignmentConflictException;
+use App\Branch\BranchDeletionConflictException;
 use App\Branch\BranchService;
 use App\Entity\Branch;
 use App\Entity\User;
@@ -110,6 +111,38 @@ class BranchController extends AbstractController
         }
 
         return new JsonResponse($this->serialize($branch));
+    }
+
+    /**
+     * Branch delete facility: a genuine hard delete, but only ever for a
+     * branch BranchService confirms has never actually been used (no
+     * attendance/plans/PT sessions) and isn't the primary branch — see
+     * that method's own docblock for why. Anything else stays a 409
+     * pointing back at Deactivate, which already exists for this.
+     */
+    #[Route('/branches/{id}', name: 'branches_delete', methods: ['DELETE'])]
+    public function delete(string $id): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $branch = $this->branches->find($id);
+        if ($branch === null) {
+            return $this->notFound('Branch not found.');
+        }
+        if (!$this->isGranted(BranchVoter::MANAGE, $branch)) {
+            return $this->forbidden();
+        }
+
+        try {
+            $this->branchService->delete($branch);
+        } catch (BranchDeletionConflictException $exception) {
+            return new JsonResponse(['error' => $exception->reason, 'message' => $exception->getMessage()], 409);
+        }
+
+        return new JsonResponse(null, 204);
     }
 
     /** Owner-only source for the assignment picker: every active Coach/Staff account (roadmap Phase 16, not in §7's representative list but required for the assignment UI to be usable). */
