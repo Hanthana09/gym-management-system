@@ -10,6 +10,7 @@ use App\Enum\UserRole;
 use App\Gym\GymProvisioningService;
 use App\Notification\AnnouncementService;
 use App\Notification\NotificationService;
+use App\Repository\BranchRepository;
 use App\Repository\GymRepository;
 use App\Repository\NotificationRepository;
 use App\Security\Voter\AnnouncementVoter;
@@ -28,6 +29,7 @@ class NotificationController extends AbstractController
         private readonly NotificationRepository $notificationRepository,
         private readonly GymProvisioningService $gymProvisioning,
         private readonly GymRepository $gyms,
+        private readonly BranchRepository $branches,
     ) {
     }
 
@@ -110,11 +112,26 @@ class NotificationController extends AbstractController
             return $this->notFound('No gym found for this account.');
         }
 
+        // roadmap Phase 16 / functional requirements §14: an explicit
+        // branchId targets one branch; omitting it means gym-wide — unlike
+        // every other Phase 16 retrofit, there's no "default to primary"
+        // here, since null vs. a branch id are both genuine, different
+        // choices an Owner can make (functional requirements §14.5's same
+        // "all branches" vs. "one branch" distinction for reports).
+        $branchId = isset($data['branchId']) ? (string) $data['branchId'] : null;
+        $branch = null;
+        if ($branchId !== null && $branchId !== '') {
+            $branch = $this->branches->find($branchId);
+            if ($branch === null || $branch->getGym() !== $gym) {
+                return new JsonResponse(['error' => 'invalid_request', 'message' => 'branchId does not belong to this gym.'], 400);
+            }
+        }
+
         // architecture doc §9.1's AnnouncementVoter::CREATE expects an
         // actual Announcement subject; this candidate exercises the real
         // check (Owner always passes for gym_wide, Coach only for
         // own_clients, Member always fails).
-        $candidate = new Announcement($gym, $user, $body, $audience);
+        $candidate = new Announcement($gym, $user, $body, $audience, $branch);
         if (!$this->isGranted(AnnouncementVoter::CREATE, $candidate)) {
             return $this->forbidden();
         }
@@ -125,6 +142,7 @@ class NotificationController extends AbstractController
             'id' => (string) $result['announcement']->getId(),
             'body' => $result['announcement']->getBody(),
             'audience' => $result['announcement']->getAudience()->value,
+            'branchId' => $result['announcement']->getBranch() !== null ? (string) $result['announcement']->getBranch()->getId() : null,
             'createdAt' => $result['announcement']->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'recipientCount' => $result['recipientCount'],
         ], 201);

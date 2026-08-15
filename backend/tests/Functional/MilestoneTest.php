@@ -4,6 +4,8 @@ namespace App\Tests\Functional;
 
 use App\Attendance\StreakCalculator;
 use App\Entity\AttendanceLog;
+use App\Entity\Branch;
+use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\User;
 use App\Enum\CheckInMethod;
@@ -90,9 +92,38 @@ final class MilestoneTest extends WebTestCase
 
     private function backdateCheckIn(MemberProfile $member, int $daysAgo): void
     {
-        $log = new AttendanceLog($member, new \DateTimeImmutable("-{$daysAgo} days"), CheckInMethod::MANUAL);
+        $log = new AttendanceLog($member, $this->primaryBranch(), new \DateTimeImmutable("-{$daysAgo} days"), CheckInMethod::MANUAL);
         $this->em->persist($log);
         $this->em->flush();
+    }
+
+    /**
+     * Some tests here only exercise StreakCalculator directly (no HTTP
+     * request, so no gym is ever lazily provisioned); others go through
+     * createPlanAndEnroll() first, whose HTTP request runs against a
+     * different (rebooted-kernel) EntityManager than $this->em. Always
+     * re-fetching (or creating) through $this->em specifically — never
+     * mixing in static::getContainer()'s repositories — is what avoids
+     * Doctrine's "new entity found through relationship, not configured
+     * to cascade persist" error when persisting the AttendanceLog below.
+     */
+    private function primaryBranch(): Branch
+    {
+        $gym = $this->em->getRepository(Gym::class)->findOneBy([]);
+        if ($gym === null) {
+            $owner = $this->createUser('Test Owner', 'test-owner-' . bin2hex(random_bytes(4)) . '@example.com', UserRole::OWNER);
+            $gym = new Gym('Test Gym', '', $owner);
+            $this->em->persist($gym);
+        }
+
+        $branch = $this->em->getRepository(Branch::class)->findOneBy(['gym' => $gym, 'isPrimary' => true]);
+        if ($branch === null) {
+            $branch = new Branch($gym, 'Main', '', isPrimary: true);
+            $this->em->persist($branch);
+        }
+        $this->em->flush();
+
+        return $branch;
     }
 
     private function memberProfile(User $user): MemberProfile

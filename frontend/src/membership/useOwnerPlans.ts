@@ -9,16 +9,23 @@ export interface PlanInput {
   features: string[]
 }
 
-export function useOwnerPlans() {
+/**
+ * roadmap Phase 16: plans are branch-scoped — "which branch's plans am I
+ * editing," per the roadmap's own framing. `branchId` omitted (or null)
+ * means the gym's primary branch, same default the backend applies — a
+ * single-branch gym's screen behaves exactly as it did before this phase.
+ */
+export function useOwnerPlans(branchId?: string | null) {
   const { authFetch } = useAuth()
   const [plans, setPlans] = useState<MembershipPlanDto[]>([])
   const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(async () => {
-    const data = await authFetch<{ plans: MembershipPlanDto[] }>('/membership-plans', { method: 'GET' })
+    const query = branchId ? `?branchId=${branchId}` : ''
+    const data = await authFetch<{ plans: MembershipPlanDto[]; branchId: string }>(`/membership-plans${query}`, { method: 'GET' })
     setPlans(data.plans)
     setLoaded(true)
-  }, [authFetch])
+  }, [authFetch, branchId])
 
   useEffect(() => {
     void refresh()
@@ -26,12 +33,12 @@ export function useOwnerPlans() {
 
   const createPlan = useCallback(
     async (input: PlanInput) => {
-      const plan = await authFetch<MembershipPlanDto>('/membership-plans', { body: input })
+      const plan = await authFetch<MembershipPlanDto>('/membership-plans', { body: { ...input, branchId } })
       setPlans((prev) => [...prev, plan])
 
       return plan
     },
-    [authFetch],
+    [authFetch, branchId],
   )
 
   const updatePlan = useCallback(
@@ -52,5 +59,5 @@ export function useOwnerPlans() {
     [authFetch],
   )
 
-  return { plans, loaded, createPlan, updatePlan, deletePlan }
+  return { plans, loaded, refresh, createPlan, updatePlan, deletePlan }
 }

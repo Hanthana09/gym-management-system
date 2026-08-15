@@ -2,11 +2,13 @@
 
 namespace App\Repository;
 
+use App\Entity\Branch;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
 use App\Enum\MembershipStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -90,9 +92,9 @@ class MembershipRepository extends ServiceEntityRepository
      * as "never active" for historical counting is the honest choice —
      * see DailyMetricAggregator's own docblock for the fuller reasoning.
      */
-    public function countWithinTermOnDate(\DateTimeImmutable $date): int
+    public function countWithinTermOnDate(\DateTimeImmutable $date, ?Branch $branch = null): int
     {
-        return (int) $this->createQueryBuilder('m')
+        return (int) $this->withBranch($this->createQueryBuilder('m'), $branch)
             ->select('COUNT(m.id)')
             ->andWhere('m.status != :cancelled')
             ->andWhere('m.startDate <= :date')
@@ -104,9 +106,9 @@ class MembershipRepository extends ServiceEntityRepository
     }
 
     /** New enrollments on a given day — start_date is set once at enroll() and never changes. */
-    public function countStartedOnDate(\DateTimeImmutable $date): int
+    public function countStartedOnDate(\DateTimeImmutable $date, ?Branch $branch = null): int
     {
-        return (int) $this->createQueryBuilder('m')
+        return (int) $this->withBranch($this->createQueryBuilder('m'), $branch)
             ->select('COUNT(m.id)')
             ->andWhere('m.startDate = :date')
             ->setParameter('date', $date)
@@ -115,9 +117,9 @@ class MembershipRepository extends ServiceEntityRepository
     }
 
     /** Cancellations recorded on a given day (only meaningful since Membership::cancelledAt started being set — see its docblock). */
-    public function countCancelledOnDate(\DateTimeImmutable $date): int
+    public function countCancelledOnDate(\DateTimeImmutable $date, ?Branch $branch = null): int
     {
-        return (int) $this->createQueryBuilder('m')
+        return (int) $this->withBranch($this->createQueryBuilder('m'), $branch)
             ->select('COUNT(m.id)')
             ->andWhere('m.cancelledAt >= :start')
             ->andWhere('m.cancelledAt < :end')
@@ -125,6 +127,18 @@ class MembershipRepository extends ServiceEntityRepository
             ->setParameter('end', $date->modify('+1 day'))
             ->getQuery()
             ->getSingleScalarResult();
+    }
+
+    /** roadmap Phase 16: joins through the plan to filter by branch — MEMBERSHIP itself has no branch_id, only MEMBERSHIP_PLAN does. */
+    private function withBranch(QueryBuilder $qb, ?Branch $branch): QueryBuilder
+    {
+        if ($branch !== null) {
+            $qb->innerJoin('m.plan', 'p')
+                ->andWhere('p.branch = :branch')
+                ->setParameter('branch', $branch);
+        }
+
+        return $qb;
     }
 
     /** Earliest enrollment on record — DailyMetricAggregator's backfill start bound. */
@@ -146,9 +160,9 @@ class MembershipRepository extends ServiceEntityRepository
      *
      * @return Membership[]
      */
-    public function findWithinTermAsOf(\DateTimeImmutable $asOf): array
+    public function findWithinTermAsOf(\DateTimeImmutable $asOf, ?Branch $branch = null): array
     {
-        return $this->createQueryBuilder('m')
+        return $this->withBranch($this->createQueryBuilder('m'), $branch)
             ->andWhere('m.status != :cancelled')
             ->andWhere('m.startDate <= :asOf')
             ->andWhere('m.endDate >= :asOf')

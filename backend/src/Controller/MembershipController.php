@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Branch\BranchResolver;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
 use App\Entity\User;
@@ -27,11 +28,13 @@ class MembershipController extends AbstractController
         private readonly MembershipRepository $membershipRepository,
         private readonly MemberProfileRepository $memberProfiles,
         private readonly GymProvisioningService $gymProvisioning,
+        private readonly BranchResolver $branches,
     ) {
     }
 
     // ---- Plan CRUD (Owner) -------------------------------------------------
 
+    /** roadmap Phase 16: plans are branch-scoped — an optional `branchId` picks which branch this plan belongs to, defaulting to the gym's primary branch (so a single-branch gym's callers need no change at all). */
     #[Route('/membership-plans', name: 'membership_plans_create', methods: ['POST'])]
     public function createPlan(Request $request): JsonResponse
     {
@@ -47,27 +50,39 @@ class MembershipController extends AbstractController
         }
 
         $gym = $this->gymProvisioning->ensureGymForOwner($user);
-        $candidate = new MembershipPlan($gym, $name, $price, $durationDays, $features);
+        $branch = $this->branches->resolve($gym, isset($data['branchId']) ? (string) $data['branchId'] : null);
+        if ($branch === null) {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'branchId does not belong to this gym.'], 400);
+        }
+
+        $candidate = new MembershipPlan($branch, $name, $price, $durationDays, $features);
         if (!$this->isGranted(MembershipVoter::MANAGE, $candidate)) {
             return $this->forbidden();
         }
 
-        $plan = $this->memberships->createPlan($user, $name, $price, $durationDays, $features);
+        $plan = $this->memberships->createPlan($branch, $name, $price, $durationDays, $features);
 
         return new JsonResponse($this->serializePlan($plan), 201);
     }
 
+    /** `?branchId=` picks a specific branch's plans; omitted defaults to the primary branch — same "which branch am I editing" scoping as createPlan(). */
     #[Route('/membership-plans', name: 'membership_plans_list', methods: ['GET'])]
-    public function listPlans(): JsonResponse
+    public function listPlans(Request $request): JsonResponse
     {
         $user = $this->getUser();
         if (!$user instanceof User) {
             return $this->unauthenticated();
         }
 
-        $plans = array_map(fn (MembershipPlan $plan) => $this->serializePlan($plan), $this->memberships->listPlansForOwner($user));
+        $gym = $this->gymProvisioning->ensureGymForOwner($user);
+        $branch = $this->branches->resolve($gym, $request->query->get('branchId'));
+        if ($branch === null) {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'branchId does not belong to this gym.'], 400);
+        }
 
-        return new JsonResponse(['plans' => $plans]);
+        $plans = array_map(fn (MembershipPlan $plan) => $this->serializePlan($plan), $this->memberships->listPlansForBranch($branch));
+
+        return new JsonResponse(['plans' => $plans, 'branchId' => (string) $branch->getId()]);
     }
 
     #[Route('/membership-plans/{id}', name: 'membership_plans_update', methods: ['PATCH'])]
@@ -267,6 +282,7 @@ class MembershipController extends AbstractController
     {
         return [
             'id' => (string) $plan->getId(),
+            'branchId' => (string) $plan->getBranch()->getId(),
             'name' => $plan->getName(),
             'price' => $plan->getPrice(),
             'durationDays' => $plan->getDurationDays(),

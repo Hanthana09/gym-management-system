@@ -2,6 +2,7 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\Branch;
 use App\Entity\CoachProfile;
 use App\Entity\Gym;
 use App\Entity\Invitation;
@@ -53,9 +54,15 @@ final class AnnouncementControllerTest extends WebTestCase
         $owner = $this->createUser($name, $email, UserRole::OWNER);
         $gym = new Gym($name . "'s Gym", '', $owner);
         $this->em->persist($gym);
+        $this->em->persist(new Branch($gym, $name . "'s Gym", '', isPrimary: true));
         $this->em->flush();
 
         return [$owner, $gym];
+    }
+
+    private function primaryBranchOf(Gym $gym): Branch
+    {
+        return $this->em->getRepository(Branch::class)->findOneBy(['gym' => $gym, 'isPrimary' => true]);
     }
 
     /** Approved invitation is the only thing that links a Coach/Member to a specific gym (see InvitationRepository::findApprovedUsersForGym). */
@@ -162,7 +169,7 @@ final class AnnouncementControllerTest extends WebTestCase
         // "Client of A" is established the same way Phase 6 does: a PT session with that coach.
         $coachAProfile = $this->em->getRepository(CoachProfile::class)->findOneBy(['user' => $coachA]);
         $clientProfile = $this->em->getRepository(MemberProfile::class)->findOneBy(['user' => $clientOfA]);
-        $this->em->persist(new PtSession($coachAProfile, $clientProfile, new \DateTimeImmutable('+1 day'), 60));
+        $this->em->persist(new PtSession($coachAProfile, $clientProfile, $this->primaryBranchOf($gym), new \DateTimeImmutable('+1 day'), 60));
         $this->em->flush();
 
         $result = $this->request('POST', '/announcements', $coachA, ['body' => 'New PT slots open.', 'audience' => 'own_clients']);
@@ -216,5 +223,96 @@ final class AnnouncementControllerTest extends WebTestCase
         self::assertCount(1, $this->notificationsFor($memberA));
         self::assertCount(0, $this->notificationsFor($memberB));
         self::assertCount(0, $this->notificationsFor($ownerB));
+    }
+
+    // ---- Branch targeting (roadmap Phase 16 / functional requirements §14) ----
+
+    /**
+     * The actual point of adding a branch option: a branch-targeted
+     * announcement must reach only that branch's people, not the whole
+     * gym — otherwise "target one branch" would be UI decoration with no
+     * real effect.
+     */
+    public function test_given_owner_targets_one_branch_when_sent_then_only_that_branchs_people_notified(): void
+    {
+        [$owner, $gym] = $this->createOwnerWithGym('Olivia Owner', 'owner@example.com');
+        $primaryBranch = $this->primaryBranchOf($gym);
+        $secondBranch = new Branch($gym, 'Downtown', '1 Main St');
+        $this->em->persist($secondBranch);
+        $this->em->flush();
+
+        $memberAtPrimary = $this->createUser('Member Primary', 'primary@example.com', UserRole::MEMBER);
+        $memberAtSecond = $this->createUser('Member Downtown', 'downtown@example.com', UserRole::MEMBER);
+        $coachAtPrimary = $this->createUser('Coach Primary', 'coachprimary@example.com', UserRole::COACH);
+        $coachAtSecond = $this->createUser('Coach Downtown', 'coachdowntown@example.com', UserRole::COACH);
+        $this->approveInto($gym, $owner, $memberAtPrimary, InvitationRole::MEMBER);
+        $this->approveInto($gym, $owner, $memberAtSecond, InvitationRole::MEMBER);
+        $this->approveInto($gym, $owner, $coachAtPrimary, InvitationRole::COACH);
+        $this->approveInto($gym, $owner, $coachAtSecond, InvitationRole::COACH);
+
+        $this->em->persist(new \App\Entity\BranchAssignment($coachAtPrimary, $primaryBranch));
+        $this->em->persist(new \App\Entity\BranchAssignment($coachAtSecond, $secondBranch));
+        $this->enrollAt($memberAtPrimary, $primaryBranch);
+        $this->enrollAt($memberAtSecond, $secondBranch);
+        $this->em->flush();
+
+        $result = $this->request('POST', '/announcements', $owner, [
+            'body' => 'Primary branch closes early today.',
+            'audience' => 'gym_wide',
+            'branchId' => (string) $primaryBranch->getId(),
+        ]);
+
+        self::assertSame(201, $result['status']);
+        self::assertSame((string) $primaryBranch->getId(), $result['body']['branchId']);
+        self::assertSame(2, $result['body']['recipientCount']);
+
+        self::assertCount(1, $this->notificationsFor($memberAtPrimary));
+        self::assertCount(1, $this->notificationsFor($coachAtPrimary));
+        self::assertCount(0, $this->notificationsFor($memberAtSecond));
+        self::assertCount(0, $this->notificationsFor($coachAtSecond));
+    }
+
+    public function test_omitting_branch_id_is_gym_wide_across_both_branches(): void
+    {
+        [$owner, $gym] = $this->createOwnerWithGym('Olivia Owner', 'owner@example.com');
+        $secondBranch = new Branch($gym, 'Downtown', '1 Main St');
+        $this->em->persist($secondBranch);
+        $this->em->flush();
+
+        $memberAtPrimary = $this->createUser('Member Primary', 'primary@example.com', UserRole::MEMBER);
+        $memberAtSecond = $this->createUser('Member Downtown', 'downtown@example.com', UserRole::MEMBER);
+        $this->approveInto($gym, $owner, $memberAtPrimary, InvitationRole::MEMBER);
+        $this->approveInto($gym, $owner, $memberAtSecond, InvitationRole::MEMBER);
+        $this->enrollAt($memberAtPrimary, $this->primaryBranchOf($gym));
+        $this->enrollAt($memberAtSecond, $secondBranch);
+        $this->em->flush();
+
+        $result = $this->request('POST', '/announcements', $owner, ['body' => 'Gym-wide update.', 'audience' => 'gym_wide']);
+
+        self::assertSame(201, $result['status']);
+        self::assertNull($result['body']['branchId']);
+        self::assertSame(2, $result['body']['recipientCount']);
+    }
+
+    public function test_a_branch_id_from_a_different_gym_is_rejected_400(): void
+    {
+        [$owner, $gym] = $this->createOwnerWithGym('Olivia Owner', 'owner@example.com');
+        [, $otherGym] = $this->createOwnerWithGym('Other Owner', 'other@example.com');
+
+        $result = $this->request('POST', '/announcements', $owner, [
+            'body' => 'Hi',
+            'audience' => 'gym_wide',
+            'branchId' => (string) $this->primaryBranchOf($otherGym)->getId(),
+        ]);
+
+        self::assertSame(400, $result['status']);
+    }
+
+    private function enrollAt(User $memberUser, Branch $branch): void
+    {
+        $memberProfile = $this->em->getRepository(MemberProfile::class)->findOneBy(['user' => $memberUser]);
+        $plan = new \App\Entity\MembershipPlan($branch, 'Standard', '49.99', 30, []);
+        $this->em->persist($plan);
+        $this->em->persist(new \App\Entity\Membership($memberProfile, $plan, new \DateTimeImmutable('today'), new \DateTimeImmutable('+30 days')));
     }
 }

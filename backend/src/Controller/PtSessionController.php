@@ -2,6 +2,7 @@
 
 namespace App\Controller;
 
+use App\Branch\BranchResolver;
 use App\Entity\CoachProfile;
 use App\Entity\PtSession;
 use App\Entity\User;
@@ -9,6 +10,7 @@ use App\Enum\UserRole;
 use App\PersonalTraining\PtSessionConflictException;
 use App\PersonalTraining\PtSessionService;
 use App\Repository\CoachProfileRepository;
+use App\Repository\GymRepository;
 use App\Repository\MemberProfileRepository;
 use App\Repository\PtSessionRepository;
 use App\Security\Voter\PtSessionVoter;
@@ -25,6 +27,8 @@ class PtSessionController extends AbstractController
         private readonly PtSessionRepository $sessionRepository,
         private readonly CoachProfileRepository $coachProfiles,
         private readonly MemberProfileRepository $memberProfiles,
+        private readonly GymRepository $gyms,
+        private readonly BranchResolver $branches,
     ) {
     }
 
@@ -36,17 +40,24 @@ class PtSessionController extends AbstractController
      * 404 on every subsequent action (see CoachProfileRepository::findAllWithActiveUser).
      */
     #[Route('/coaches', name: 'coaches_list', methods: ['GET'])]
-    public function listCoaches(): JsonResponse
+    public function listCoaches(Request $request): JsonResponse
     {
         $user = $this->getUser();
         if (!$user instanceof User) {
             return $this->unauthenticated();
         }
 
+        // functional requirements §14.3: filtered to coaches assigned to
+        // the branch the Member is booking at — same default-to-primary
+        // as /pt-sessions itself, so a single-branch gym's picker is
+        // unchanged (everyone's backfilled onto the one branch anyway).
+        $gym = $this->gyms->findTheOnlyGym();
+        $branch = $gym !== null ? $this->branches->resolve($gym, $request->query->get('branchId')) : null;
+
         $coaches = array_map(fn (CoachProfile $coach) => [
             'id' => (string) $coach->getUser()->getId(),
             'name' => $coach->getUser()->getName(),
-        ], $this->coachProfiles->findAllWithActiveUser());
+        ], $this->coachProfiles->findAllWithActiveUser($branch));
 
         return new JsonResponse(['coaches' => $coaches]);
     }
@@ -106,6 +117,7 @@ class PtSessionController extends AbstractController
         return new JsonResponse(['sessions' => $sessions]);
     }
 
+    /** functional requirements §14.3: a Member can pick any branch where at least one Coach is assigned — not just their own enrolling branch. branchId defaults to the primary branch (single-branch gyms need no change at all). */
     #[Route('/pt-sessions', name: 'pt_sessions_create', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
@@ -136,6 +148,24 @@ class PtSessionController extends AbstractController
             return $this->notFound('Coach not found.');
         }
 
+        $gym = $this->gyms->findTheOnlyGym();
+        $branch = $gym !== null ? $this->branches->resolve($gym, $data['branchId'] ?? null) : null;
+        if ($branch === null) {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'branchId does not belong to this gym.'], 400);
+        }
+
+        // A session referencing a branch the Coach isn't assigned to would
+        // leave PtSessionVoter::RESPOND permanently unsatisfiable for them
+        // (see that Voter's own docblock) — reject it here, at the one
+        // place a session's branch is actually chosen, rather than let a
+        // Coach discover it only when trying to respond.
+        if (!$coach->getUser()->getBranchAssignments()->exists(fn ($k, $a) => $a->getBranch() === $branch)) {
+            return new JsonResponse([
+                'error' => 'coach_not_at_branch',
+                'message' => 'This coach is not assigned to the selected branch.',
+            ], 400);
+        }
+
         try {
             $scheduledAt = new \DateTimeImmutable($scheduledAtRaw);
         } catch (\Exception) {
@@ -145,12 +175,12 @@ class PtSessionController extends AbstractController
         // architecture doc §9.1's PtSessionVoter::REQUEST expects an actual
         // PtSession subject; this candidate exercises the real check (a
         // Member always passes for themselves, anyone else always fails).
-        $candidate = new PtSession($coach, $member, $scheduledAt, $durationMinutes);
+        $candidate = new PtSession($coach, $member, $branch, $scheduledAt, $durationMinutes);
         if (!$this->isGranted(PtSessionVoter::REQUEST, $candidate)) {
             return $this->forbidden();
         }
 
-        $session = $this->sessions->request($member, $coach, $scheduledAt, $durationMinutes);
+        $session = $this->sessions->request($member, $coach, $branch, $scheduledAt, $durationMinutes);
 
         return new JsonResponse($this->serialize($session, viewer: $user), 201);
     }
@@ -283,6 +313,7 @@ class PtSessionController extends AbstractController
             'id' => (string) $session->getId(),
             'coach' => ['id' => (string) $session->getCoach()->getUser()->getId(), 'name' => $session->getCoach()->getUser()->getName()],
             'member' => ['id' => (string) $session->getMember()->getUser()->getId(), 'name' => $session->getMember()->getUser()->getName()],
+            'branchId' => (string) $session->getBranch()->getId(),
             'scheduledAt' => $session->getScheduledAt()->format(\DateTimeInterface::ATOM),
             'durationMinutes' => $session->getDurationMinutes(),
             'status' => $session->getStatus()->value,

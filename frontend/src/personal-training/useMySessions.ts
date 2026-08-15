@@ -40,9 +40,9 @@ export function useMySessions() {
   }, [user, refresh])
 
   const requestSession = useCallback(
-    async (coachUserId: string, scheduledAt: string, durationMinutes: number) => {
+    async (coachUserId: string, scheduledAt: string, durationMinutes: number, branchId?: string | null) => {
       const session = await authFetch<PtSessionDto>('/pt-sessions', {
-        body: { coachUserId, scheduledAt, durationMinutes },
+        body: { coachUserId, scheduledAt, durationMinutes, branchId },
       })
       setSessions((prev) => [session, ...prev])
 

@@ -87,6 +87,14 @@ Owners can set a logo and one brand color (architecture doc §6.11). This is a *
 - **Where a gym's brand color *is* allowed to appear:** the membership Badge's accent stripe (§3's Badge pattern) specifically, and optionally the navigation header background/logo area. Both are places that reinforce "this is my gym's copy of the app," not places that change how the interface functions.
 - If a future request asks to expand this (e.g. "let gyms customize the whole color scheme"), that's a real product conversation to have explicitly — not something to grant incrementally by relaxing this rule one component at a time.
 
+## 4.2 Branch switcher pattern (Phase 16)
+
+A shared primitive, not a per-screen build — used anywhere branch context matters (reports filter, Owner's front-desk check-in, announcement composer's branch option, Coach/Staff's own branch-scoped views).
+
+- **Structure:** a compact pill/dropdown using the existing `Tag` pattern's visual language, listing the user's available branches plus an "All branches" option where applicable (Owner reports only — Staff/Coach don't get an "all branches" option since they're scoped by design).
+- **Default state:** the primary branch (`is_primary = true`) for single-branch gyms, or the user's first assigned branch for Coach/Staff. Owners on the reports screen default to the gym-wide rollup, not a single branch, since "how's my business doing" is the more common first question.
+- **Single-branch rule (ties to functional requirements §14.1):** if a gym has exactly one branch, this component **does not render at all** — not a disabled dropdown with one option, genuinely absent. A single-location Owner should never see UI chrome implying a feature they don't need.
+
 ## 5. Applying this to already-built phases
 
 Phases 1–4 were built before this doc existed, so they're on generic styling. Retrofitting is mechanical, not a redesign — same components, same structure, new tokens:

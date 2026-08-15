@@ -2,8 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import type { AttendanceEntryDto, DailyCheckinCountDto } from './types'
 
-/** functional requirements §4.2: "filter by date range." roadmap Phase 11 §10.2: adds the per-day trend alongside the existing entry list. */
-export function useAttendanceReport(from: string, to: string) {
+/**
+ * functional requirements §4.2: "filter by date range." roadmap Phase 11
+ * §10.2: adds the per-day trend alongside the existing entry list.
+ * `branchId` omitted/null means the gym-wide rollup (functional
+ * requirements §14.5).
+ */
+export function useAttendanceReport(from: string, to: string, branchId?: string | null) {
   const { authFetch } = useAuth()
   const [entries, setEntries] = useState<AttendanceEntryDto[]>([])
   const [dailyCounts, setDailyCounts] = useState<DailyCheckinCountDto[]>([])
@@ -12,8 +17,9 @@ export function useAttendanceReport(from: string, to: string) {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
+      const branchQuery = branchId ? `&branch_id=${branchId}` : ''
       const data = await authFetch<{ entries: AttendanceEntryDto[]; dailyCounts: DailyCheckinCountDto[] }>(
-        `/reports/attendance?from=${from}&to=${to}`,
+        `/reports/attendance?from=${from}&to=${to}${branchQuery}`,
         { method: 'GET' },
       )
       setEntries(data.entries)
@@ -21,7 +27,7 @@ export function useAttendanceReport(from: string, to: string) {
     } finally {
       setLoading(false)
     }
-  }, [authFetch, from, to])
+  }, [authFetch, from, to, branchId])
 
   useEffect(() => {
     void refresh()

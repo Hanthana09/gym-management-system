@@ -2,6 +2,7 @@
 
 namespace App\PersonalTraining;
 
+use App\Entity\Branch;
 use App\Entity\CoachProfile;
 use App\Entity\MemberProfile;
 use App\Entity\PtSession;
@@ -26,9 +27,9 @@ class PtSessionService
     ) {
     }
 
-    public function request(MemberProfile $member, CoachProfile $coach, \DateTimeImmutable $scheduledAt, int $durationMinutes): PtSession
+    public function request(MemberProfile $member, CoachProfile $coach, Branch $branch, \DateTimeImmutable $scheduledAt, int $durationMinutes): PtSession
     {
-        $session = new PtSession($coach, $member, $scheduledAt, $durationMinutes);
+        $session = new PtSession($coach, $member, $branch, $scheduledAt, $durationMinutes);
         $this->em->persist($session);
         $this->em->flush();
 

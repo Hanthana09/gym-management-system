@@ -19,28 +19,33 @@
 
 ## 2. User Roles & Permissions
 
-**Four roles as of Phase 15** (Owner, Coach, Member, and the new **Staff** role — front-desk/assistant-manager), enforced via RBAC middleware on every API request (JWT carries `role` + `userId`; row-level checks scope Coach, Member, and Staff to their own data/permitted actions).
+**Four roles** (Owner, Coach, Staff, Member), enforced via RBAC middleware on every API request (JWT carries `role` + `userId`; row-level checks scope Coach, Member, and Staff to their own data/permitted actions). **As of Phase 16, a business can have multiple branches** — Owner permissions apply across all branches; Coach and Staff permissions are scoped to their **assigned branch(es)** (`BRANCH_ASSIGNMENT`, §5.1) rather than the whole business. Member permissions are explicitly *not* branch-scoped — see the hub note below the table.
 
 | Capability | Owner | Coach | Staff | Member |
 |---|---|---|---|---|
-| Manage gym profile, plans, pricing, branding | Full | — | — | — |
+| Manage gym profile & branding (business-wide) | Full | — | — | — |
+| **Manage branches (create/edit/deactivate)** | Full | — | — | — |
+| **Manage plans & pricing (per branch)** | Full | — | — | — |
+| **Assign Coach/Staff to branch(es)** | Full | — | — | — |
 | Invite / remove / suspend coaches | Full (send invite) | — | — | — |
 | Invite / remove / suspend **staff** | Full (send invite) | — | — | — |
 | Invite / suspend / remove members | Full (send invite) | — | — | — |
 | **Approve / decline own invitation to join the gym** | — (cannot self-approve) | **Own invitation only** | **Own invitation only** | **Own invitation only** |
-| View all members & attendance | Full | Own clients only | **Full (view only — no manage)** | Own record only |
-| Manage class schedule | Full | Own sessions | — | View only |
+| View members & attendance | Full, all branches | Own clients only | **Own assigned branch(es) only, view only** | Own record only |
+| Manage class schedule | Full, all branches | Own sessions, own assigned branch(es) | — | View only |
 | Accept / decline PT session requests | View all | Own requests | — | Request only |
 | Log session notes | — | Own clients | — | — |
-| Check in / out | Can check in others (front desk) | Self | **Can check in others (front desk)** | Self |
+| Check in / out | Can check in others, any branch (front desk) | Self | **Can check in others, own assigned branch(es) only (front desk)** | **Self, at any branch — hub access, see note below** |
 | Personal workout & body-metric tracking | — | — | — | Own data |
-| View revenue & reports | Full | — | **— (explicitly excluded)** | — |
-| Send announcements | Gym-wide | To own clients | — | — |
+| View revenue & reports | Full, all branches or per-branch filter | — | **— (explicitly excluded)** | — |
+| Send announcements | Gym-wide or one branch | To own clients | — | — |
 | Manage own profile & billing | — | Own | Own | Own |
 | Log in via OTP or password | Both | Both | Both | Both |
 | Receive notifications | Admin + billing alerts | Client bookings, announcements | Front-desk/check-in alerts, announcements | Bookings, billing, announcements |
 
-**Staff is deliberately the narrowest role in the system** — it exists to cover front-desk/assistant-manager work (checking members in, looking someone up) without touching anything financial, staff-management, or gym-configuration related. If a capability isn't explicitly marked for Staff above, assume they don't have it — this role should never accumulate permissions by default the way a "just give them Coach access" shortcut would.
+**Members are the one role explicitly not narrowed by branch assignment — this is deliberate, not inconsistent with the rest of the table.** A Member's whole point of belonging to a business (not a single branch) is that their membership works at every branch — check in at whichever one they're physically at, no per-branch approval needed. Coach/Staff branch-scoping exists to keep *staff* visibility manageable as a business grows; it was never meant to restrict *members*.
+
+**Staff is deliberately the narrowest role in the system** — it exists to cover front-desk/assistant-manager work (checking members in, looking someone up) without touching anything financial, staff-management, or gym-configuration related. As of Phase 16, that narrowness now has a branch dimension too: Staff can't see or act on branches they're not assigned to, on top of the capability restrictions from Phase 15. If a capability isn't explicitly marked for Staff above, assume they don't have it.
 
 **Onboarding note:** an Owner never creates a fully active Coach/Staff/Member account directly — they send an **invitation**. The invitee must explicitly approve it (§6.7) before their account is active and linked to the gym. This keeps the Owner from being able to unilaterally attach someone to their gym without consent, and gives Coaches/Staff/Members an auditable accept/decline decision.
 
@@ -166,17 +171,26 @@ Everything below this table (data model, module boundaries, event flows, securit
 
 ```mermaid
 erDiagram
-    GYM ||--o{ MEMBERSHIP_PLAN : offers
+    GYM ||--o{ BRANCH : has
     GYM ||--o{ USER : employs_or_hosts
     GYM ||--o{ ANNOUNCEMENT : publishes
     GYM ||--o{ INVITATION : sends
     GYM ||--o{ DAILY_METRIC_SNAPSHOT : tracks
+
+    BRANCH ||--o{ MEMBERSHIP_PLAN : offers
+    BRANCH ||--o{ ATTENDANCE_LOG : location_of
+    BRANCH ||--o{ PT_SESSION : location_of
+    BRANCH ||--o{ CLASS : location_of
+    BRANCH ||--o{ BRANCH_ASSIGNMENT : staffed_by
+    BRANCH ||--o{ DAILY_METRIC_SNAPSHOT : "tracks (per-branch rows)"
+    BRANCH ||--o{ ANNOUNCEMENT : "scoped to (nullable — null = gym-wide)"
 
     USER ||--o| COACH_PROFILE : has
     USER ||--o| MEMBER_PROFILE : has
     USER ||--o{ NOTIFICATION : receives
     USER ||--o{ OTP_CODE : requests
     USER ||--o| INVITATION : responds_to
+    USER ||--o{ BRANCH_ASSIGNMENT : assigned_to
 
     MEMBER_PROFILE ||--o{ MEMBERSHIP : holds
     MEMBERSHIP }o--|| MEMBERSHIP_PLAN : based_on
@@ -233,10 +247,27 @@ erDiagram
     GYM {
         uuid id PK
         string name
-        string address
         uuid owner_id FK
         string logo_url "nullable — Flysystem-stored, same pattern as profile photos"
         string brand_color "nullable hex — see DESIGN-SYSTEM.md's white-label boundary rule"
+    }
+
+    BRANCH {
+        uuid id PK
+        uuid gym_id FK
+        string name
+        string address
+        string phone
+        bool is_primary "one branch per gym flagged primary — used as the default in single-branch UIs"
+        enum status "active | inactive"
+        timestamp created_at
+    }
+
+    BRANCH_ASSIGNMENT {
+        uuid id PK
+        uuid user_id FK "Coach or Staff — never Owner (Owner implicitly has all branches) or Member"
+        uuid branch_id FK
+        timestamp assigned_at
     }
 
     COACH_PROFILE {
@@ -256,7 +287,7 @@ erDiagram
 
     MEMBERSHIP_PLAN {
         uuid id PK
-        uuid gym_id FK
+        uuid branch_id FK "was gym_id — plans are now set per branch (Phase 16 decision)"
         string name
         decimal price
         int duration_days
@@ -266,7 +297,7 @@ erDiagram
     MEMBERSHIP {
         uuid id PK
         uuid member_id FK
-        uuid plan_id FK
+        uuid plan_id FK "the enrolling branch's plan — see §6.12 for what this does and doesn't imply about check-in access"
         date start_date
         date end_date
         enum status "active | paused | expired"
@@ -287,6 +318,7 @@ erDiagram
     ATTENDANCE_LOG {
         uuid id PK
         uuid member_id FK
+        uuid branch_id FK "new — which physical branch this check-in happened at"
         timestamp check_in
         timestamp check_out
         enum method "qr | manual | front_desk"
@@ -296,6 +328,7 @@ erDiagram
         uuid id PK
         uuid coach_id FK
         uuid member_id FK
+        uuid branch_id FK "new — where the session takes place; must be one of the coach's assigned branches"
         timestamp scheduled_at
         int duration_minutes
         enum status "pending | confirmed | completed | cancelled"
@@ -305,6 +338,7 @@ erDiagram
     CLASS {
         uuid id PK
         uuid coach_id FK
+        uuid branch_id FK "new — group classes are location-specific"
         string name
         timestamp scheduled_at
         int capacity
@@ -347,6 +381,7 @@ erDiagram
     ANNOUNCEMENT {
         uuid id PK
         uuid gym_id FK
+        uuid branch_id FK "new, nullable — null means gym-wide (all branches); set means one specific branch"
         text body
         timestamp created_at
     }
@@ -354,6 +389,7 @@ erDiagram
     DAILY_METRIC_SNAPSHOT {
         uuid id PK
         uuid gym_id FK
+        uuid branch_id FK "new, nullable — one row per branch per day, PLUS one gym-wide rollup row per day where this is null"
         date snapshot_date
         int checkins_count
         int active_members_count
@@ -375,6 +411,10 @@ erDiagram
 - **Staff deliberately has no dedicated profile table**, unlike `COACH_PROFILE`/`MEMBER_PROFILE`. There's no Staff-specific data to store beyond the role itself — if that changes later (e.g. shift schedules), add `STAFF_PROFILE` then, following the same one-to-one pattern; don't add an empty table speculatively now.
 - **`GYM.logo_url`/`brand_color` are deliberately narrow-scoped fields, not a full theming system.** White-labeling here means a logo and one accent color, applied in specific, bounded places (§6.11) — not letting each gym override the product's own design system wholesale. This is a design decision worth being explicit about, since "let the customer theme everything" is an easy scope creep trap.
 - **`USER.whatsapp_opt_in` reuses the existing `phone` field** rather than adding a separate WhatsApp-specific number column — WhatsApp messaging uses the same phone number already collected for OTP login, so there's nothing new to collect, just a delivery-channel preference to store.
+- **`GYM` is now the business/account level; `BRANCH` is the physical location** (Phase 16). This is a genuine restructuring, not just a new table — everything that used to hang off `gym_id` directly (plans, attendance, PT sessions, classes) now hangs off `branch_id` instead, because that's where those things actually happen. `GYM` keeps only what's genuinely business-wide: the Owner relationship, billing identity, and branding (logo/color) — a decision worth noting since it means a business's brand is shared across all its branches, not set per-branch.
+- **Members are hub-scoped, Coaches/Staff are branch-assigned — this asymmetry is deliberate, not an oversight.** `MEMBER_PROFILE` has no `branch_id` at all: a Member's `ATTENDANCE_LOG` rows carry the branch they checked into, but nothing restricts *which* branch they're allowed to check into — that's the "one badge, every branch" decision. `BRANCH_ASSIGNMENT` exists specifically for Coach/Staff, who need scoped visibility (a Staff member at Branch A generally shouldn't manage Branch B's day-to-day) — see §9.1's updated Voters for how this plays out in practice.
+- **`MEMBERSHIP_PLAN.branch_id` (per-branch pricing) means `MEMBERSHIP.plan_id` indirectly ties a member to an "enrolling branch."** That's informational, not restrictive — it explains where their price point came from, it does not gate where they can check in. Worth being explicit about this in code comments wherever `Membership` is queried, since "which branch is this member's plan from" and "which branches can this member check into" are two different questions with two different answers.
+- **`DAILY_METRIC_SNAPSHOT.branch_id` is nullable by design**, not an afterthought: the nightly job produces one row per branch *and* one gym-wide rollup row (branch_id = null) per day, so "show me Branch A's numbers" and "show me the whole business's numbers" are both simple queries against the same table, not two different aggregation paths.
 - **`DAILY_METRIC_SNAPSHOT` is a pre-aggregated read model, not a source of truth.** Attendance trends, revenue forecasts, and the live dashboard all need to answer "what happened over the last N days" fast — querying `ATTENDANCE_LOG`/`INVOICE` directly and re-aggregating on every dashboard load doesn't scale as history grows. A nightly job (§6.8) computes one row per gym per day; every other analytics feature reads from this table, never from raw logs. If the numbers are ever wrong, the nightly job is the one place to check — the source tables (`ATTENDANCE_LOG`, `MEMBERSHIP`, `INVOICE`) are still the ground truth it's computed from.
 - **`INVOICE.payment_method`/`recorded_by`/`paid_at` support manual payment recording** (§6.9) without requiring a gateway. `recorded_by` matters specifically because marking an invoice paid is a trust-sensitive, auditable action — it should always be traceable to the Owner who did it, the same way §9's audit log covers suspensions and plan changes. When gateway integration is added later, `payment_method = 'gateway'` and `recorded_by` becomes null (the webhook did it, not a person), so the schema doesn't need to change to support both paths simultaneously.
 
@@ -454,6 +494,14 @@ erDiagram
 - **Where these appear is intentionally bounded, not a full theming system:** the logo appears in the app's navigation header and on the Member's digital membership badge (§9.1's `Badge` pattern reference in `DESIGN-SYSTEM.md`); the brand color applies to a specific, limited set of surfaces tied to that gym's identity (e.g. the badge's accent stripe) — it does **not** override the product's own core design tokens (the `hivis` primary-action color, the Owner/Coach/Member role-tag colors) documented in `DESIGN-SYSTEM.md`. Letting every gym re-theme the whole product would undermine the consistent, recognizable UI that makes the app usable across different gyms' staff — this is a deliberate constraint, not a v1 limitation to relax later without discussion.
 - Managed via `GymVoter::MANAGE` (§9.1, already written — no new Voter needed) since it's just more fields on the same `Gym` entity Owners already manage.
 
+### 6.12 Branch Management (Phase 16)
+
+- **`GYM` is the business; `BRANCH` is a physical location.** An Owner creates/edits/deactivates branches under their `GYM` via `BranchVoter` (new, §9.1). Every business starts with one `is_primary` branch — this isn't optional scaffolding, it's how a single-location gym and a multi-branch chain use the exact same data model without a special case for "gyms with only one location."
+- **Coach/Staff branch assignment is many-to-many** (`BRANCH_ASSIGNMENT`) — an Owner assigns a Coach or Staff member to one or more branches. This is what makes their `VIEW`/`CHECK_IN`/schedule-management permissions branch-scoped instead of business-wide (§2's updated table).
+- **Members are never assigned to a branch** — no `BRANCH_ASSIGNMENT` row exists for the Member role, and no Voter checks one. Their `MEMBERSHIP_PLAN` (now branch-scoped for pricing) tells you where they enrolled; it does not gate where they can check in. This asymmetry — Coach/Staff scoped, Member not — is the core design decision of this phase and is worth re-reading §5.2's note on it before touching any branch-related Voter.
+- **Reporting works at two granularities**, both reading from the same `DAILY_METRIC_SNAPSHOT` table (§6.8, now branch-aware): an Owner can view one branch's numbers or the whole business's rollup, without two different aggregation code paths.
+- **Retrofit, not just new code:** this phase changes the meaning of `gym_id` on several already-built entities (`MEMBERSHIP_PLAN`, `ATTENDANCE_LOG`, `PT_SESSION`, `CLASS`) to `branch_id`. Every Voter and endpoint touching those entities from Phases 4–7 and 11 needs to be revisited, not just extended — see the roadmap's Phase 16 retrofit checklist for the specific list.
+
 ---
 
 ## 7. API Design (overview)
@@ -471,38 +519,44 @@ GET    /api/v1/invitations/me          (Coach/Staff/Member — view own pending 
 PATCH  /api/v1/invitations/:id/approve (Coach/Staff/Member — approve own invitation only)
 PATCH  /api/v1/invitations/:id/decline (Coach/Staff/Member — decline own invitation only)
 
-GET    /api/v1/members                 (Owner, Staff — read-only for Staff)
+GET    /api/v1/branches                (Owner — list own gym's branches; any authenticated user in the gym — read-only, needed for branch pickers in forms)
+POST   /api/v1/branches                (Owner — create)
+PATCH  /api/v1/branches/:id            (Owner — edit/deactivate)
+POST   /api/v1/branches/:id/assign     (Owner — assign a Coach or Staff user_id to this branch)
+DELETE /api/v1/branches/:id/assign/:userId  (Owner — unassign)
+
+GET    /api/v1/members                 (Owner — all branches; Staff — own assigned branch(es) only, read-only)
 PATCH  /api/v1/members/:id/status      (Owner only — suspend/remove; not initial add, see /invitations)
 
 GET    /api/v1/members/me/membership   (Member)
-POST   /api/v1/members/me/checkin      (Member)
-POST   /api/v1/members/:id/checkin     (Owner, Staff — front-desk check-in on a member's behalf)
+POST   /api/v1/members/me/checkin      (Member — branch selected by the member, e.g. via QR at that location)
+POST   /api/v1/members/:id/checkin     (Owner, Staff — front-desk check-in on a member's behalf; branch is implicit — Owner's active branch context, or Staff's own assigned branch)
 
-GET    /api/v1/coaches/:id/schedule    (Coach — own; Owner — any)
-POST   /api/v1/pt-sessions             (Member — request)
-PATCH  /api/v1/pt-sessions/:id/status  (Coach — accept/decline)
+GET    /api/v1/coaches/:id/schedule    (Coach — own; Owner — any branch)
+POST   /api/v1/pt-sessions             (Member — request, specifying which branch)
+PATCH  /api/v1/pt-sessions/:id/status  (Coach — accept/decline, must be one of Coach's assigned branches)
 
 GET    /api/v1/members/me/workouts     (Member)
 POST   /api/v1/members/me/workouts     (Member)
 GET    /api/v1/members/me/body-metrics (Member)
 
-GET    /api/v1/invoices                (Owner — all invoices for their gym)
+GET    /api/v1/invoices                (Owner — all invoices for their gym, filterable by branch via the enrolling plan)
 GET    /api/v1/members/me/invoices     (Member — own invoices only)
 PATCH  /api/v1/invoices/:id/mark-paid  (Owner — records payment_method, sets paid_at/recorded_by)
 
-PATCH  /api/v1/gym/branding            (Owner — logo_url, brand_color)
+PATCH  /api/v1/gym/branding            (Owner — logo_url, brand_color — business-wide, not per branch)
 PATCH  /api/v1/users/me/notification-preferences  (any authenticated user — toggle whatsapp_opt_in, etc.)
 
-POST   /api/v1/announcements           (Owner)
+POST   /api/v1/announcements           (Owner — gym-wide or one branch via optional branch_id; Coach — own clients)
 GET    /api/v1/notifications           (any authenticated user, scoped to self)
 PATCH  /api/v1/notifications/:id/read  (any authenticated user, scoped to self)
 
-GET    /api/v1/reports/dashboard       (Owner — live business dashboard summary)
-GET    /api/v1/reports/attendance      (Owner — attendance trend, date-range filterable)
-GET    /api/v1/reports/revenue         (Owner)
-GET    /api/v1/reports/revenue-forecast (Owner — 30/60/90-day projection)
-GET    /api/v1/reports/retention       (Owner — at-risk member list with reasons)
-GET    /api/v1/reports/export          (Owner — CSV/PDF, any of the above by date range)
+GET    /api/v1/reports/dashboard       (Owner — live business dashboard summary; optional ?branch_id, defaults to gym-wide rollup)
+GET    /api/v1/reports/attendance      (Owner — attendance trend, date-range filterable; optional ?branch_id)
+GET    /api/v1/reports/revenue         (Owner; optional ?branch_id)
+GET    /api/v1/reports/revenue-forecast (Owner — 30/60/90-day projection; optional ?branch_id)
+GET    /api/v1/reports/retention       (Owner — at-risk member list with reasons; optional ?branch_id)
+GET    /api/v1/reports/export          (Owner — CSV/PDF, any of the above by date range; optional ?branch_id)
 ```
 
 Every non-Owner endpoint enforces row-level scoping in the service layer, not just the controller guard — defense in depth against a missed check.
@@ -665,7 +719,36 @@ abstract class AppVoter extends Voter
 }
 ```
 
-**GymVoter** — gym profile, plans, pricing, branding (Owner only, §2 row 1)
+**BranchVoter** — create/edit/deactivate branches, assign Coach/Staff to them (Owner only, §2's new branch-management rows, Phase 16)
+```php
+final class BranchVoter extends AppVoter
+{
+    const MANAGE = 'BRANCH_MANAGE'; // covers branch CRUD and assigning/unassigning Coach/Staff to it
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return $attribute === self::MANAGE && $subject instanceof Branch;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        $user = $token->getUser();
+        return $this->isOwner($user) && $subject->getGym()->getOwner() === $user;
+    }
+}
+```
+
+Add this helper to `AppVoter` (§9.1's base class) for the branch-assignment checks every Coach/Staff-scoped Voter below now needs:
+```php
+protected function hasAssignedBranch(User $user, Branch $branch): bool
+{
+    return $user->getBranchAssignments()->exists(
+        fn($key, $assignment) => $assignment->getBranch() === $branch
+    );
+}
+```
+
+**GymVoter** — gym profile, branding — business-wide, not branch-scoped (Owner only, §2 row 1)
 ```php
 final class GymVoter extends AppVoter
 {
@@ -684,7 +767,7 @@ final class GymVoter extends AppVoter
 }
 ```
 
-**CoachManagementVoter** — add/remove/suspend coaches (Owner only, §2 row 2). **Renamed from `StaffVoter`** as of Phase 15 — the old name meant "staff" loosely as "coaches"; now that a distinct Staff role exists, that name would be actively misleading. If you copied the old `StaffVoter` class into code before Phase 15, rename it to match — it's the same logic, just a clearer name.
+**CoachManagementVoter** — add/remove/suspend coaches (Owner only, §2 row 5). **Renamed from `StaffVoter`** as of Phase 15 — the old name meant "staff" loosely as "coaches"; now that a distinct Staff role exists, that name would be actively misleading. If you copied the old `StaffVoter` class into code before Phase 15, rename it to match — it's the same logic, just a clearer name.
 ```php
 final class CoachManagementVoter extends AppVoter
 {
@@ -703,7 +786,7 @@ final class CoachManagementVoter extends AppVoter
 }
 ```
 
-**StaffManagementVoter** — add/remove/suspend Staff role accounts (Owner only, §2 row 3, new in Phase 15 — mirrors `CoachManagementVoter`'s structure exactly)
+**StaffManagementVoter** — add/remove/suspend Staff role accounts (Owner only, §2 row 6, mirrors `CoachManagementVoter`'s structure exactly)
 ```php
 final class StaffManagementVoter extends AppVoter
 {
@@ -722,12 +805,12 @@ final class StaffManagementVoter extends AppVoter
 }
 ```
 
-**MemberVoter** — add/suspend/remove members; view member records (§2 rows 4, 5 — Staff granted read-only `VIEW` as of Phase 15)
+**MemberVoter** — add/suspend/remove members; view member records (§2's "View members & attendance" row — Staff's scope narrows to branch-assignment as of Phase 16, was gym-wide as of Phase 15)
 ```php
 final class MemberVoter extends AppVoter
 {
     const MANAGE = 'MEMBER_MANAGE';   // add / suspend / remove — Owner only
-    const VIEW   = 'MEMBER_VIEW';     // Owner: any; Coach: own clients; Member: self
+    const VIEW   = 'MEMBER_VIEW';     // Owner: any; Coach: own clients; Staff: own branch(es); Member: self
 
     protected function supports(string $attribute, mixed $subject): bool
     {
@@ -740,19 +823,22 @@ final class MemberVoter extends AppVoter
         $user = $token->getUser();
 
         if ($this->isOwner($user)) {
-            return $subject->getUser()->getGym() === $user->getGym(); // full, gym-scoped
+            return $subject->getUser()->getGym() === $user->getGym(); // full, all branches
         }
 
         if ($attribute === self::VIEW && $this->isCoach($user)) {
-            return $subject->hasCoach($user); // "own clients only"
+            return $subject->hasCoach($user); // "own clients only" — direct relationship, not branch-mediated
         }
 
-        // Staff (Phase 15): read-only, gym-scoped — same visibility as Owner,
-        // but only ever VIEW, never MANAGE. Deliberately no `isStaff` branch
-        // under MANAGE above — if that ever needs to change, it's a §2 table
-        // edit first, not a quiet addition here.
+        // Staff (Phase 16 update): scoped to the member's ENROLLING branch — the branch
+        // their MEMBERSHIP_PLAN belongs to — not gym-wide as it was in Phase 15.
+        // This does NOT restrict who Staff can check in (see AttendanceVoter::CHECK_IN,
+        // which stays permissive per the hub model) — it only scopes the browsable
+        // member list to "people who enrolled where I work," a UI convenience,
+        // not a security boundary on attendance itself.
         if ($attribute === self::VIEW && $this->isStaff($user)) {
-            return $subject->getUser()->getGym() === $user->getGym();
+            $enrollingBranch = $subject->getActiveMembership()?->getPlan()?->getBranch();
+            return $enrollingBranch !== null && $this->hasAssignedBranch($user, $enrollingBranch);
         }
 
         if ($attribute === self::VIEW && $this->isMember($user)) {
@@ -764,11 +850,11 @@ final class MemberVoter extends AppVoter
 }
 ```
 
-**AttendanceVoter** — check in/out, view attendance (§2 rows 6, 7 — Staff granted `CHECK_IN` as of Phase 15, matching Owner's front-desk capability)
+**AttendanceVoter** — check in/out, view attendance (§2's check-in and view rows — `CHECK_IN` stays hub-permissive per the "Members aren't branch-scoped" decision; `VIEW` for Staff narrows to their assigned branch(es), which `ATTENDANCE_LOG.branch_id` makes a direct, simple check)
 ```php
 final class AttendanceVoter extends AppVoter
 {
-    const CHECK_IN     = 'ATTENDANCE_CHECK_IN'; // self, or Owner/Staff on behalf of a member (front desk)
+    const CHECK_IN     = 'ATTENDANCE_CHECK_IN'; // self, or Owner/Staff on behalf of a member (front desk) — any member, any branch
     const VIEW         = 'ATTENDANCE_VIEW';
     const VIEW_ALL     = 'ATTENDANCE_VIEW_ALL'; // Owner dashboard / reports
 
@@ -785,28 +871,33 @@ final class AttendanceVoter extends AppVoter
             return $this->isOwner($user); // Staff explicitly excluded — §2's "no reports" rule
         }
         if ($attribute === self::CHECK_IN) {
+            // Deliberately permissive on WHICH member: any Member can be checked in by
+            // Owner/Staff regardless of that member's enrolling branch — this is the
+            // hub model in practice. The branch this check-in is recorded under comes
+            // from where Owner/Staff is physically working, not a restriction on the member.
             return $this->isOwner($user)
                 || $this->isStaff($user)
                 || ($subject instanceof MemberProfile && $subject->getUser() === $user);
         }
-        // VIEW: Coach sees own clients, Staff sees any (read-only, gym-scoped), Member sees self
+        // VIEW (viewing existing ATTENDANCE_LOG rows, not the check-in action itself):
         if ($this->isCoach($user)) {
-            return $subject instanceof MemberProfile && $subject->hasCoach($user);
+            return $subject instanceof AttendanceLog && $subject->getMember()->hasCoach($user);
         }
         if ($this->isStaff($user)) {
-            return $subject instanceof MemberProfile && $subject->getUser()->getGym() === $user->getGym();
+            // Direct check — ATTENDANCE_LOG carries its own branch_id, no indirection needed.
+            return $subject instanceof AttendanceLog && $this->hasAssignedBranch($user, $subject->getBranch());
         }
-        return $subject instanceof MemberProfile && $subject->getUser() === $user;
+        return $subject instanceof AttendanceLog && $subject->getMember()->getUser() === $user;
     }
 }
 ```
 
-**PtSessionVoter** — request / accept / decline personal training sessions (§2 row 7)
+**PtSessionVoter** — request / accept / decline personal training sessions (§2 row — `RESPOND` now also confirms the Coach is assigned to the session's branch, Phase 16)
 ```php
 final class PtSessionVoter extends AppVoter
 {
     const REQUEST  = 'PT_SESSION_REQUEST';  // Member, for self
-    const RESPOND  = 'PT_SESSION_RESPOND';  // Coach, own sessions only
+    const RESPOND  = 'PT_SESSION_RESPOND';  // Coach, own sessions AND own assigned branch only
     const VIEW     = 'PT_SESSION_VIEW';     // Owner: any; Coach/Member: own
 
     protected function supports(string $attribute, mixed $subject): bool
@@ -821,7 +912,13 @@ final class PtSessionVoter extends AppVoter
 
         return match ($attribute) {
             self::REQUEST => $this->isMember($user) && $subject->getMember()->getUser() === $user,
-            self::RESPOND => $this->isCoach($user) && $subject->getCoach()->getUser() === $user,
+            // Branch check added here, not removed from anywhere — a Coach responding
+            // to a session assumes they're actually assigned to work at that branch.
+            // If a session somehow references a branch the Coach isn't assigned to
+            // (shouldn't happen if request-creation validates this), reject it here too.
+            self::RESPOND => $this->isCoach($user)
+                && $subject->getCoach()->getUser() === $user
+                && $this->hasAssignedBranch($user, $subject->getBranch()),
             self::VIEW    => $this->isOwner($user)
                 || ($this->isCoach($user) && $subject->getCoach()->getUser() === $user)
                 || ($this->isMember($user) && $subject->getMember()->getUser() === $user),
@@ -831,7 +928,7 @@ final class PtSessionVoter extends AppVoter
 }
 ```
 
-**PersonalTrackingVoter** — workout logs & body metrics (§2 row 9 — Member-only by default)
+**PersonalTrackingVoter** — workout logs & body metrics (§2 row — Member-only by default)
 ```php
 final class PersonalTrackingVoter extends AppVoter
 {
@@ -853,7 +950,7 @@ final class PersonalTrackingVoter extends AppVoter
 }
 ```
 
-**ReportVoter** — revenue, attendance, and analytics reports (§2 row 10, Owner only). Originally written for §6's basic reports; the same Voter now also gates every endpoint added by §6.8 Analytics & Reporting — no new Voter needed, since every one of those endpoints has the same shape ("Owner, own gym only").
+**ReportVoter** — revenue, attendance, and analytics reports (§2, Owner only). Originally written for §6's basic reports; the same Voter now also gates every endpoint added by §6.8 Analytics & Reporting — no new Voter needed, since every one of those endpoints has the same shape ("Owner, own gym only"). **Branch filtering (Phase 16) happens as a query parameter on the endpoint, not a Voter change** — the Voter still checks "does this Owner own this Gym"; whether the response is one branch's numbers or the gym-wide rollup is a `DAILY_METRIC_SNAPSHOT.branch_id` query concern (§6.8), not a permission concern, since an Owner is equally allowed to see either.
 ```php
 final class ReportVoter extends AppVoter
 {
@@ -905,7 +1002,7 @@ final class InvoiceVoter extends AppVoter
 }
 ```
 
-**AnnouncementVoter** — Owner broadcasts gym-wide, Coach broadcasts to own clients only (§2 row 11)
+**AnnouncementVoter** — Owner broadcasts gym-wide or to one branch, Coach broadcasts to own clients only (§2's announcements row — Owner's branch option is new in Phase 16)
 ```php
 final class AnnouncementVoter extends AppVoter
 {
@@ -921,10 +1018,14 @@ final class AnnouncementVoter extends AppVoter
         $user = $token->getUser();
 
         if ($this->isOwner($user)) {
-            return $subject->getGym()->getOwner() === $user; // gym-wide
+            // branch_id null = gym-wide (all branches); set = must be one of this Owner's own branches.
+            if ($subject->getBranch() !== null) {
+                return $subject->getBranch()->getGym()->getOwner() === $user;
+            }
+            return $subject->getGym()->getOwner() === $user;
         }
         if ($this->isCoach($user)) {
-            return $subject->getAudience() === Audience::OWN_CLIENTS; // scoped, not gym-wide
+            return $subject->getAudience() === Audience::OWN_CLIENTS; // unchanged — client relationship, not branch-mediated
         }
         return false;
     }

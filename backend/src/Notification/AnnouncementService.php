@@ -3,10 +3,12 @@
 namespace App\Notification;
 
 use App\Entity\Announcement;
+use App\Entity\Branch;
 use App\Entity\Gym;
 use App\Entity\User;
 use App\Enum\Audience;
 use App\Enum\NotificationType;
+use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Repository\CoachProfileRepository;
 use App\Repository\InvitationRepository;
@@ -45,7 +47,7 @@ class AnnouncementService
         $this->em->flush();
 
         $recipients = $announcement->getAudience() === Audience::GYM_WIDE
-            ? $this->gymWideRecipients($announcement->getGym(), $announcement->getCreatedBy())
+            ? $this->gymWideRecipients($announcement->getGym(), $announcement->getCreatedBy(), $announcement->getBranch())
             : $this->ownClientRecipients($announcement->getCreatedBy());
 
         $sourceRole = $announcement->getCreatedBy()->getRole();
@@ -65,14 +67,38 @@ class AnnouncementService
      * Owner themselves (harmless — an Owner has no invitation to their
      * own gym anyway) and anyone since suspended.
      *
+     * roadmap Phase 16: when $branch is given (the Owner targeted one
+     * branch, not gym-wide), this narrows further to Members enrolled at
+     * that branch and Coach/Staff assigned to it — otherwise a
+     * "branch-targeted" announcement would still reach the whole gym,
+     * defeating the point of picking a branch at all. This isn't in the
+     * retrofit checklist's literal text (which only names the Voter), but
+     * follows directly from what "target one branch" has to mean.
+     *
      * @return User[]
      */
-    private function gymWideRecipients(Gym $gym, User $owner): array
+    private function gymWideRecipients(Gym $gym, User $owner, ?Branch $branch): array
     {
-        return array_values(array_filter(
+        $approved = array_values(array_filter(
             $this->invitations->findApprovedUsersForGym($gym),
             fn (User $user) => $user !== $owner && $user->getStatus() === UserStatus::ACTIVE,
         ));
+
+        if ($branch === null) {
+            return $approved;
+        }
+
+        return array_values(array_filter($approved, function (User $user) use ($branch) {
+            if ($user->getRole() === UserRole::MEMBER) {
+                $member = $this->memberProfiles->findOneByUser($user);
+                $enrollingBranch = $member?->getActiveMembership()?->getPlan()?->getBranch();
+
+                return $enrollingBranch === $branch;
+            }
+
+            // Coach/Staff: reached only if assigned to this branch.
+            return $user->getBranchAssignments()->exists(fn ($k, $a) => $a->getBranch() === $branch);
+        }));
     }
 
     /** @return User[] */

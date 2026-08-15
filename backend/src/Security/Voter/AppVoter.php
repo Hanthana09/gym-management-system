@@ -2,6 +2,7 @@
 
 namespace App\Security\Voter;
 
+use App\Entity\Branch;
 use App\Entity\User;
 use App\Enum\UserRole;
 use Symfony\Component\Security\Core\Authorization\Voter\Voter;
@@ -33,5 +34,20 @@ abstract class AppVoter extends Voter
     protected function isMember(UserInterface $user): bool
     {
         return $user instanceof User && $user->getRole() === UserRole::MEMBER;
+    }
+
+    /**
+     * roadmap Phase 16 / architecture doc §9.1: every Coach/Staff-scoped
+     * check from here on goes through this. Deliberately never called for
+     * a Member — Members are hub-scoped, not branch-assigned (architecture
+     * doc §5.2's core decision for this phase); if a future change makes
+     * this get called on a Member's behalf, that's the bug, not a missing
+     * branch assignment.
+     */
+    protected function hasAssignedBranch(User $user, Branch $branch): bool
+    {
+        return $user->getBranchAssignments()->exists(
+            fn ($key, $assignment) => $assignment->getBranch() === $branch,
+        );
     }
 }

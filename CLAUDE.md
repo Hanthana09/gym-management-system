@@ -10,7 +10,7 @@ A single-gym management platform with three roles — Owner, Coach, Member — c
 
 Don't improvise architecture, feature behavior, sequencing, or visual design — they're already decided. Use these documents in this order for every phase:
 
-1. **`gym-management-system-development-roadmap.md`** — tells you **what phase you're on and in what order**. Work through its phases sequentially (Phase 0 → Phase 15). Do not start a phase's frontend work before its backend is done, and do not start the next phase until the current phase's "Definition of Done" checklist is fully met.
+1. **`gym-management-system-development-roadmap.md`** — tells you **what phase you're on and in what order**. Work through its phases sequentially (Phase 0 → Phase 16). Do not start a phase's frontend work before its backend is done, and do not start the next phase until the current phase's "Definition of Done" checklist is fully met.
 2. **`gym-management-system-functional-requirements.md`** — tells you **exactly how each feature must behave**. Every acceptance criterion (Given/When/Then) in the relevant section should have a corresponding test before you consider that piece of the phase done. If a feature's behavior is ambiguous, this doc is the tiebreaker before you guess.
 3. **`gym-management-system-architecture.md`** — tells you **how to build it**: entity definitions and the ER diagram (§5), tech stack (§4), full Voter class bodies (§9.1 — copy these, don't reinvent the permission logic), REST endpoint list (§7), and sequence diagrams for the non-obvious flows (§8). The Voters in §9.1 are written out in full — use them as-is unless a functional requirement forces a change.
 4. **`DESIGN-SYSTEM.md`** — tells you **what it should look like**: color tokens, typography, and component patterns (Card, Ticket, Badge, tag/pill, button variants). Use these tokens and patterns for every screen; don't invent new visual styles ad hoc. If a UI need doesn't fit an existing pattern, flag it rather than improvising one.
@@ -53,6 +53,7 @@ Don't improvise architecture, feature behavior, sequencing, or visual design —
 - Don't build desktop-first and adapt down. If a component doesn't work at 375px, it's not done, regardless of how it looks at 1280px.
 - Don't let a gym's brand color (Phase 15) override the `hivis` CTA color or role-tag colors — `DESIGN-SYSTEM.md` §4.1 is explicit that white-labeling is bounded to the badge/nav header, not a full theming system. It's easy but wrong to make this "configurable everywhere" once the color field exists.
 - Don't let the Staff role (Phase 15) accumulate permissions beyond what §2's table explicitly grants — it's deliberately the narrowest role in the system. If a task seems to need Staff to have Coach-level or Owner-level access, that's a sign to flag it, not to quietly widen a Voter.
+- Don't confuse Member hub access with Coach/Staff branch scoping (Phase 16) — Members can check in at any branch by design; Coach/Staff visibility is intentionally narrowed to their assigned branch(es). If a change makes Members branch-restricted, or makes Staff gym-wide again, that's reversing a deliberate decision, not a bug fix — check architecture doc §5.2's note before "fixing" either direction.
 
 ## Quick file map for a new session
 

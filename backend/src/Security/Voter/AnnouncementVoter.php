@@ -7,12 +7,12 @@ use App\Enum\Audience;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 
 /**
- * Copied verbatim from architecture doc §9.1 — "already written in full,
- * don't rewrite it." Owners broadcast gym-wide, Coaches broadcast to own
- * clients only — this is the one Voter in the set that isn't a flat role
- * check (the Coach branch also requires `audience === OWN_CLIENTS`, not
- * just `isCoach($user)`), so a Coach can never post gym-wide even by
- * passing the right subject type.
+ * Copied from architecture doc §9.1, updated for roadmap Phase 16 —
+ * Owner's branch-or-gym-wide choice. Still not a flat role check (the
+ * Coach branch also requires `audience === OWN_CLIENTS`, not just
+ * `isCoach($user)`), so a Coach can never post gym-wide, and Coach's
+ * "own clients" logic stays a direct client relationship, unchanged by
+ * this phase (§6.12's explicit note: not branch-mediated).
  */
 final class AnnouncementVoter extends AppVoter
 {
@@ -28,7 +28,12 @@ final class AnnouncementVoter extends AppVoter
         $user = $token->getUser();
 
         if ($this->isOwner($user)) {
-            return $subject->getGym()->getOwner() === $user; // gym-wide
+            // branch_id null = gym-wide (all branches); set = must be one of this Owner's own branches.
+            if ($subject->getBranch() !== null) {
+                return $subject->getBranch()->getGym()->getOwner() === $user;
+            }
+
+            return $subject->getGym()->getOwner() === $user;
         }
         if ($this->isCoach($user)) {
             return $subject->getAudience() === Audience::OWN_CLIENTS; // scoped, not gym-wide

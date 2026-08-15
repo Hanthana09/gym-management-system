@@ -2,6 +2,17 @@ import { useState, type ReactNode } from 'react'
 import { Badge, Button, Card, Input, Modal, Select, Ticket } from '../components/ui'
 import { NavShell } from '../components/NavShell'
 import { MEMBER_NAV_ITEMS, OWNER_NAV_ITEMS } from '../components/nav-items'
+import { BranchSwitcher } from '../branches/BranchSwitcher'
+import type { BranchDto } from '../branches/types'
+
+const SINGLE_BRANCH: BranchDto[] = [
+  { id: '1', name: 'Main St', address: '', phone: null, isPrimary: true, status: 'active', assignments: [] },
+]
+
+const TWO_BRANCHES: BranchDto[] = [
+  { id: '1', name: 'Main St', address: '', phone: null, isPrimary: true, status: 'active', assignments: [] },
+  { id: '2', name: 'Downtown', address: '', phone: null, isPrimary: false, status: 'active', assignments: [] },
+]
 
 /**
  * Component-library preview (roadmap Phase 1 Definition of Done):
@@ -93,6 +104,38 @@ export function DevComponentsPage() {
             <p className="text-sm font-semibold text-ink">invitee@example.com</p>
             <p className="text-xs text-ink-soft capitalize">Coach · pending</p>
           </Ticket>
+        </div>
+      </Section>
+
+      <Section title="Branch Switcher">
+        <p className="mb-3 text-sm text-ink-soft">
+          DESIGN-SYSTEM.md §4.2: a shared pill/dropdown, absent entirely (not a disabled dropdown) when a gym has
+          one branch or fewer.
+        </p>
+        <div className="flex flex-col gap-3">
+          <div>
+            <p className="mb-1 text-xs font-medium tracking-wide text-ink-soft uppercase">
+              Single-branch gym — nothing should render below this line
+            </p>
+            <div className="rounded-md border border-dashed border-line p-3">
+              <BranchSwitcher branches={SINGLE_BRANCH} value={SINGLE_BRANCH[0].id} onChange={() => {}} />
+              <span className="text-xs text-ink-soft">(intentionally empty)</span>
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-medium tracking-wide text-ink-soft uppercase">Two-branch gym</p>
+            <div className="rounded-md border border-dashed border-line p-3">
+              <BranchSwitcher branches={TWO_BRANCHES} value={TWO_BRANCHES[0].id} onChange={() => {}} />
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-medium tracking-wide text-ink-soft uppercase">
+              Two-branch gym, Owner reports (allowAll)
+            </p>
+            <div className="rounded-md border border-dashed border-line p-3">
+              <BranchSwitcher branches={TWO_BRANCHES} value={null} onChange={() => {}} allowAll />
+            </div>
+          </div>
         </div>
       </Section>
 

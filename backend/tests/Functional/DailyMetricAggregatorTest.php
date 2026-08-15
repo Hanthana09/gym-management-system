@@ -3,6 +3,7 @@
 namespace App\Tests\Functional;
 
 use App\Entity\AttendanceLog;
+use App\Entity\Branch;
 use App\Entity\Gym;
 use App\Entity\Invoice;
 use App\Entity\MemberProfile;
@@ -92,9 +93,9 @@ final class DailyMetricAggregatorTest extends KernelTestCase
         return $membership;
     }
 
-    private function checkIn(MemberProfile $member, \DateTimeImmutable $at): void
+    private function checkIn(MemberProfile $member, Branch $branch, \DateTimeImmutable $at): void
     {
-        $log = new AttendanceLog($member, $at, CheckInMethod::MANUAL);
+        $log = new AttendanceLog($member, $branch, $at, CheckInMethod::MANUAL);
         $this->em->persist($log);
         $this->em->flush();
     }
@@ -109,8 +110,10 @@ final class DailyMetricAggregatorTest extends KernelTestCase
         $this->em->persist($owner);
         $gym = new Gym('Test Gym', '1 Main St', $owner);
         $this->em->persist($gym);
-        $goldPlan = new MembershipPlan($gym, 'Gold', '50.00', 30, []);
-        $silverPlan = new MembershipPlan($gym, 'Silver', '30.00', 15, []);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($branch);
+        $goldPlan = new MembershipPlan($branch, 'Gold', '50.00', 30, []);
+        $silverPlan = new MembershipPlan($branch, 'Silver', '30.00', 15, []);
         $this->em->persist($goldPlan);
         $this->em->persist($silverPlan);
         $this->em->flush();
@@ -121,12 +124,12 @@ final class DailyMetricAggregatorTest extends KernelTestCase
 
         // Day1: A enrolls + pays, checks in twice.
         $this->enrollAndPay($memberA, $goldPlan, $day1, 30, $owner);
-        $this->checkIn($memberA, $day1->modify('+1 hour'));
-        $this->checkIn($memberA, $day1->modify('+8 hours'));
+        $this->checkIn($memberA, $branch, $day1->modify('+1 hour'));
+        $this->checkIn($memberA, $branch, $day1->modify('+8 hours'));
 
         // Day2: B enrolls + pays. A checks in once. B: no check-in yet.
         $this->enrollAndPay($memberB, $silverPlan, $day2, 15, $owner);
-        $this->checkIn($memberA, $day2->modify('+1 hour'));
+        $this->checkIn($memberA, $branch, $day2->modify('+1 hour'));
 
         // Day3: C enrolls + pays, then is cancelled same day. A and B each check in once.
         $membershipC = $this->enrollAndPay($memberC, $goldPlan, $day3, 30, $owner);
@@ -136,8 +139,8 @@ final class DailyMetricAggregatorTest extends KernelTestCase
             'UPDATE membership SET cancelled_at = ? WHERE id = ?',
             [$day3->format('Y-m-d H:i:s'), (string) $membershipC->getId()],
         );
-        $this->checkIn($memberA, $day3->modify('+1 hour'));
-        $this->checkIn($memberB, $day3->modify('+2 hours'));
+        $this->checkIn($memberA, $branch, $day3->modify('+1 hour'));
+        $this->checkIn($memberB, $branch, $day3->modify('+2 hours'));
 
         $backfilledCount = $this->aggregator->backfill($gym);
 
@@ -180,25 +183,86 @@ final class DailyMetricAggregatorTest extends KernelTestCase
         self::assertSame(0, $byDate[$day3Key]->getAtRiskMembersCount(), 'Day3 at-risk');
     }
 
+    /**
+     * roadmap Phase 16: backfill() (and, by the same code path, the
+     * nightly handler) must produce a per-branch row AND the gym-wide
+     * rollup row for each day — not just one or the other. Two branches,
+     * one member enrolled/checked-in at each, so the per-branch numbers
+     * are provably different from each other and sum to the rollup.
+     */
+    public function test_backfill_produces_both_a_per_branch_row_and_the_gym_wide_rollup(): void
+    {
+        $owner = new User('Olivia Owner', 'owner@example.com', null, UserRole::OWNER, UserStatus::ACTIVE);
+        $this->em->persist($owner);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $this->em->persist($gym);
+        $branchA = new Branch($gym, 'Branch A', '1 Main St', isPrimary: true);
+        $branchB = new Branch($gym, 'Branch B', '2 Side St');
+        $this->em->persist($branchA);
+        $this->em->persist($branchB);
+        $planA = new MembershipPlan($branchA, 'Gold', '50.00', 30, []);
+        $planB = new MembershipPlan($branchB, 'Silver', '30.00', 30, []);
+        $this->em->persist($planA);
+        $this->em->persist($planB);
+        $this->em->flush();
+
+        $day = (new \DateTimeImmutable('-2 days'))->setTime(9, 0);
+        $memberA = $this->memberUser('Member A', 'a@example.com');
+        $memberB = $this->memberUser('Member B', 'b@example.com');
+        $this->enrollAndPay($memberA, $planA, $day, 30, $owner);
+        $this->enrollAndPay($memberB, $planB, $day, 30, $owner);
+        $this->checkIn($memberA, $branchA, $day->modify('+1 hour'));
+        $this->checkIn($memberB, $branchB, $day->modify('+2 hours'));
+        $this->checkIn($memberB, $branchB, $day->modify('+3 hours'));
+
+        $this->aggregator->backfill($gym);
+
+        $dateOnly = $day->setTime(0, 0);
+        $rollup = $this->snapshots->findOneForDate($gym, $dateOnly);
+        $rowA = $this->snapshots->findOneForDate($gym, $dateOnly, $branchA);
+        $rowB = $this->snapshots->findOneForDate($gym, $dateOnly, $branchB);
+
+        self::assertNotNull($rollup);
+        self::assertNotNull($rowA);
+        self::assertNotNull($rowB);
+        self::assertNull($rollup->getBranch());
+        self::assertSame((string) $branchA->getId(), (string) $rowA->getBranch()?->getId());
+        self::assertSame((string) $branchB->getId(), (string) $rowB->getBranch()?->getId());
+
+        self::assertSame(1, $rowA->getCheckinsCount(), 'Branch A: only member A checked in there');
+        self::assertSame(2, $rowB->getCheckinsCount(), 'Branch B: member B checked in twice there');
+        self::assertSame(3, $rollup->getCheckinsCount(), 'rollup: both branches combined');
+
+        self::assertSame(1, $rowA->getActiveMembersCount());
+        self::assertSame(1, $rowB->getActiveMembersCount());
+        self::assertSame(2, $rollup->getActiveMembersCount());
+
+        self::assertSame('50.00', $rowA->getRevenue());
+        self::assertSame('30.00', $rowB->getRevenue());
+        self::assertSame('80.00', $rollup->getRevenue());
+    }
+
     public function test_aggregate_is_idempotent_recomputing_the_same_day_updates_in_place_not_duplicates(): void
     {
         $owner = new User('Olivia Owner', 'owner@example.com', null, UserRole::OWNER, UserStatus::ACTIVE);
         $this->em->persist($owner);
         $gym = new Gym('Test Gym', '1 Main St', $owner);
         $this->em->persist($gym);
-        $plan = new MembershipPlan($gym, 'Gold', '50.00', 30, []);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($branch);
+        $plan = new MembershipPlan($branch, 'Gold', '50.00', 30, []);
         $this->em->persist($plan);
         $this->em->flush();
 
         $day = (new \DateTimeImmutable('-5 days'))->setTime(9, 0);
         $member = $this->memberUser('Member A', 'a@example.com');
         $this->enrollAndPay($member, $plan, $day, 30, $owner);
-        $this->checkIn($member, $day->modify('+1 hour'));
+        $this->checkIn($member, $branch, $day->modify('+1 hour'));
 
         $first = $this->aggregator->aggregate($gym, $day);
         self::assertSame(1, $first->getCheckinsCount());
 
-        $this->checkIn($member, $day->modify('+2 hours'));
+        $this->checkIn($member, $branch, $day->modify('+2 hours'));
         $second = $this->aggregator->aggregate($gym, $day);
 
         self::assertSame((string) $first->getId(), (string) $second->getId(), 'recomputing the same day must update the existing row, not create a new one');

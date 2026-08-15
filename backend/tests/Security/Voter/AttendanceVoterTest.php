@@ -2,8 +2,13 @@
 
 namespace App\Tests\Security\Voter;
 
+use App\Entity\AttendanceLog;
+use App\Entity\Branch;
+use App\Entity\BranchAssignment;
+use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\User;
+use App\Enum\CheckInMethod;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Security\Voter\AttendanceVoter;
@@ -13,9 +18,12 @@ use Symfony\Component\Security\Core\Authorization\Voter\VoterInterface;
 
 /**
  * CLAUDE.md: every Voter needs at least a passing case and a 403 case.
- * AttendanceVoter is copied verbatim from architecture doc §9.1 — this
- * test proves the copy behaves as documented, not that the logic itself
- * needed writing.
+ * AttendanceVoter is copied from architecture doc §9.1, updated for
+ * roadmap Phase 16 — VIEW's subject changed from MemberProfile to
+ * AttendanceLog (§9.1's updated body), so every VIEW case here now
+ * constructs a real log with a real branch, entirely in-memory (no
+ * EntityManager — Branch/BranchAssignment's constructors keep
+ * User::branchAssignments in sync, same pattern as BranchVoterTest).
  */
 final class AttendanceVoterTest extends TestCase
 {
@@ -40,6 +48,19 @@ final class AttendanceVoterTest extends TestCase
         $token->method('getUser')->willReturn($user);
 
         return $token;
+    }
+
+    private function branch(): Branch
+    {
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+
+        return new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+    }
+
+    private function logFor(MemberProfile $member, ?Branch $branch = null): AttendanceLog
+    {
+        return new AttendanceLog($member, $branch ?? $this->branch(), new \DateTimeImmutable(), CheckInMethod::MANUAL);
     }
 
     // ---- CHECK_IN ----------------------------------------------------------
@@ -91,7 +112,14 @@ final class AttendanceVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
-    /** roadmap Phase 15.1: Staff gets the same front-desk check-in capability as Owner. */
+    /**
+     * roadmap Phase 15.1/16: Staff gets the same front-desk check-in
+     * capability as Owner, and CHECK_IN stays hub-permissive on WHICH
+     * member regardless of branch assignment — this Staff user has no
+     * branch assignment at all here, and still passes, proving the Voter
+     * itself makes no branch check for CHECK_IN (that's a controller-level
+     * concern, per AttendanceController's own docblock).
+     */
     public function test_staff_can_check_in_on_behalf_of_a_member_front_desk(): void
     {
         $staff = $this->user(UserRole::STAFF);
@@ -101,6 +129,41 @@ final class AttendanceVoterTest extends TestCase
         $result = $this->voter->vote($this->tokenFor($staff), $profile, [AttendanceVoter::CHECK_IN]);
 
         self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
+    // ---- CHECK_OUT (check-in-timer feature: self only, no front-desk variant) ----
+
+    public function test_member_can_check_out_for_themselves(): void
+    {
+        $memberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($memberUser);
+
+        $result = $this->voter->vote($this->tokenFor($memberUser), $profile, [AttendanceVoter::CHECK_OUT]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
+    public function test_a_different_member_cannot_check_out_for_someone_else_403(): void
+    {
+        $actualMemberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($actualMemberUser);
+        $someoneElse = $this->user(UserRole::MEMBER);
+
+        $result = $this->voter->vote($this->tokenFor($someoneElse), $profile, [AttendanceVoter::CHECK_OUT]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /** Unlike CHECK_IN, CHECK_OUT has no front-desk variant — Owner gets no special-case grant here. */
+    public function test_owner_cannot_check_out_on_behalf_of_a_member_403(): void
+    {
+        $owner = $this->user(UserRole::OWNER);
+        $memberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($memberUser);
+
+        $result = $this->voter->vote($this->tokenFor($owner), $profile, [AttendanceVoter::CHECK_OUT]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
     // ---- VIEW_ALL (Owner dashboard/reports) --------------------------------
@@ -133,14 +196,15 @@ final class AttendanceVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
-    // ---- VIEW (self, or Coach's own clients) -------------------------------
+    // ---- VIEW (self, Coach's own clients, or Staff's assigned branch) -----
 
     public function test_member_can_view_their_own_attendance(): void
     {
         $memberUser = $this->user(UserRole::MEMBER);
         $profile = new MemberProfile($memberUser);
+        $log = $this->logFor($profile);
 
-        $result = $this->voter->vote($this->tokenFor($memberUser), $profile, [AttendanceVoter::VIEW]);
+        $result = $this->voter->vote($this->tokenFor($memberUser), $log, [AttendanceVoter::VIEW]);
 
         self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
     }
@@ -149,9 +213,10 @@ final class AttendanceVoterTest extends TestCase
     {
         $actualMemberUser = $this->user(UserRole::MEMBER);
         $profile = new MemberProfile($actualMemberUser);
+        $log = $this->logFor($profile);
         $someoneElse = $this->user(UserRole::MEMBER);
 
-        $result = $this->voter->vote($this->tokenFor($someoneElse), $profile, [AttendanceVoter::VIEW]);
+        $result = $this->voter->vote($this->tokenFor($someoneElse), $log, [AttendanceVoter::VIEW]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
@@ -166,21 +231,39 @@ final class AttendanceVoterTest extends TestCase
         $coach = $this->user(UserRole::COACH);
         $memberUser = $this->user(UserRole::MEMBER);
         $profile = new MemberProfile($memberUser);
+        $log = $this->logFor($profile);
 
-        $result = $this->voter->vote($this->tokenFor($coach), $profile, [AttendanceVoter::VIEW]);
+        $result = $this->voter->vote($this->tokenFor($coach), $log, [AttendanceVoter::VIEW]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
-    /** roadmap Phase 15.1: Staff gets read-only VIEW, gym-scoped, like Owner (but never VIEW_ALL — see above). */
-    public function test_staff_can_view_any_members_attendance(): void
+    /** roadmap Phase 16: Staff's VIEW now requires an actual branch assignment matching the log's branch — a real check, not the Phase 15 gym-wide collapse. */
+    public function test_staff_can_view_a_members_attendance_at_their_assigned_branch(): void
     {
         $staff = $this->user(UserRole::STAFF);
+        $branch = $this->branch();
+        new BranchAssignment($staff, $branch);
         $memberUser = $this->user(UserRole::MEMBER);
         $profile = new MemberProfile($memberUser);
+        $log = $this->logFor($profile, $branch);
 
-        $result = $this->voter->vote($this->tokenFor($staff), $profile, [AttendanceVoter::VIEW]);
+        $result = $this->voter->vote($this->tokenFor($staff), $log, [AttendanceVoter::VIEW]);
 
         self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
+    /** The other half of the same check: Staff assigned somewhere, but not to THIS log's branch. */
+    public function test_staff_cannot_view_attendance_at_a_branch_they_arent_assigned_to_403(): void
+    {
+        $staff = $this->user(UserRole::STAFF);
+        new BranchAssignment($staff, $this->branch()); // assigned elsewhere
+        $memberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($memberUser);
+        $log = $this->logFor($profile, $this->branch()); // a different branch
+
+        $result = $this->voter->vote($this->tokenFor($staff), $log, [AttendanceVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 }

@@ -16,3 +16,9 @@ export interface AttendanceReportDto {
   entries: AttendanceEntryDto[]
   dailyCounts: DailyCheckinCountDto[]
 }
+
+/** Check-in-timer feature: "today's active session," or nothing. */
+export interface ActiveAttendanceDto {
+  checkInAt: string
+  checkOutAt: string | null
+}

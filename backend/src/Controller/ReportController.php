@@ -4,10 +4,13 @@ namespace App\Controller;
 
 use App\Audit\AuditLogger;
 use App\Entity\AttendanceLog;
+use App\Entity\Branch;
 use App\Entity\DailyMetricSnapshot;
+use App\Entity\Gym;
 use App\Entity\User;
 use App\Gym\GymProvisioningService;
 use App\Repository\AttendanceLogRepository;
+use App\Repository\BranchRepository;
 use App\Repository\DailyMetricSnapshotRepository;
 use App\Repository\InvoiceRepository;
 use App\Repository\MembershipRepository;
@@ -30,6 +33,15 @@ use Symfony\Component\Routing\Attribute\Route;
  * trend data functional requirements §10.2 needs, but its `count`/
  * `entries` fields are untouched — the frontend's live-counter hook
  * depends on that exact shape (see useLiveAttendanceCount.ts).
+ *
+ * roadmap Phase 16 / functional requirements §14.5: every endpoint below
+ * accepts an optional `?branch_id` — omitted means the gym-wide rollup
+ * (DESIGN-SYSTEM.md §4.2: "Owners on the reports screen default to the
+ * gym-wide rollup, not a single branch," unlike front-desk check-in/plan
+ * management, which default to the primary branch instead). No Voter
+ * change: ReportVoter still only asks "does this Owner own this Gym" —
+ * which branch's numbers come back is a query concern (architecture doc
+ * §6.8's own explicit note), not a permission concern.
  */
 class ReportController extends AbstractController
 {
@@ -43,12 +55,13 @@ class ReportController extends AbstractController
         private readonly RetentionAnalyzer $retention,
         private readonly ReportExporter $exporter,
         private readonly AuditLogger $auditLogger,
+        private readonly BranchRepository $branches,
     ) {
     }
 
     /** functional requirements §10.1: today's check-ins, today's revenue, current active-member count. */
     #[Route('/reports/dashboard', name: 'reports_dashboard', methods: ['GET'])]
-    public function dashboard(): JsonResponse
+    public function dashboard(Request $request): JsonResponse
     {
         $user = $this->getUser();
         if (!$user instanceof User) {
@@ -60,15 +73,21 @@ class ReportController extends AbstractController
             return $this->forbidden();
         }
 
+        [$branch, $error] = $this->resolveReportBranch($gym, $request);
+        if ($error !== null) {
+            return $error;
+        }
+
         $today = new \DateTimeImmutable('today');
 
         return new JsonResponse([
             'gymId' => (string) $gym->getId(),
+            'branchId' => $branch?->getId() !== null ? (string) $branch->getId() : null,
             // Same live mechanism as the Phase 5 attendance counter
             // (AttendanceLogRepository::countSince) — not a second pipeline.
-            'todayCheckins' => $this->attendanceLogs->countSince($today),
-            'todayRevenue' => $this->invoices->sumPaidAmountOnDate($today),
-            'activeMembersCount' => $this->memberships->countWithinTermOnDate($today),
+            'todayCheckins' => $this->attendanceLogs->countSince($today, $branch),
+            'todayRevenue' => $this->invoices->sumPaidAmountOnDate($today, $branch),
+            'activeMembersCount' => $this->memberships->countWithinTermOnDate($today, $branch),
         ]);
     }
 
@@ -86,19 +105,25 @@ class ReportController extends AbstractController
             return $this->forbidden();
         }
 
+        [$branch, $error] = $this->resolveReportBranch($gym, $request);
+        if ($error !== null) {
+            return $error;
+        }
+
         [$from, $toExclusive] = $this->parseDateRange($request);
-        $entries = $this->attendanceLogs->findByDateRange($from, $toExclusive);
+        $entries = $this->attendanceLogs->findByDateRange($from, $toExclusive, $branch);
 
         return new JsonResponse([
             'gymId' => (string) $gym->getId(),
-            'count' => $this->attendanceLogs->countSince(new \DateTimeImmutable('today')),
+            'branchId' => $branch?->getId() !== null ? (string) $branch->getId() : null,
+            'count' => $this->attendanceLogs->countSince(new \DateTimeImmutable('today'), $branch),
             'entries' => array_map(fn (AttendanceLog $log) => [
                 'id' => (string) $log->getId(),
                 'memberName' => $log->getMember()->getUser()->getName(),
                 'checkInAt' => $log->getCheckIn()->format(\DateTimeInterface::ATOM),
                 'method' => $log->getMethod()->value,
             ], $entries),
-            'dailyCounts' => $this->dailyCheckinCounts($gym, $from, $toExclusive->modify('-1 day')),
+            'dailyCounts' => $this->dailyCheckinCounts($gym, $from, $toExclusive->modify('-1 day'), $branch),
         ]);
     }
 
@@ -116,8 +141,13 @@ class ReportController extends AbstractController
             return $this->forbidden();
         }
 
+        [$branch, $error] = $this->resolveReportBranch($gym, $request);
+        if ($error !== null) {
+            return $error;
+        }
+
         $horizonDays = $this->parseHorizonDays($request);
-        $result = $this->forecastFor($gym, $horizonDays);
+        $result = $this->forecastFor($gym, $horizonDays, $branch);
 
         return new JsonResponse([
             'hasEnoughData' => $result->hasEnoughData,
@@ -129,7 +159,7 @@ class ReportController extends AbstractController
 
     /** functional requirements §10.4: every entry carries a reason, never a bare score. */
     #[Route('/reports/retention', name: 'reports_retention', methods: ['GET'])]
-    public function retention(): JsonResponse
+    public function retention(Request $request): JsonResponse
     {
         $user = $this->getUser();
         if (!$user instanceof User) {
@@ -141,7 +171,12 @@ class ReportController extends AbstractController
             return $this->forbidden();
         }
 
-        $atRisk = $this->retention->atRiskMembers(new \DateTimeImmutable('today'));
+        [$branch, $error] = $this->resolveReportBranch($gym, $request);
+        if ($error !== null) {
+            return $error;
+        }
+
+        $atRisk = $this->retention->atRiskMembers(new \DateTimeImmutable('today'), $branch);
 
         return new JsonResponse([
             'members' => array_map(fn (array $entry) => [
@@ -177,8 +212,13 @@ class ReportController extends AbstractController
             ], 400);
         }
 
+        [$branch, $error] = $this->resolveReportBranch($gym, $request);
+        if ($error !== null) {
+            return $error;
+        }
+
         [$from, $toExclusive] = $this->parseDateRange($request);
-        [$title, $headers, $rows] = $this->buildExportData($gym, $report, $from, $toExclusive);
+        [$title, $headers, $rows] = $this->buildExportData($gym, $report, $from, $toExclusive, $branch);
 
         $body = $format === 'csv' ? $this->exporter->toCsv($headers, $rows) : $this->exporter->toPdf($title, $headers, $rows);
         $contentType = $format === 'csv' ? 'text/csv' : 'application/pdf';
@@ -189,6 +229,7 @@ class ReportController extends AbstractController
             'format' => $format,
             'from' => $from->format('Y-m-d'),
             'to' => $toExclusive->modify('-1 day')->format('Y-m-d'),
+            'branchId' => $branch?->getId() !== null ? (string) $branch->getId() : 'all',
         ]);
 
         return new Response($body, 200, [
@@ -197,44 +238,68 @@ class ReportController extends AbstractController
         ]);
     }
 
+    /**
+     * roadmap Phase 16 / DESIGN-SYSTEM.md §4.2: omitted `branch_id` means
+     * the gym-wide rollup (null) — reports default differently from
+     * front-desk check-in/plan management, which default to the primary
+     * branch instead. An explicit but invalid branch_id is a 400, never a
+     * silent fallback to "all branches."
+     *
+     * @return array{0: ?Branch, 1: ?JsonResponse}
+     */
+    private function resolveReportBranch(Gym $gym, Request $request): array
+    {
+        $branchId = $request->query->get('branch_id');
+        if ($branchId === null || $branchId === '') {
+            return [null, null];
+        }
+
+        $branch = $this->branches->find($branchId);
+        if ($branch === null || $branch->getGym() !== $gym) {
+            return [null, new JsonResponse(['error' => 'invalid_request', 'message' => 'branch_id does not belong to this gym.'], 400)];
+        }
+
+        return [$branch, null];
+    }
+
     /** @return array{0: string, 1: string[], 2: array<int, array<int, string>>} [title, headers, rows] */
-    private function buildExportData(\App\Entity\Gym $gym, string $report, \DateTimeImmutable $from, \DateTimeImmutable $toExclusive): array
+    private function buildExportData(Gym $gym, string $report, \DateTimeImmutable $from, \DateTimeImmutable $toExclusive, ?Branch $branch): array
     {
         return match ($report) {
             'attendance' => [
                 'Attendance report',
                 ['Date', 'Check-ins'],
-                array_map(fn (array $d) => [$d['date'], (string) $d['count']], $this->dailyCheckinCounts($gym, $from, $toExclusive->modify('-1 day'))),
+                array_map(fn (array $d) => [$d['date'], (string) $d['count']], $this->dailyCheckinCounts($gym, $from, $toExclusive->modify('-1 day'), $branch)),
             ],
             'revenue' => [
                 'Revenue forecast',
                 ['Date', 'Revenue', 'Type'],
-                $this->revenueExportRows($gym),
+                $this->revenueExportRows($gym, $branch),
             ],
             'retention' => [
                 'At-risk members',
                 ['Member', 'Reasons'],
                 array_map(
                     fn (array $entry) => [$entry['member']->getUser()->getName(), implode('; ', $entry['reasons'])],
-                    $this->retention->atRiskMembers(new \DateTimeImmutable('today')),
+                    $this->retention->atRiskMembers(new \DateTimeImmutable('today'), $branch),
                 ),
             ],
             default => [
                 'Dashboard summary',
                 ['Metric', 'Value'],
                 [
-                    ["Today's check-ins", (string) $this->attendanceLogs->countSince(new \DateTimeImmutable('today'))],
-                    ["Today's revenue", $this->invoices->sumPaidAmountOnDate(new \DateTimeImmutable('today'))],
-                    ['Active members', (string) $this->memberships->countWithinTermOnDate(new \DateTimeImmutable('today'))],
+                    ["Today's check-ins", (string) $this->attendanceLogs->countSince(new \DateTimeImmutable('today'), $branch)],
+                    ["Today's revenue", $this->invoices->sumPaidAmountOnDate(new \DateTimeImmutable('today'), $branch)],
+                    ['Active members', (string) $this->memberships->countWithinTermOnDate(new \DateTimeImmutable('today'), $branch)],
                 ],
             ],
         };
     }
 
     /** @return array<int, array<int, string>> */
-    private function revenueExportRows(\App\Entity\Gym $gym): array
+    private function revenueExportRows(Gym $gym, ?Branch $branch): array
     {
-        $result = $this->forecastFor($gym, 30);
+        $result = $this->forecastFor($gym, 30, $branch);
         $rows = [];
         foreach ($result->historical as $point) {
             $rows[] = [$point->date->format('Y-m-d'), $point->revenue, 'actual'];
@@ -246,21 +311,21 @@ class ReportController extends AbstractController
         return $rows;
     }
 
-    private function forecastFor(\App\Entity\Gym $gym, int $horizonDays): \App\Reporting\RevenueForecastResult
+    private function forecastFor(Gym $gym, int $horizonDays, ?Branch $branch = null): \App\Reporting\RevenueForecastResult
     {
         $yesterday = (new \DateTimeImmutable('today'))->modify('-1 day');
         $historyStart = $yesterday->modify('-60 days');
-        $snapshots = $this->snapshots->findForDateRange($gym, $historyStart, $yesterday);
+        $snapshots = $this->snapshots->findForDateRange($gym, $historyStart, $yesterday, $branch);
 
         return $this->forecaster->forecast($snapshots, $horizonDays, new \DateTimeImmutable('today'));
     }
 
     /** @return array<int, array{date: string, count: int}> */
-    private function dailyCheckinCounts(\App\Entity\Gym $gym, \DateTimeImmutable $from, \DateTimeImmutable $to): array
+    private function dailyCheckinCounts(Gym $gym, \DateTimeImmutable $from, \DateTimeImmutable $to, ?Branch $branch = null): array
     {
         $today = new \DateTimeImmutable('today');
         $snapshotsByDate = [];
-        foreach ($this->snapshots->findForDateRange($gym, $from, $to) as $snapshot) {
+        foreach ($this->snapshots->findForDateRange($gym, $from, $to, $branch) as $snapshot) {
             $snapshotsByDate[$snapshot->getSnapshotDate()->format('Y-m-d')] = $snapshot;
         }
 
@@ -269,7 +334,7 @@ class ReportController extends AbstractController
             $key = $date->format('Y-m-d');
             if ($date == $today) {
                 // No snapshot exists for today until tonight's job runs — same live mechanism as the dashboard.
-                $count = $this->attendanceLogs->countForDate($today);
+                $count = $this->attendanceLogs->countForDate($today, $branch);
             } else {
                 $count = isset($snapshotsByDate[$key]) ? $snapshotsByDate[$key]->getCheckinsCount() : 0;
             }

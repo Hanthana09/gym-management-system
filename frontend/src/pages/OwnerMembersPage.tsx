@@ -2,11 +2,23 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Input, Modal, Select } from '../components/ui'
+import { CheckInIcon } from '../components/ui/icons'
 import { ApiError } from '../lib/apiClient'
+import { useAuth } from '../auth/AuthContext'
 import { useMembers } from '../members/useMembers'
 import { useOwnerPlans } from '../membership/useOwnerPlans'
 import { useEnrollMember } from '../membership/useEnrollMember'
+import { useBranches } from '../branches/useBranches'
+import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import type { MemberAccountStatus, MemberListItemDto, RosterRole } from '../members/types'
+
+const BLOCKED_REASON_LABELS: Record<string, string> = {
+  membership_expired: 'Membership expired',
+  membership_paused: 'Membership paused',
+  membership_cancelled: 'Membership cancelled',
+  account_suspended: 'Account suspended',
+  no_membership: 'No membership',
+}
 
 // DESIGN-SYSTEM.md §3 "Tag/pill" typographic pattern — same approach as
 // MyMembershipCard's membership-status pill, one palette per concept.
@@ -87,9 +99,11 @@ function compareBy(field: SortField, a: MemberListItemDto, b: MemberListItemDto)
  * viewport crosses the lg: breakpoint.
  */
 export function OwnerMembersPage() {
+  const { authFetch } = useAuth()
   const { members, loaded, refresh, updateStatus } = useMembers()
   const { plans, loaded: plansLoaded } = useOwnerPlans()
   const { enroll } = useEnrollMember()
+  const { branches } = useBranches()
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
   const [sortField, setSortField] = useState<SortField>('name')
@@ -99,6 +113,34 @@ export function OwnerMembersPage() {
   const [confirmingSuspendId, setConfirmingSuspendId] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null)
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
+  const [checkInState, setCheckInState] = useState<Record<string, { status: 'checking' | 'success' | 'blocked' | 'error'; message: string }>>({})
+
+  // functional requirements §14.3: an Owner front-desking at any branch —
+  // unlike Staff (scoped to their own assignments), an Owner may check a
+  // member in at any of their branches, defaulting to the primary one.
+  const activeBranchId = selectedBranchId ?? defaultBranchId(branches)
+
+  async function handleCheckIn(member: MemberListItemDto) {
+    setCheckInState((prev) => ({ ...prev, [member.id]: { status: 'checking', message: '' } }))
+    try {
+      const result = await authFetch<{ checkInAt: string }>(`/members/${member.id}/checkin`, {
+        method: 'POST',
+        body: { branchId: activeBranchId },
+      })
+      const time = new Date(result.checkInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      setCheckInState((prev) => ({ ...prev, [member.id]: { status: 'success', message: `Checked in at ${time}` } }))
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'checkin_blocked' && err.reason) {
+        setCheckInState((prev) => ({
+          ...prev,
+          [member.id]: { status: 'blocked', message: BLOCKED_REASON_LABELS[err.reason as string] ?? 'Check-in blocked' },
+        }))
+      } else {
+        setCheckInState((prev) => ({ ...prev, [member.id]: { status: 'error', message: "Couldn't check in." } }))
+      }
+    }
+  }
 
   async function handleReactivate(id: string) {
     setStatusError(null)
@@ -164,7 +206,11 @@ export function OwnerMembersPage() {
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/members">
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
-          <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
+            {/* Front-desk check-in branch — absent for single-branch gyms (DESIGN-SYSTEM.md §4.2). */}
+            <BranchSwitcher branches={branches} value={activeBranchId} onChange={setSelectedBranchId} />
+          </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <div className="flex-1">
@@ -254,19 +300,42 @@ export function OwnerMembersPage() {
                   </span>
                 </div>
                 {member.role === 'member' ? (
-                  <div className="mt-3 border-t border-line pt-3">
-                    <MemberStatusAction
-                      member={member}
-                      confirming={confirmingSuspendId === member.id}
-                      updating={statusUpdatingId === member.id}
-                      onRequestSuspend={() => {
-                        setStatusError(null)
-                        setConfirmingSuspendId(member.id)
-                      }}
-                      onCancelSuspend={() => setConfirmingSuspendId(null)}
-                      onConfirmSuspend={() => handleConfirmSuspend(member.id)}
-                      onReactivate={() => handleReactivate(member.id)}
-                    />
+                  <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <MemberStatusAction
+                        member={member}
+                        confirming={confirmingSuspendId === member.id}
+                        updating={statusUpdatingId === member.id}
+                        onRequestSuspend={() => {
+                          setStatusError(null)
+                          setConfirmingSuspendId(member.id)
+                        }}
+                        onCancelSuspend={() => setConfirmingSuspendId(null)}
+                        onConfirmSuspend={() => handleConfirmSuspend(member.id)}
+                        onReactivate={() => handleReactivate(member.id)}
+                      />
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleCheckIn(member)}
+                        disabled={checkInState[member.id]?.status === 'checking'}
+                      >
+                        <CheckInIcon />
+                        {checkInState[member.id]?.status === 'checking' ? 'Checking in…' : 'Check in'}
+                      </Button>
+                    </div>
+                    {checkInState[member.id] && checkInState[member.id].status !== 'checking' ? (
+                      <p
+                        className={`text-sm ${
+                          checkInState[member.id].status === 'success'
+                            ? 'text-green-700'
+                            : checkInState[member.id].status === 'blocked'
+                              ? 'text-red-700'
+                              : 'text-ink-soft'
+                        }`}
+                      >
+                        {checkInState[member.id].message}
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </Card>
@@ -320,19 +389,44 @@ export function OwnerMembersPage() {
                     </td>
                     <td className="border-b border-line/60 px-4 py-3">
                       {member.role === 'member' ? (
-                        <MemberStatusAction
-                          member={member}
-                          confirming={confirmingSuspendId === member.id}
-                          updating={statusUpdatingId === member.id}
-                          onRequestSuspend={() => {
-                            setStatusError(null)
-                            setConfirmingSuspendId(member.id)
-                          }}
-                          onCancelSuspend={() => setConfirmingSuspendId(null)}
-                          onConfirmSuspend={() => handleConfirmSuspend(member.id)}
-                          onReactivate={() => handleReactivate(member.id)}
-                          compact
-                        />
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2">
+                            <MemberStatusAction
+                              member={member}
+                              confirming={confirmingSuspendId === member.id}
+                              updating={statusUpdatingId === member.id}
+                              onRequestSuspend={() => {
+                                setStatusError(null)
+                                setConfirmingSuspendId(member.id)
+                              }}
+                              onCancelSuspend={() => setConfirmingSuspendId(null)}
+                              onConfirmSuspend={() => handleConfirmSuspend(member.id)}
+                              onReactivate={() => handleReactivate(member.id)}
+                              compact
+                            />
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleCheckIn(member)}
+                              disabled={checkInState[member.id]?.status === 'checking'}
+                            >
+                              <CheckInIcon />
+                              {checkInState[member.id]?.status === 'checking' ? 'Checking in…' : 'Check in'}
+                            </Button>
+                          </div>
+                          {checkInState[member.id] && checkInState[member.id].status !== 'checking' ? (
+                            <p
+                              className={`text-sm ${
+                                checkInState[member.id].status === 'success'
+                                  ? 'text-green-700'
+                                  : checkInState[member.id].status === 'blocked'
+                                    ? 'text-red-700'
+                                    : 'text-ink-soft'
+                              }`}
+                            >
+                              {checkInState[member.id].message}
+                            </p>
+                          ) : null}
+                        </div>
                       ) : (
                         <span className="text-ink-soft">—</span>
                       )}

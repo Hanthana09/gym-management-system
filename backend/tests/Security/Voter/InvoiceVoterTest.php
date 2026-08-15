@@ -2,6 +2,7 @@
 
 namespace App\Tests\Security\Voter;
 
+use App\Entity\Branch;
 use App\Entity\Gym;
 use App\Entity\Invoice;
 use App\Entity\MemberProfile;
@@ -44,7 +45,8 @@ final class InvoiceVoterTest extends TestCase
     {
         $owner ??= $this->user(UserRole::OWNER);
         $gym = new Gym('Test Gym', '123 Main St', $owner);
-        $plan = new MembershipPlan($gym, 'Standard', '49.99', 30, []);
+        $branch = new Branch($gym, 'Main', '123 Main St', isPrimary: true);
+        $plan = new MembershipPlan($branch, 'Standard', '49.99', 30, []);
         $member = new MemberProfile($memberUser);
         $membership = new Membership($member, $plan, new \DateTimeImmutable('today'), new \DateTimeImmutable('+30 days'));
 

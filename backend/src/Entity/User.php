@@ -5,6 +5,8 @@ namespace App\Entity;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Repository\UserRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -52,6 +54,20 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(options: ['default' => false])]
     private bool $whatsappOptIn = false;
 
+    /**
+     * roadmap Phase 16 / architecture doc §5.1, §6.12: Coach/Staff ↔
+     * Branch. Never populated for a Member or Owner — Members are
+     * hub-scoped (architecture doc §5.2), Owners implicitly have every
+     * branch. Inverse side kept in sync by BranchAssignment's own
+     * constructor, not Doctrine cascade, so AppVoter::hasAssignedBranch()
+     * works against freshly-constructed, not-yet-persisted entities in
+     * unit tests too (no EntityManager required).
+     *
+     * @var Collection<int, BranchAssignment>
+     */
+    #[ORM\OneToMany(mappedBy: 'user', targetEntity: BranchAssignment::class)]
+    private Collection $branchAssignments;
+
     public function __construct(string $name, ?string $email, ?string $phone, UserRole $role, UserStatus $status)
     {
         $this->id = Uuid::v7();
@@ -61,6 +77,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         $this->role = $role;
         $this->status = $status;
         $this->createdAt = new \DateTimeImmutable();
+        $this->branchAssignments = new ArrayCollection();
     }
 
     public function getId(): Uuid
@@ -121,6 +138,25 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setWhatsappOptIn(bool $whatsappOptIn): void
     {
         $this->whatsappOptIn = $whatsappOptIn;
+    }
+
+    /** @return Collection<int, BranchAssignment> */
+    public function getBranchAssignments(): Collection
+    {
+        return $this->branchAssignments;
+    }
+
+    /** Called from BranchAssignment's own constructor to keep this side in sync — not meant to be called directly elsewhere. */
+    public function addBranchAssignment(BranchAssignment $assignment): void
+    {
+        if (!$this->branchAssignments->contains($assignment)) {
+            $this->branchAssignments->add($assignment);
+        }
+    }
+
+    public function removeBranchAssignment(BranchAssignment $assignment): void
+    {
+        $this->branchAssignments->removeElement($assignment);
     }
 
     // --- Symfony Security integration ---

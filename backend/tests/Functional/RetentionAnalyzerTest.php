@@ -3,6 +3,7 @@
 namespace App\Tests\Functional;
 
 use App\Entity\AttendanceLog;
+use App\Entity\Branch;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
@@ -27,6 +28,7 @@ final class RetentionAnalyzerTest extends KernelTestCase
     private EntityManagerInterface $em;
     private RetentionAnalyzer $retention;
     private Gym $gym;
+    private Branch $branch;
     private MembershipPlan $plan;
     private User $owner;
     private \DateTimeImmutable $today;
@@ -44,7 +46,9 @@ final class RetentionAnalyzerTest extends KernelTestCase
         $this->em->persist($this->owner);
         $this->gym = new Gym('Test Gym', '1 Main St', $this->owner);
         $this->em->persist($this->gym);
-        $this->plan = new MembershipPlan($this->gym, 'Gold', '50.00', 60, []);
+        $this->branch = new Branch($this->gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($this->branch);
+        $this->plan = new MembershipPlan($this->branch, 'Gold', '50.00', 60, []);
         $this->em->persist($this->plan);
         $this->em->flush();
 
@@ -74,7 +78,7 @@ final class RetentionAnalyzerTest extends KernelTestCase
 
     private function checkIn(MemberProfile $member, \DateTimeImmutable $at): void
     {
-        $this->em->persist(new AttendanceLog($member, $at, CheckInMethod::MANUAL));
+        $this->em->persist(new AttendanceLog($member, $this->branch, $at, CheckInMethod::MANUAL));
         $this->em->flush();
     }
 

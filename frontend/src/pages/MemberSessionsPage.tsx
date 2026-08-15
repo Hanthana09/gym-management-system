@@ -6,6 +6,8 @@ import { ApiError } from '../lib/apiClient'
 import { useCoaches } from '../personal-training/useCoaches'
 import { useMySessions } from '../personal-training/useMySessions'
 import type { PtSessionDto, PtSessionStatus } from '../personal-training/types'
+import { useBranches } from '../branches/useBranches'
+import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 
 // DESIGN-SYSTEM.md §3 "Tag/pill" typographic pattern, applied inline —
 // these statuses keep their own semantic colors, not the role palette.
@@ -44,14 +46,24 @@ function formatScheduledAt(iso: string): string {
  * scannable event that pattern was designed for.
  */
 export function MemberSessionsPage() {
-  const { coaches, loaded: coachesLoaded } = useCoaches()
+  const { branches } = useBranches()
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
+  const effectiveBranchId = selectedBranchId ?? defaultBranchId(branches)
+  const { coaches, loaded: coachesLoaded } = useCoaches(effectiveBranchId)
   const { sessions, loaded: sessionsLoaded, requestSession, cancel } = useMySessions()
 
   return (
     <div className="h-dvh">
       <NavShell role="member" title="Gym" navItems={MEMBER_NAV_ITEMS} activeHref="/member/sessions">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <BookingForm coaches={coaches} coachesLoaded={coachesLoaded} onRequest={requestSession} />
+          {/* functional requirements §14.3: any branch with an assigned Coach, not just the Member's own enrolling branch. Absent for single-branch gyms. */}
+          <BranchSwitcher branches={branches} value={effectiveBranchId} onChange={setSelectedBranchId} />
+          <BookingForm
+            coaches={coaches}
+            coachesLoaded={coachesLoaded}
+            branchId={effectiveBranchId}
+            onRequest={requestSession}
+          />
 
           <Card>
             <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
@@ -113,10 +125,16 @@ function SessionRow({ session, onCancel }: { session: PtSessionDto; onCancel: (i
 interface BookingFormProps {
   coaches: { id: string; name: string }[]
   coachesLoaded: boolean
-  onRequest: (coachUserId: string, scheduledAt: string, durationMinutes: number) => Promise<PtSessionDto>
+  branchId: string | null
+  onRequest: (
+    coachUserId: string,
+    scheduledAt: string,
+    durationMinutes: number,
+    branchId?: string | null,
+  ) => Promise<PtSessionDto>
 }
 
-function BookingForm({ coaches, coachesLoaded, onRequest }: BookingFormProps) {
+function BookingForm({ coaches, coachesLoaded, branchId, onRequest }: BookingFormProps) {
   const [coachUserId, setCoachUserId] = useState('')
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
@@ -140,7 +158,7 @@ function BookingForm({ coaches, coachesLoaded, onRequest }: BookingFormProps) {
     setSubmitting(true)
     try {
       const scheduledAt = new Date(`${date}T${time}`).toISOString()
-      await onRequest(selectedCoach, scheduledAt, Number(durationMinutes))
+      await onRequest(selectedCoach, scheduledAt, Number(durationMinutes), branchId)
       setSuccess(true)
       setDate('')
       setTime('')

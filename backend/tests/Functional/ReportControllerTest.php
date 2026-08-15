@@ -375,4 +375,71 @@ final class ReportControllerTest extends WebTestCase
     {
         return $this->request('GET', '/invoices', $owner)['body']['invoices'][0]['id'];
     }
+
+    // ---- Branch scoping (roadmap Phase 16 / functional requirements §14.5) ----
+
+    /**
+     * The actual point of adding ?branch_id: a branch-scoped dashboard
+     * must reflect only that branch's activity, and omitting the param
+     * must give the gym-wide rollup (both branches combined) — not
+     * secretly just the primary branch, which would be indistinguishable
+     * from "no filter" in the single-branch case but wrong here.
+     */
+    public function test_branch_id_scopes_the_dashboard_to_one_branch(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $primaryBranchId = $this->request('GET', '/branches', $owner)['body']['branches'][0]['id'];
+        $secondBranch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+
+        $memberAtPrimary = $this->createApprovedMember('Member Primary', 'primary@example.com');
+        $memberAtSecond = $this->createApprovedMember('Member Downtown', 'downtown@example.com');
+        $planPrimary = $this->request('POST', '/membership-plans', $owner, ['name' => 'Standard', 'price' => '50.00', 'durationDays' => 30, 'features' => [], 'branchId' => $primaryBranchId]);
+        $planSecond = $this->request('POST', '/membership-plans', $owner, ['name' => 'Standard', 'price' => '30.00', 'durationDays' => 30, 'features' => [], 'branchId' => $secondBranch['id']]);
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $memberAtPrimary->getId(), 'planId' => $planPrimary['body']['id']]);
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $memberAtSecond->getId(), 'planId' => $planSecond['body']['id']]);
+        $this->request('POST', "/members/{$memberAtPrimary->getId()}/checkin", $owner, ['branchId' => $primaryBranchId]);
+        $this->request('POST', "/members/{$memberAtSecond->getId()}/checkin", $owner, ['branchId' => $secondBranch['id']]);
+
+        $primaryDashboard = $this->request('GET', "/reports/dashboard?branch_id={$primaryBranchId}", $owner);
+        $secondDashboard = $this->request('GET', "/reports/dashboard?branch_id={$secondBranch['id']}", $owner);
+        $rollupDashboard = $this->request('GET', '/reports/dashboard', $owner);
+
+        self::assertSame(1, $primaryDashboard['body']['todayCheckins']);
+        self::assertSame(1, $primaryDashboard['body']['activeMembersCount']);
+        self::assertSame(1, $secondDashboard['body']['todayCheckins']);
+        self::assertSame(1, $secondDashboard['body']['activeMembersCount']);
+        self::assertSame(2, $rollupDashboard['body']['todayCheckins'], 'omitting branch_id must roll up both branches, not just the primary one');
+        self::assertSame(2, $rollupDashboard['body']['activeMembersCount']);
+    }
+
+    public function test_branch_id_scopes_the_attendance_report(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $primaryBranchId = $this->request('GET', '/branches', $owner)['body']['branches'][0]['id'];
+        $secondBranch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+
+        $memberAtPrimary = $this->createApprovedMember('Member Primary', 'primary@example.com');
+        $memberAtSecond = $this->createApprovedMember('Member Downtown', 'downtown@example.com');
+        $planPrimary = $this->request('POST', '/membership-plans', $owner, ['name' => 'Standard', 'price' => '50.00', 'durationDays' => 30, 'features' => [], 'branchId' => $primaryBranchId]);
+        $planSecond = $this->request('POST', '/membership-plans', $owner, ['name' => 'Standard', 'price' => '30.00', 'durationDays' => 30, 'features' => [], 'branchId' => $secondBranch['id']]);
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $memberAtPrimary->getId(), 'planId' => $planPrimary['body']['id']]);
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $memberAtSecond->getId(), 'planId' => $planSecond['body']['id']]);
+        $this->request('POST', "/members/{$memberAtPrimary->getId()}/checkin", $owner, ['branchId' => $primaryBranchId]);
+        $this->request('POST', "/members/{$memberAtSecond->getId()}/checkin", $owner, ['branchId' => $secondBranch['id']]);
+
+        $result = $this->request('GET', "/reports/attendance?branch_id={$primaryBranchId}", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(1, $result['body']['entries']);
+        self::assertSame('Member Primary', $result['body']['entries'][0]['memberName']);
+    }
+
+    public function test_an_unknown_branch_id_on_a_report_is_rejected_400(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+
+        $result = $this->request('GET', '/reports/dashboard?branch_id=00000000-0000-0000-0000-000000000000', $owner);
+
+        self::assertSame(400, $result['status']);
+    }
 }

@@ -2,7 +2,10 @@
 
 namespace App\Tests\Security\Voter;
 
+use App\Entity\Branch;
+use App\Entity\BranchAssignment;
 use App\Entity\CoachProfile;
+use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\PtSession;
 use App\Entity\User;
@@ -44,11 +47,21 @@ final class PtSessionVoterTest extends TestCase
         return $token;
     }
 
+    /**
+     * The Coach is assigned to the session's branch by default — RESPOND
+     * now requires that (roadmap Phase 16), and most of these tests are
+     * about identity (own session vs. someone else's), not branch
+     * eligibility specifically.
+     */
     private function session(): array
     {
         $coachUser = $this->user(UserRole::COACH);
         $memberUser = $this->user(UserRole::MEMBER);
-        $session = new PtSession(new CoachProfile($coachUser), new MemberProfile($memberUser), new \DateTimeImmutable('+1 day'), 60);
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        new BranchAssignment($coachUser, $branch);
+        $session = new PtSession(new CoachProfile($coachUser), new MemberProfile($memberUser), $branch, new \DateTimeImmutable('+1 day'), 60);
 
         return [$session, $coachUser, $memberUser];
     }
@@ -92,6 +105,28 @@ final class PtSessionVoterTest extends TestCase
         $otherCoach = $this->user(UserRole::COACH);
 
         $result = $this->voter->vote($this->tokenFor($otherCoach), $session, [PtSessionVoter::RESPOND]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /**
+     * roadmap Phase 16: RESPOND now also requires the Coach be assigned
+     * to the session's branch — even the correct, owning Coach is denied
+     * if that assignment is somehow missing (shouldn't happen if
+     * PtSessionController::create() validated it at request time, but the
+     * Voter itself doesn't trust that).
+     */
+    public function test_the_owning_coach_without_a_branch_assignment_cannot_respond_403(): void
+    {
+        $coachUser = $this->user(UserRole::COACH);
+        $memberUser = $this->user(UserRole::MEMBER);
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        // Deliberately no BranchAssignment for $coachUser.
+        $session = new PtSession(new CoachProfile($coachUser), new MemberProfile($memberUser), $branch, new \DateTimeImmutable('+1 day'), 60);
+
+        $result = $this->voter->vote($this->tokenFor($coachUser), $session, [PtSessionVoter::RESPOND]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }

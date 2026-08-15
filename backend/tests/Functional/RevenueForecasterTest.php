@@ -2,6 +2,7 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\Branch;
 use App\Entity\DailyMetricSnapshot;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
@@ -26,6 +27,7 @@ final class RevenueForecasterTest extends KernelTestCase
     private EntityManagerInterface $em;
     private RevenueForecaster $forecaster;
     private Gym $gym;
+    private Branch $branch;
     private \DateTimeImmutable $today;
 
     protected function setUp(): void
@@ -41,6 +43,8 @@ final class RevenueForecasterTest extends KernelTestCase
         $this->em->persist($owner);
         $this->gym = new Gym('Test Gym', '1 Main St', $owner);
         $this->em->persist($this->gym);
+        $this->branch = new Branch($this->gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($this->branch);
         $this->em->flush();
 
         $this->today = new \DateTimeImmutable('today');
@@ -107,7 +111,7 @@ final class RevenueForecasterTest extends KernelTestCase
     {
         $snapshots = $this->snapshotsWithRevenue(array_fill(0, 14, '100.00'));
 
-        $plan = new MembershipPlan($this->gym, 'Gold', '50.00', 60, []);
+        $plan = new MembershipPlan($this->branch, 'Gold', '50.00', 60, []);
         $this->em->persist($plan);
         $this->em->flush();
 

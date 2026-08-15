@@ -2,6 +2,7 @@ export type MembershipStatus = 'active' | 'paused' | 'expired' | 'cancelled'
 
 export interface MembershipPlanDto {
   id: string
+  branchId: string
   name: string
   price: string
   durationDays: number

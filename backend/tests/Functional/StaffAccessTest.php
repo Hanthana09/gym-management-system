@@ -99,13 +99,37 @@ final class StaffAccessTest extends WebTestCase
         ])['body'];
     }
 
+    /**
+     * roadmap Phase 16: Staff's VIEW/CHECK_IN-eligibility is now
+     * branch-assigned, not gym-wide (was Phase 15's behavior) — every
+     * pass-case test below needs Staff actually assigned somewhere first.
+     * Returns the gym's primary branch id (lazily provisions the gym via
+     * the GET, same as every other branch-aware endpoint).
+     */
+    private function assignToPrimaryBranch(User $owner, User $user): string
+    {
+        $branchId = $this->request('GET', '/branches', $owner)['body']['branches'][0]['id'];
+        $this->request('POST', "/branches/{$branchId}/assign", $owner, ['userId' => (string) $user->getId()]);
+
+        return $branchId;
+    }
+
     // ---- pass cases ------------------------------------------------------
 
+    /**
+     * roadmap Phase 16: this is now a branch-scoped pass case, not a
+     * gym-wide one — Staff is assigned to the primary branch, and the
+     * member enrolls in a plan at that same (the only) branch, so they
+     * remain visible exactly as a single-branch gym's Staff always could
+     * (the regression case) even though the underlying check changed.
+     */
     public function test_staff_can_view_the_member_list(): void
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
         $staff = $this->createApprovedStaff('Sam Staff', 'staff@example.com');
-        $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->assignToPrimaryBranch($owner, $staff);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
 
         $result = $this->request('GET', '/members', $staff);
 
@@ -113,11 +137,33 @@ final class StaffAccessTest extends WebTestCase
         self::assertCount(1, $result['body']['members']);
     }
 
-    /** functional requirements §11.2: "behaves identically to an Owner-performed front-desk check-in." */
+    /**
+     * roadmap Phase 16: a member with NO enrolling branch (no membership
+     * at all) is invisible to Staff's member list — a direct consequence
+     * of MemberVoter::VIEW's updated body (§9.1), not a bug. Kept as its
+     * own case since it's easy to conflate with the 403 list below, but
+     * it's actually a 200 with an empty roster, not a rejection.
+     */
+    public function test_staff_cannot_see_a_member_with_no_membership_in_the_list(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $staff = $this->createApprovedStaff('Sam Staff', 'staff@example.com');
+        $this->assignToPrimaryBranch($owner, $staff);
+        $this->createApprovedMember('Mia Member', 'mia@example.com');
+        // No plan/enrollment — no enrolling branch to match against.
+
+        $result = $this->request('GET', '/members', $staff);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(0, $result['body']['members']);
+    }
+
+    /** functional requirements §11.2: "behaves identically to an Owner-performed front-desk check-in." Now requires Staff to be branch-assigned first (roadmap Phase 16) — the check-in itself stays hub-permissive on which member. */
     public function test_staff_can_check_a_member_in_at_the_front_desk(): void
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
         $staff = $this->createApprovedStaff('Sam Staff', 'staff@example.com');
+        $this->assignToPrimaryBranch($owner, $staff);
         $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
         $this->createPlanAndEnroll($owner, $member);
 
@@ -132,6 +178,7 @@ final class StaffAccessTest extends WebTestCase
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
         $staff = $this->createApprovedStaff('Sam Staff', 'staff@example.com');
+        $this->assignToPrimaryBranch($owner, $staff);
         $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
         // No plan/enrollment for this member.
 
@@ -140,6 +187,21 @@ final class StaffAccessTest extends WebTestCase
         self::assertSame(409, $result['status']);
         self::assertSame('checkin_blocked', $result['body']['error']);
         self::assertSame('no_membership', $result['body']['reason']);
+    }
+
+    /** roadmap Phase 16 / functional requirements §14.2: front-desk check-in requires Staff to actually be assigned somewhere — unassigned Staff is rejected outright, a new 403 case this phase introduces. */
+    public function test_staff_with_no_branch_assignment_cannot_check_anyone_in_403(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $staff = $this->createApprovedStaff('Sam Staff', 'staff@example.com');
+        // Deliberately not assigned to any branch.
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+
+        $result = $this->request('POST', "/members/{$member->getId()}/checkin", $staff);
+
+        self::assertSame(403, $result['status']);
+        self::assertSame('no_branch_assignment', $result['body']['error']);
     }
 
     // ---- 403 list — "narrowness is the entire point of this role" -------------
@@ -238,6 +300,7 @@ final class StaffAccessTest extends WebTestCase
         $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
         $this->em->persist(new \App\Entity\CoachProfile($coach));
         $this->em->flush();
+        $this->assignToPrimaryBranch($owner, $coach); // PtSessionVoter::RESPOND now needs this (roadmap Phase 16) — irrelevant to what's under test (Staff can't respond regardless)
         $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
         $requested = $this->request('POST', '/pt-sessions', $member, [
             'coachUserId' => (string) $coach->getId(),

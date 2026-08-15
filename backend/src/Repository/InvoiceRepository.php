@@ -2,6 +2,7 @@
 
 namespace App\Repository;
 
+use App\Entity\Branch;
 use App\Entity\Invoice;
 use App\Entity\MemberProfile;
 use App\Enum\InvoiceStatus;
@@ -60,18 +61,25 @@ class InvoiceRepository extends ServiceEntityRepository
      * consistent whether the payment method was cash/bank_transfer or the
      * automatic referral-credit path (Phase 10) — both set paid_at.
      */
-    public function sumPaidAmountOnDate(\DateTimeImmutable $date): string
+    public function sumPaidAmountOnDate(\DateTimeImmutable $date, ?Branch $branch = null): string
     {
-        $sum = $this->createQueryBuilder('i')
+        $qb = $this->createQueryBuilder('i')
             ->select('SUM(i.amount)')
             ->andWhere('i.status = :paid')
             ->andWhere('i.paidAt >= :start')
             ->andWhere('i.paidAt < :end')
             ->setParameter('paid', InvoiceStatus::PAID)
             ->setParameter('start', $date)
-            ->setParameter('end', $date->modify('+1 day'))
-            ->getQuery()
-            ->getSingleScalarResult();
+            ->setParameter('end', $date->modify('+1 day'));
+
+        if ($branch !== null) {
+            $qb->innerJoin('i.membership', 'm')
+                ->innerJoin('m.plan', 'p')
+                ->andWhere('p.branch = :branch')
+                ->setParameter('branch', $branch);
+        }
+
+        $sum = $qb->getQuery()->getSingleScalarResult();
 
         return $sum ?? '0.00';
     }

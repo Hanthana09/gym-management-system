@@ -5,6 +5,7 @@ import { cn } from '../lib/cn'
 import { LogoutIcon, MenuIcon, XIcon } from './ui/icons'
 import { NotificationBell } from '../notifications/NotificationBell'
 import { useGymBranding } from '../gym/useGymBranding'
+import { CheckInTimer } from '../attendance/CheckInTimer'
 
 export interface NavItem {
   label: string
@@ -139,6 +140,7 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
             <img src={branding.logoUrl} alt="" className="h-8 w-8 shrink-0 rounded object-contain" />
           ) : null}
           <h1 className="font-display text-base font-semibold tracking-wide text-ink uppercase">{title}</h1>
+          {isMember ? <CheckInTimer /> : null}
           <NotificationBell role={role} />
         </header>
 

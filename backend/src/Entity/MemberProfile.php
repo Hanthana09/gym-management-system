@@ -2,7 +2,10 @@
 
 namespace App\Entity;
 
+use App\Enum\MembershipStatus;
 use App\Repository\MemberProfileRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -30,14 +33,55 @@ class MemberProfile
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $goals = null;
 
+    /**
+     * roadmap Phase 16 / architecture doc §9.1's MemberVoter: the Staff
+     * VIEW branch needs "which branch did this member enroll at," derived
+     * from `getActiveMembership()?->getPlan()?->getBranch()`. Kept in sync
+     * by Membership's own constructor (same in-memory pattern as
+     * User::branchAssignments), not Doctrine cascade, so this works
+     * against freshly-constructed entities in unit tests with no
+     * EntityManager, exactly like the doc's Voter body expects.
+     *
+     * @var Collection<int, Membership>
+     */
+    #[ORM\OneToMany(mappedBy: 'member', targetEntity: Membership::class)]
+    private Collection $memberships;
+
     public function __construct(User $user)
     {
         $this->user = $user;
+        $this->memberships = new ArrayCollection();
     }
 
     public function getUser(): User
     {
         return $this->user;
+    }
+
+    /** @internal called from Membership's own constructor to keep this side in sync. */
+    public function addMembership(Membership $membership): void
+    {
+        if (!$this->memberships->contains($membership)) {
+            $this->memberships->add($membership);
+        }
+    }
+
+    /**
+     * architecture doc §9.1's MemberVoter Staff branch: the enrolling
+     * branch comes from the member's currently active (or paused, still
+     * "in force") membership — not necessarily the most recent one ever
+     * created, matching MembershipRepository::findOneOngoingForMember()'s
+     * ACTIVE|PAUSED definition of "ongoing" elsewhere in this codebase.
+     */
+    public function getActiveMembership(): ?Membership
+    {
+        foreach ($this->memberships as $membership) {
+            if ($membership->getStatus() === MembershipStatus::ACTIVE || $membership->getStatus() === MembershipStatus::PAUSED) {
+                return $membership;
+            }
+        }
+
+        return null;
     }
 
     /**

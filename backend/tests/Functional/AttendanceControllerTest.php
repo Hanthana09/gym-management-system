@@ -2,11 +2,14 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\Branch;
+use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\User;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Event\AttendanceCheckedInEvent;
+use App\Event\AttendanceCheckedOutEvent;
 use App\Security\TokenIssuer;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -191,6 +194,17 @@ final class AttendanceControllerTest extends WebTestCase
 
     public function test_given_no_membership_when_checkin_then_blocked_with_specific_reason(): void
     {
+        // A gym (and its primary branch) always exists by the time a real
+        // Member account exists — they're necessarily invited by an Owner,
+        // which lazily provisions both. createApprovedMember() bypasses
+        // that flow (constructs User+MemberProfile directly), so this test
+        // provisions the same context explicitly rather than relying on it.
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $gym = new Gym("Olivia's Gym", '', $owner);
+        $this->em->persist($gym);
+        $this->em->persist(new Branch($gym, "Olivia's Gym", '', isPrimary: true));
+        $this->em->flush();
+
         $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
 
         $result = $this->request('POST', '/members/me/checkin', $member);
@@ -199,4 +213,135 @@ final class AttendanceControllerTest extends WebTestCase
         self::assertSame('no_membership', $result['body']['reason']);
     }
 
+    // ---- Check-in-timer feature: check-out mutation ------------------------
+
+    public function test_given_open_session_when_member_checks_out_then_check_out_time_recorded(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $this->request('POST', '/members/me/checkin', $member);
+
+        $this->client->disableReboot();
+        $dispatched = [];
+        static::getContainer()->get(EventDispatcherInterface::class)->addListener(
+            AttendanceCheckedOutEvent::NAME,
+            function (AttendanceCheckedOutEvent $event) use (&$dispatched) { $dispatched[] = $event; },
+        );
+
+        $result = $this->request('POST', '/members/me/checkout', $member);
+
+        self::assertSame(200, $result['status']);
+        self::assertArrayHasKey('checkInAt', $result['body']);
+        self::assertNotNull($result['body']['checkOutAt']);
+        self::assertCount(1, $dispatched, 'attendance.checked_out should fire so the top-bar timer syncs via Mercure.');
+        self::assertSame((string) $member->getId(), (string) $dispatched[0]->getLog()->getMember()->getUser()->getId());
+    }
+
+    public function test_given_no_open_session_when_member_checks_out_then_409(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+
+        $result = $this->request('POST', '/members/me/checkout', $member);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('no_active_session', $result['body']['error']);
+    }
+
+    /**
+     * The "checkout triggered from another device" scenario the top-bar
+     * timer's Mercure sync exists for: the checkout call itself carries no
+     * concept of "which browser tab" — it's a second, independent request
+     * against the same member, exactly what a second device/tab would
+     * send. AttendanceMercurePublisherTest separately proves the Mercure
+     * payload shape this event produces; this proves the full HTTP path
+     * dispatches that event with the correct, freshly-closed log.
+     */
+    public function test_checkout_from_a_second_session_dispatches_the_event_the_other_tabs_timer_syncs_from(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $checkIn = $this->request('POST', '/members/me/checkin', $member);
+
+        $this->client->disableReboot();
+        $dispatched = [];
+        static::getContainer()->get(EventDispatcherInterface::class)->addListener(
+            AttendanceCheckedOutEvent::NAME,
+            function (AttendanceCheckedOutEvent $event) use (&$dispatched) { $dispatched[] = $event; },
+        );
+
+        // A second, independent request with a freshly-issued token for
+        // the same member — WebTestCase only supports one KernelBrowser
+        // per test, but a fresh token is what actually distinguishes "a
+        // separate device/session" here (the original tab's own request
+        // that produced $checkIn above is long since complete), so this
+        // still exercises "checkout arrives from somewhere other than the
+        // tab currently displaying the timer."
+        $result = $this->request('POST', '/members/me/checkout', $member);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(1, $dispatched);
+        $log = $dispatched[0]->getLog();
+        self::assertSame($checkIn['body']['checkInAt'], $log->getCheckIn()->format(\DateTimeInterface::ATOM));
+        self::assertNotNull($log->getCheckOut(), "the original tab's timer freezes off this value");
+    }
+
+    // ---- Check-in-timer feature: GET /members/:id/attendance/active -------
+
+    public function test_given_open_session_when_active_attendance_fetched_then_returned(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $this->request('POST', '/members/me/checkin', $member);
+
+        $result = $this->request('GET', "/members/{$member->getId()}/attendance/active", $member);
+
+        self::assertSame(200, $result['status']);
+        self::assertNotNull($result['body']['attendance']);
+        self::assertArrayHasKey('checkInAt', $result['body']['attendance']);
+        self::assertNull($result['body']['attendance']['checkOutAt']);
+    }
+
+    public function test_given_no_open_session_when_active_attendance_fetched_then_null(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+
+        $result = $this->request('GET', "/members/{$member->getId()}/attendance/active", $member);
+
+        self::assertSame(200, $result['status']);
+        self::assertNull($result['body']['attendance']);
+    }
+
+    /** The 403 the top-bar's GET-on-mount request must respect: a Member cannot read another member's active-session data. */
+    public function test_a_different_member_cannot_fetch_someone_elses_active_attendance_403(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $this->request('POST', '/members/me/checkin', $member);
+        $someoneElse = $this->createApprovedMember('Sam Someone', 'sam@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}/attendance/active", $someoneElse);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_owner_can_fetch_any_members_active_attendance(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $this->request('POST', '/members/me/checkin', $member);
+
+        $result = $this->request('GET', "/members/{$member->getId()}/attendance/active", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertNotNull($result['body']['attendance']);
+    }
 }

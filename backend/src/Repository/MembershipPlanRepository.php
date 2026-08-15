@@ -2,7 +2,7 @@
 
 namespace App\Repository;
 
-use App\Entity\Gym;
+use App\Entity\Branch;
 use App\Entity\MembershipPlan;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -17,9 +17,9 @@ class MembershipPlanRepository extends ServiceEntityRepository
         parent::__construct($registry, MembershipPlan::class);
     }
 
-    /** @return MembershipPlan[] */
-    public function findByGym(Gym $gym): array
+    /** roadmap Phase 16: plans are now branch-scoped — this replaces the old findByGym(). */
+    public function findByBranch(Branch $branch): array
     {
-        return $this->findBy(['gym' => $gym], ['name' => 'ASC']);
+        return $this->findBy(['branch' => $branch], ['name' => 'ASC']);
     }
 }

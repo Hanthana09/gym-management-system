@@ -7,7 +7,12 @@ use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Fields match architecture doc §5.1's MEMBERSHIP_PLAN entity exactly.
+ * Fields match architecture doc §5.1's MEMBERSHIP_PLAN entity, updated by
+ * roadmap Phase 16: `gym_id` became `branch_id` — plans are now set per
+ * branch (architecture doc §5.2: "MEMBERSHIP_PLAN.branch_id (per-branch
+ * pricing) means MEMBERSHIP.plan_id indirectly ties a member to an
+ * 'enrolling branch' ... informational, not restrictive — it does not
+ * gate where they can check in").
  */
 #[ORM\Entity(repositoryClass: MembershipPlanRepository::class)]
 class MembershipPlan
@@ -17,9 +22,9 @@ class MembershipPlan
     #[ORM\GeneratedValue(strategy: 'NONE')]
     private Uuid $id;
 
-    #[ORM\ManyToOne(targetEntity: Gym::class)]
-    #[ORM\JoinColumn(name: 'gym_id', nullable: false)]
-    private Gym $gym;
+    #[ORM\ManyToOne(targetEntity: Branch::class)]
+    #[ORM\JoinColumn(name: 'branch_id', nullable: false)]
+    private Branch $branch;
 
     #[ORM\Column(length: 255)]
     private string $name;
@@ -37,10 +42,10 @@ class MembershipPlan
     /**
      * @param string[] $features
      */
-    public function __construct(Gym $gym, string $name, string $price, int $durationDays, array $features)
+    public function __construct(Branch $branch, string $name, string $price, int $durationDays, array $features)
     {
         $this->id = Uuid::v7();
-        $this->gym = $gym;
+        $this->branch = $branch;
         $this->name = $name;
         $this->price = $price;
         $this->durationDays = $durationDays;
@@ -52,9 +57,15 @@ class MembershipPlan
         return $this->id;
     }
 
+    public function getBranch(): Branch
+    {
+        return $this->branch;
+    }
+
+    /** Convenience delegate so every existing caller written against "the plan's gym" (MembershipVoter, AttendanceService) keeps working unchanged. */
     public function getGym(): Gym
     {
-        return $this->gym;
+        return $this->branch->getGym();
     }
 
     public function getName(): string

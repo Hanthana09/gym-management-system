@@ -5,13 +5,18 @@ import { Button, Card, Input, Modal } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useOwnerPlans, type PlanInput } from '../membership/useOwnerPlans'
 import type { MembershipPlanDto } from '../membership/types'
+import { useBranches } from '../branches/useBranches'
+import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 
 /**
  * "Card grid on mobile, table at lg:" (roadmap Phase 4) — built from
  * Card/Button/Input/Modal, no new primitives.
  */
 export function OwnerPlansPage() {
-  const { plans, loaded, createPlan, updatePlan, deletePlan } = useOwnerPlans()
+  const { branches } = useBranches()
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
+  const effectiveBranchId = selectedBranchId ?? defaultBranchId(branches)
+  const { plans, loaded, createPlan, updatePlan, deletePlan } = useOwnerPlans(effectiveBranchId)
   const [editingPlan, setEditingPlan] = useState<MembershipPlanDto | 'new' | null>(null)
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -30,11 +35,13 @@ export function OwnerPlansPage() {
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/plans">
         <div className="mx-auto max-w-4xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <h1 className="truncate font-display text-lg font-semibold tracking-wide text-ink uppercase">
               Membership Plans
             </h1>
+            {/* DESIGN-SYSTEM.md §4.2: absent entirely for single-branch gyms — no chrome to show here. */}
+            <BranchSwitcher branches={branches} value={effectiveBranchId} onChange={setSelectedBranchId} />
           </div>
           <Button onClick={() => setEditingPlan('new')}>New plan</Button>
         </div>

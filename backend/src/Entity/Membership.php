@@ -19,7 +19,7 @@ class Membership
     #[ORM\GeneratedValue(strategy: 'NONE')]
     private Uuid $id;
 
-    #[ORM\ManyToOne(targetEntity: MemberProfile::class)]
+    #[ORM\ManyToOne(targetEntity: MemberProfile::class, inversedBy: 'memberships')]
     #[ORM\JoinColumn(name: 'member_id', referencedColumnName: 'user_id', nullable: false)]
     private MemberProfile $member;
 
@@ -66,6 +66,7 @@ class Membership
         $this->endDate = $endDate;
         $this->status = MembershipStatus::ACTIVE;
         $this->autoRenew = $autoRenew;
+        $member->addMembership($this);
     }
 
     public function getId(): Uuid

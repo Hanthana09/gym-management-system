@@ -3,11 +3,14 @@
 namespace App\Attendance;
 
 use App\Entity\AttendanceLog;
+use App\Entity\Branch;
 use App\Entity\MemberProfile;
 use App\Enum\CheckInMethod;
 use App\Enum\MembershipStatus;
 use App\Enum\UserStatus;
 use App\Event\AttendanceCheckedInEvent;
+use App\Event\AttendanceCheckedOutEvent;
+use App\Repository\AttendanceLogRepository;
 use App\Repository\MembershipRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -23,6 +26,7 @@ class AttendanceService
 {
     public function __construct(
         private readonly MembershipRepository $memberships,
+        private readonly AttendanceLogRepository $attendanceLogs,
         private readonly EntityManagerInterface $em,
         private readonly EventDispatcherInterface $dispatcher,
     ) {
@@ -33,8 +37,15 @@ class AttendanceService
      * 5). roadmap Phase 15.1's front-desk variant (Owner/Staff checking a
      * member in) passes CheckInMethod::FRONT_DESK explicitly — same
      * validation, same event, only the recorded method differs.
+     *
+     * $branch is which physical branch this check-in happened at — never
+     * a restriction on the Member (architecture doc §5.2's hub model),
+     * just a record of where they were. The controller resolves it
+     * (BranchResolver, defaulting to the primary branch), not this
+     * service — same "no Voter/business-rule change" boundary as every
+     * other Phase 16 retrofit.
      */
-    public function checkIn(MemberProfile $member, CheckInMethod $method = CheckInMethod::MANUAL): AttendanceLog
+    public function checkIn(MemberProfile $member, Branch $branch, CheckInMethod $method = CheckInMethod::MANUAL): AttendanceLog
     {
         $user = $member->getUser();
         if ($user->getStatus() === UserStatus::SUSPENDED) {
@@ -61,12 +72,33 @@ class AttendanceService
             throw $this->blocked($blockedReason);
         }
 
-        $log = new AttendanceLog($member, new \DateTimeImmutable(), $method);
+        $log = new AttendanceLog($member, $branch, new \DateTimeImmutable(), $method);
         $this->em->persist($log);
         $this->em->flush();
 
         $gym = $membership->getPlan()->getGym();
         $this->dispatcher->dispatch(new AttendanceCheckedInEvent($log, $gym), AttendanceCheckedInEvent::NAME);
+
+        return $log;
+    }
+
+    /**
+     * Check-in-timer feature's minimal check-out mutation: closes the
+     * member's own open session, if they have one today. No membership/
+     * suspension checks here (unlike checkIn) — checking out never needs
+     * gating the way starting a new visit does.
+     */
+    public function checkOut(MemberProfile $member): AttendanceLog
+    {
+        $log = $this->attendanceLogs->findOpenForMember($member);
+        if ($log === null) {
+            throw new NoActiveSessionException("You don't have an active check-in to check out of.");
+        }
+
+        $log->checkOut(new \DateTimeImmutable());
+        $this->em->flush();
+
+        $this->dispatcher->dispatch(new AttendanceCheckedOutEvent($log), AttendanceCheckedOutEvent::NAME);
 
         return $log;
     }

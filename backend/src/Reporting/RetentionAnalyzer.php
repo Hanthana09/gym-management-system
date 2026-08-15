@@ -3,6 +3,7 @@
 namespace App\Reporting;
 
 use App\Entity\AttendanceLog;
+use App\Entity\Branch;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
 use App\Repository\AttendanceLogRepository;
@@ -41,10 +42,10 @@ class RetentionAnalyzer
     /**
      * @return array<array{member: MemberProfile, membership: Membership, reasons: string[]}>
      */
-    public function atRiskMembers(\DateTimeImmutable $asOf): array
+    public function atRiskMembers(\DateTimeImmutable $asOf, ?Branch $branch = null): array
     {
         $result = [];
-        foreach ($this->memberships->findWithinTermAsOf($asOf) as $membership) {
+        foreach ($this->memberships->findWithinTermAsOf($asOf, $branch) as $membership) {
             $reasons = $this->evaluate($membership, $asOf);
             if ($reasons !== []) {
                 $result[] = [

@@ -336,6 +336,46 @@
 
 ---
 
+## Phase 16 — Multi-Branch Support
+
+**Goal:** let one business operate multiple physical locations under a single Owner account. **This phase is unusual — it's mostly a retrofit of already-built phases, not new-feature-only work.** `GYM` becomes the business level; `BRANCH` becomes the physical-location level that most operational data (plans, attendance, PT sessions, classes) actually scopes to. Read architecture doc §5.2's note on the Member/Coach-Staff asymmetry before starting — it's the single decision everything else in this phase follows from: **Members are hub-scoped (any branch, one membership); Coaches and Staff are branch-assigned (scoped visibility).**
+
+### 16.1 Branch entity and management (new)
+
+**Backend** (architecture doc §6.12, §5.1's `BRANCH`/`BRANCH_ASSIGNMENT`, new `BranchVoter`):
+- [ ] `Branch` entity + migration. Every existing gym gets exactly one `Branch` created automatically as part of this migration, flagged `is_primary = true` — **this is required, not optional**: without it, every already-built gym's existing data (plans, attendance, sessions) has nothing to attach `branch_id` to.
+- [ ] `BranchAssignment` entity + migration (Coach/Staff ↔ Branch, many-to-many).
+- [ ] `BranchVoter` — copy from architecture doc §9.1.
+- [ ] Add `hasAssignedBranch()` helper to the shared `AppVoter` base class — every Voter touched in 16.2 below depends on this existing first.
+- [ ] `GET/POST /branches`, `PATCH /branches/:id`, `POST/DELETE /branches/:id/assign` per §7.
+
+**Frontend:**
+- [ ] Owner: branch management screen (list, create, edit, deactivate) and a Coach/Staff assignment UI.
+- [ ] A branch-switcher/selector component — needed anywhere branch context matters (reports filter, Owner's front-desk check-in, announcement composer's branch option). Build this once as a shared primitive, not per-screen.
+- [ ] **For single-branch businesses, this should stay invisible by default** — functional requirements §14.1 is explicit that a one-branch gym shouldn't feel more complicated. The branch switcher can simply not render (or render disabled) when a gym has only one branch.
+
+**Definition of Done:** every existing gym has exactly one auto-created primary branch post-migration, an Owner can create a second branch and assign a Coach to it, and a single-branch gym's UI shows no branch-switching chrome.
+
+### 16.2 Retrofit checklist — what changes in already-built phases
+
+Work through this in order; each item names the exact Voter/entity change already written out in architecture doc §9.1/§5.1 — copy those, don't re-derive them.
+
+- [ ] **Phase 4 (Membership):** `MembershipPlan.gym_id` → `branch_id` — migration must backfill using each gym's primary branch from 16.1. Update the Owner's plan management screen to be branch-scoped (which branch's plans am I editing).
+- [ ] **Phase 5 (Attendance):** `AttendanceLog` gets `branch_id`. Update `AttendanceVoter` per §9.1's new version — `CHECK_IN` stays permissive (any member, any branch — the hub model), `VIEW` for Staff narrows to `hasAssignedBranch()`. Update `MemberVoter`'s Staff `VIEW` case similarly (now checks the member's enrolling branch against Staff's assignments, not gym-wide). **This is the most consequential Voter change in the whole phase — test it thoroughly, both directions** (Staff *can* see/check-in members relevant to their branch; Staff *cannot* see members outside it via the member list, while still being able to check in a visiting member from another branch, per the hub model).
+- [ ] **Phase 6 (PT Sessions):** `PtSession` gets `branch_id`. Update `PtSessionVoter::RESPOND` per §9.1 — a Coach can only respond to sessions at a branch they're assigned to.
+- [ ] **Phase 7 (Announcements):** `Announcement.branch_id` (nullable). Update `AnnouncementVoter` per §9.1 — Owner can now target one branch or stay gym-wide; Coach's "own clients" logic is unchanged (not branch-mediated).
+- [ ] **Phase 11 (Analytics):** `DailyMetricSnapshot.branch_id` (nullable — one row per branch per day, plus a gym-wide rollup row). Update the nightly aggregation job to produce both. Add `?branch_id` query param support to every `/reports/*` endpoint (§7) — no Voter change needed here, per architecture doc's note that this is a query concern, not a permission concern.
+- [ ] **Phase 15.1 (Staff role):** re-run Staff's `403` test suite from that phase — several of those tests' *expected* scope just changed (gym-wide → branch-assigned), so passing tests from Phase 15 may need updated assertions, not just new ones.
+
+**Testing for this whole phase:**
+- Every Voter touched above needs both a pass case and a `403` case re-verified — not just for new Branch-specific actions, but for the *changed* scope of existing actions (a Phase 15 test that passed because Staff had gym-wide `VIEW` may now need to fail for a member outside Staff's assigned branch, and pass for one inside it).
+- End-to-end: create two branches, assign a Staff member to only one, confirm they can check in a member visiting from anywhere but only *see* members tied to their own branch in the member list.
+- Confirm a single-branch gym's behavior is unchanged from pre-Phase-16 — this is a regression check, not a new-feature check.
+
+**Definition of Done:** every item in the retrofit checklist is verified against its updated Voter logic in architecture doc §9.1, all previously-passing Phase 4/5/6/7/11/15 tests still pass (updated where the expected scope genuinely changed), and a two-branch test scenario demonstrates correct Staff scoping alongside correct Member hub access.
+
+---
+
 ## Quick reference — what "mobile-first" means in practice for this project
 
 1. Write the 375px layout first, always. Widen with `sm:`/`md:`/`lg:`, never shrink down from desktop.

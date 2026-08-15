@@ -38,9 +38,16 @@ use Symfony\Component\Routing\Attribute\Route;
  * roadmap Phase 15.1: list() also accepts Staff — architecture doc §7's
  * "GET /members (Owner, Staff — read-only for Staff)." Read-only means
  * Staff simply has no path to updateStatus() below (MemberVoter::MANAGE
- * has no isStaff branch, see that Voter's docblock) — list() itself
- * doesn't distinguish "read-only" any further than "can call this
- * endpoint at all."
+ * has no isStaff branch, see that Voter's docblock).
+ *
+ * roadmap Phase 16 update: for Staff specifically, the MEMBER entries in
+ * this roster are now actually filtered through MemberVoter::VIEW (which
+ * narrows to Staff's assigned branch(es) per that Voter's updated body) —
+ * before this phase, "can call this endpoint at all" was the only check;
+ * now the per-row visibility the Voter always implied is real. Coach
+ * entries are left unfiltered — MemberVoter doesn't govern CoachProfile
+ * subjects, and this phase's retrofit checklist doesn't ask for a
+ * separate Staff-vs-coach-roster branch rule.
  */
 class MemberController extends AbstractController
 {
@@ -64,11 +71,13 @@ class MemberController extends AbstractController
             return $this->forbidden();
         }
 
+        $visibleMembers = array_filter(
+            $this->memberProfiles->findAllWithUser(),
+            fn (MemberProfile $profile) => $this->isGranted(MemberVoter::VIEW, $profile),
+        );
+
         $roster = [
-            ...array_map(
-                fn (MemberProfile $profile) => $this->serializeMember($profile),
-                $this->memberProfiles->findAllWithUser(),
-            ),
+            ...array_map(fn (MemberProfile $profile) => $this->serializeMember($profile), $visibleMembers),
             ...array_map(
                 fn (CoachProfile $profile) => $this->serializeCoach($profile),
                 $this->coachProfiles->findAllWithUser(),

@@ -11,6 +11,8 @@ import { useRetention } from '../analytics/useRetention'
 import { useExportReport } from '../analytics/useExportReport'
 import { AttendanceTrendChart } from '../analytics/AttendanceTrendChart'
 import { RevenueForecastChart } from '../analytics/RevenueForecastChart'
+import { useBranches } from '../branches/useBranches'
+import { BranchSwitcher } from '../branches/BranchSwitcher'
 import type { ExportFormat, ExportReportType } from '../analytics/types'
 
 function today(): string {
@@ -39,16 +41,26 @@ const HORIZON_OPTIONS: { value: string; label: string }[] = [
  * renders what the API already scoped to the Owner's own gym.
  */
 export function OwnerDashboardPage() {
+  const { branches } = useBranches()
+  // functional requirements §14.5: reports default to the gym-wide rollup
+  // (null), not a single branch — the opposite default from front-desk
+  // check-in / plans / PT booking, which default to the primary branch.
+  const [branchId, setBranchId] = useState<string | null>(null)
   const liveCount = useLiveAttendanceCount()
-  const { summary } = useDashboardSummary()
+  const { summary } = useDashboardSummary(branchId)
   const [from, setFrom] = useState(daysAgo(7))
   const [to, setTo] = useState(today())
-  const { entries, dailyCounts, loading } = useAttendanceReport(from, to)
+  const { entries, dailyCounts, loading } = useAttendanceReport(from, to, branchId)
 
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/dashboard">
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
+          {/* functional requirements §10.1/§14.5: absent for single-branch gyms; defaults to "All branches" otherwise. */}
+          <div className="flex items-center justify-end">
+            <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
+          </div>
+
           {/* functional requirements §10.1: today's numbers, live. */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Card>
@@ -112,9 +124,9 @@ export function OwnerDashboardPage() {
             )}
           </Card>
 
-          <RevenueForecastCard />
-          <RetentionCard />
-          <ExportCard from={from} to={to} />
+          <RevenueForecastCard branchId={branchId} />
+          <RetentionCard branchId={branchId} />
+          <ExportCard from={from} to={to} branchId={branchId} />
         </div>
       </NavShell>
     </div>
@@ -122,9 +134,9 @@ export function OwnerDashboardPage() {
 }
 
 /** functional requirements §10.3. */
-function RevenueForecastCard() {
+function RevenueForecastCard({ branchId }: { branchId: string | null }) {
   const [horizon, setHorizon] = useState<30 | 60 | 90>(30)
-  const { forecast, loading } = useRevenueForecast(horizon)
+  const { forecast, loading } = useRevenueForecast(horizon, branchId)
 
   return (
     <Card>
@@ -158,8 +170,8 @@ function RevenueForecastCard() {
 }
 
 /** functional requirements §10.4: each at-risk member with their specific reason(s), never a bare score. */
-function RetentionCard() {
-  const { members, loaded } = useRetention()
+function RetentionCard({ branchId }: { branchId: string | null }) {
+  const { members, loaded } = useRetention(branchId)
 
   return (
     <Card>
@@ -189,7 +201,7 @@ function RetentionCard() {
 }
 
 /** functional requirements §10.5: pick a report + date range + format, download. */
-function ExportCard({ from, to }: { from: string; to: string }) {
+function ExportCard({ from, to, branchId }: { from: string; to: string; branchId: string | null }) {
   const { exportReport, exporting } = useExportReport()
   const [report, setReport] = useState<ExportReportType>('attendance')
   const [format, setFormat] = useState<ExportFormat>('csv')
@@ -200,7 +212,7 @@ function ExportCard({ from, to }: { from: string; to: string }) {
   async function handleExport() {
     setError(null)
     try {
-      await exportReport(report, format, exportFrom, exportTo)
+      await exportReport(report, format, exportFrom, exportTo, branchId)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
     }

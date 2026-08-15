@@ -5,6 +5,8 @@ import { cn } from '../lib/cn'
 import { ApiError } from '../lib/apiClient'
 import { useNotifications } from './useNotifications'
 import { useAnnouncements } from './useAnnouncements'
+import { useBranches } from '../branches/useBranches'
+import { BranchSwitcher } from '../branches/BranchSwitcher'
 import type { AnnouncementAudience, NotificationDto, SourceRole } from './types'
 
 // DESIGN-SYSTEM.md §1: role colors are for identity, reused here as the
@@ -110,17 +112,21 @@ function NotificationRow({
 
 interface AnnouncementComposerProps {
   role: 'owner' | 'coach'
-  onSent: (body: string, audience: AnnouncementAudience) => Promise<{ recipientCount: number }>
+  onSent: (body: string, audience: AnnouncementAudience, branchId?: string | null) => Promise<{ recipientCount: number }>
 }
 
 /**
  * functional requirements §6.2/§6.3: audience is fixed by role, never a
  * user choice — a Coach is never even shown a gym-wide option, per
  * roadmap Phase 7's explicit instruction not to rely on the backend
- * rejection alone.
+ * rejection alone. roadmap Phase 16: an Owner additionally picks a branch
+ * or "all branches" (default) — Coach's own_clients audience is unaffected,
+ * so it gets no branch option at all.
  */
 function AnnouncementComposer({ role, onSent }: AnnouncementComposerProps) {
+  const { branches } = useBranches()
   const [body, setBody] = useState('')
+  const [branchId, setBranchId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -134,7 +140,7 @@ function AnnouncementComposer({ role, onSent }: AnnouncementComposerProps) {
     setSubmitting(true)
     try {
       const audience: AnnouncementAudience = role === 'owner' ? 'gym_wide' : 'own_clients'
-      const result = await onSent(body.trim(), audience)
+      const result = await onSent(body.trim(), audience, role === 'owner' ? branchId : undefined)
       setSuccess(`Sent to ${result.recipientCount} ${result.recipientCount === 1 ? 'person' : 'people'}.`)
       setBody('')
     } catch (err) {
@@ -146,9 +152,14 @@ function AnnouncementComposer({ role, onSent }: AnnouncementComposerProps) {
 
   return (
     <form onSubmit={handleSubmit} className="mb-4 flex flex-col gap-2 border-b border-line pb-4">
-      <label className="text-sm font-medium text-ink">
-        {role === 'owner' ? 'Send an announcement (gym-wide)' : 'Message your clients'}
-      </label>
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium text-ink">
+          {role === 'owner' ? 'Send an announcement' : 'Message your clients'}
+        </label>
+        {role === 'owner' ? (
+          <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
+        ) : null}
+      </div>
       <textarea
         value={body}
         onChange={(event) => setBody(event.target.value)}

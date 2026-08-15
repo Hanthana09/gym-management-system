@@ -21,9 +21,13 @@ interface AnnouncementResult {
 export function useAnnouncements() {
   const { authFetch } = useAuth()
 
+  // roadmap Phase 16 / functional requirements §14.5-adjacent: `branchId`
+  // omitted (or null) means gym-wide — the Owner's explicit choice, not a
+  // "default to primary branch" like other resolve() call sites, so it's
+  // simply forwarded as-is (Coach's own_clients audience never sends one).
   const publish = useCallback(
-    (body: string, audience: AnnouncementAudience) =>
-      authFetch<AnnouncementResult>('/announcements', { body: { body, audience } }),
+    (body: string, audience: AnnouncementAudience, branchId?: string | null) =>
+      authFetch<AnnouncementResult>('/announcements', { body: { body, audience, branchId } }),
     [authFetch],
   )
 

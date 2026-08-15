@@ -2,14 +2,13 @@
 
 namespace App\Membership;
 
+use App\Entity\Branch;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
-use App\Entity\User;
 use App\Enum\MembershipStatus;
 use App\Enum\UserStatus;
 use App\Event\MembershipCreatedEvent;
-use App\Gym\GymProvisioningService;
 use App\Repository\MembershipPlanRepository;
 use App\Repository\MembershipRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -24,17 +23,15 @@ class MembershipService
     public function __construct(
         private readonly MembershipPlanRepository $plans,
         private readonly MembershipRepository $memberships,
-        private readonly GymProvisioningService $gymProvisioning,
         private readonly EntityManagerInterface $em,
         private readonly EventDispatcherInterface $dispatcher,
     ) {
     }
 
     /** @param string[] $features */
-    public function createPlan(User $owner, string $name, string $price, int $durationDays, array $features): MembershipPlan
+    public function createPlan(Branch $branch, string $name, string $price, int $durationDays, array $features): MembershipPlan
     {
-        $gym = $this->gymProvisioning->ensureGymForOwner($owner);
-        $plan = new MembershipPlan($gym, $name, $price, $durationDays, $features);
+        $plan = new MembershipPlan($branch, $name, $price, $durationDays, $features);
         $this->em->persist($plan);
         $this->em->flush();
 
@@ -72,12 +69,10 @@ class MembershipService
         $this->em->flush();
     }
 
-    /** @return MembershipPlan[] */
-    public function listPlansForOwner(User $owner): array
+    /** roadmap Phase 16: plan management is branch-scoped — "which branch's plans am I editing," per the roadmap's own framing. */
+    public function listPlansForBranch(Branch $branch): array
     {
-        $gym = $this->gymProvisioning->ensureGymForOwner($owner);
-
-        return $this->plans->findByGym($gym);
+        return $this->plans->findByBranch($branch);
     }
 
     public function enroll(MemberProfile $member, MembershipPlan $plan, bool $autoRenew = false): Membership

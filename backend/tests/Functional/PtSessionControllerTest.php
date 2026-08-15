@@ -2,7 +2,10 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\Branch;
+use App\Entity\BranchAssignment;
 use App\Entity\CoachProfile;
+use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\User;
 use App\Enum\UserRole;
@@ -61,13 +64,34 @@ final class PtSessionControllerTest extends WebTestCase
         return $user;
     }
 
+    /** roadmap Phase 16: PtSessionVoter::RESPOND now requires the Coach be assigned to the session's branch — every coach this test creates is assigned to the (single, primary) branch, matching the single-branch regression case. */
     private function createCoach(string $name, string $email): User
     {
         $user = $this->createUser($name, $email, UserRole::COACH);
         $this->em->persist(new CoachProfile($user));
+        $this->em->persist(new BranchAssignment($user, $this->primaryBranch()));
         $this->em->flush();
 
         return $user;
+    }
+
+    private function primaryBranch(): Branch
+    {
+        $gym = $this->em->getRepository(Gym::class)->findOneBy([]);
+        if ($gym === null) {
+            $owner = $this->createUser('Olivia Owner', 'owner-' . bin2hex(random_bytes(4)) . '@example.com', UserRole::OWNER);
+            $gym = new Gym("Olivia's Gym", '', $owner);
+            $this->em->persist($gym);
+        }
+
+        $branch = $this->em->getRepository(Branch::class)->findOneBy(['gym' => $gym, 'isPrimary' => true]);
+        if ($branch === null) {
+            $branch = new Branch($gym, 'Main', '', isPrimary: true);
+            $this->em->persist($branch);
+        }
+        $this->em->flush();
+
+        return $branch;
     }
 
     private function accessTokenFor(User $user): string
@@ -309,5 +333,50 @@ final class PtSessionControllerTest extends WebTestCase
         $result = $this->request('PATCH', "/pt-sessions/{$created['body']['id']}/notes", $otherCoach, ['notes' => 'Sneaky notes.']);
 
         self::assertSame(403, $result['status']);
+    }
+
+    // ---- roadmap Phase 16 / functional requirements §14.3: coach picker is branch-filterable ----
+
+    public function test_given_two_branches_when_coaches_listed_for_one_then_only_that_branchs_coach_returned(): void
+    {
+        $primary = $this->primaryBranch();
+        $gym = $primary->getGym();
+        $owner = $gym->getOwner();
+        $downtown = new Branch($gym, 'Downtown', '1 Main St');
+        $this->em->persist($downtown);
+        $this->em->flush();
+
+        $primaryCoach = $this->createCoach('Carlos Coach', 'carlos@example.com');
+        $downtownCoachUser = $this->createUser('Priya Coach', 'priya@example.com', UserRole::COACH);
+        $this->em->persist(new CoachProfile($downtownCoachUser));
+        $this->em->persist(new BranchAssignment($downtownCoachUser, $downtown));
+        $this->em->flush();
+
+        $atDowntown = $this->request('GET', '/coaches?branchId=' . $downtown->getId(), $owner);
+        self::assertSame(200, $atDowntown['status']);
+        self::assertSame([$downtownCoachUser->getName()], array_column($atDowntown['body']['coaches'], 'name'));
+
+        $atPrimary = $this->request('GET', '/coaches?branchId=' . $primary->getId(), $owner);
+        self::assertSame([$primaryCoach->getName()], array_column($atPrimary['body']['coaches'], 'name'));
+    }
+
+    public function test_omitting_branch_id_on_coaches_defaults_to_the_primary_branch(): void
+    {
+        $primary = $this->primaryBranch();
+        $gym = $primary->getGym();
+        $owner = $gym->getOwner();
+        $downtown = new Branch($gym, 'Downtown', '1 Main St');
+        $this->em->persist($downtown);
+        $this->em->flush();
+
+        $primaryCoach = $this->createCoach('Carlos Coach', 'carlos@example.com');
+        $downtownCoachUser = $this->createUser('Priya Coach', 'priya@example.com', UserRole::COACH);
+        $this->em->persist(new CoachProfile($downtownCoachUser));
+        $this->em->persist(new BranchAssignment($downtownCoachUser, $downtown));
+        $this->em->flush();
+
+        $result = $this->request('GET', '/coaches', $owner);
+
+        self::assertSame([$primaryCoach->getName()], array_column($result['body']['coaches'], 'name'));
     }
 }

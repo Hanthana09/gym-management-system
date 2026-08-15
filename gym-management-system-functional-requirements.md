@@ -221,6 +221,37 @@ Format: **Given / When / Then** per criterion. Role in brackets after each story
 
 ---
 
+## 14. Branch Management (Phase 16)
+
+### 14.1 Owner manages branches
+**As an** Owner, **I want to** add and manage multiple physical locations under my business, **so that** I can run a multi-branch operation from one account.
+- Given I create a new branch, when it's saved, then it's immediately available for plan creation, Coach/Staff assignment, and appears in branch-selection pickers throughout the app.
+- Given my business has exactly one branch, when I use the app, then nothing about the experience feels different from a single-location setup — the primary branch is used transparently as the default everywhere a branch context is needed (functional requirement: single-branch businesses should never feel like they're using a "lesser" or more complicated version of a multi-branch product).
+- Given I deactivate a branch, when that happens, then it stops accepting new check-ins/bookings but its historical data (past attendance, past sessions) remains intact and reportable.
+
+### 14.2 Coach/Staff branch assignment
+**As an** Owner, **I want to** assign Coaches and Staff to one or more branches, **so that** their access and schedules make sense for where they actually work.
+- Given I assign a Coach to two branches, when they view their schedule, then they see sessions from both, clearly labeled by branch.
+- Given a Coach/Staff member is unassigned from a branch, when that happens, then they immediately lose view/action access to that branch's members and attendance — this should be enforced at the API level (a lingering session token shouldn't still grant access), not just hidden from the UI.
+
+### 14.3 Member hub access (the core behavior of this phase)
+**As a** Member, **I want to** check in and use my membership at any of my gym's branches, **so that** I'm not restricted to a single location.
+- Given I have an active membership (regardless of which branch's plan I originally enrolled in), when I check in at any branch belonging to the same business, then it succeeds and is recorded against that specific branch.
+- Given I book a PT session, when I select a branch, then I can choose any branch where at least one Coach is assigned — not just my enrolling branch.
+- Given I view my attendance history, when it loads, then check-ins from every branch I've visited appear together, each clearly labeled with which branch it was.
+
+### 14.4 Per-branch pricing
+**As an** Owner, **I want to** set different membership prices per branch, **so that** I can reflect real cost differences between locations.
+- Given two branches have different plans/prices, when a Member enrolls, then they see and pay the price of the specific branch they're enrolling at — not a business-wide average or their first branch's price.
+- Given a Member's enrolling branch's plan changes price after they've already enrolled, when that happens, then their existing membership's price is unaffected until their next renewal — a price change is never retroactively applied to an active membership.
+
+### 14.5 Branch-scoped and business-wide reporting
+**As an** Owner, **I want to** see reports either per branch or for my whole business, **so that** I can compare branch performance or understand the business as a whole.
+- Given I select a specific branch on the reports screen, when it loads, then every number (attendance, revenue, retention) reflects only that branch.
+- Given I select "all branches" / leave no branch filter, when it loads, then the numbers are the business-wide rollup, not just the primary branch's numbers.
+
+---
+
 ## Non-functional acceptance criteria (apply across all features above)
 
 - Every screen above must be usable at a 375px viewport with no horizontal scroll and no touch target under 44×44px (per the development roadmap's Phase 1 rules).

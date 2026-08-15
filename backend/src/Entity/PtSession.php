@@ -9,7 +9,11 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Fields match architecture doc §5.1's PT_SESSION entity, plus a
- * `declined` status value — see PtSessionStatus for why.
+ * `declined` status value — see PtSessionStatus for why. `branch`
+ * (roadmap Phase 16) is where the session takes place; functional
+ * requirements §14.3: a Member can pick any branch where at least one
+ * Coach is assigned, not just their own enrolling branch — this column
+ * is genuinely member-selected, not derived.
  */
 #[ORM\Entity(repositoryClass: PtSessionRepository::class)]
 class PtSession
@@ -26,6 +30,10 @@ class PtSession
     #[ORM\ManyToOne(targetEntity: MemberProfile::class)]
     #[ORM\JoinColumn(name: 'member_id', referencedColumnName: 'user_id', nullable: false)]
     private MemberProfile $member;
+
+    #[ORM\ManyToOne(targetEntity: Branch::class)]
+    #[ORM\JoinColumn(name: 'branch_id', nullable: false)]
+    private Branch $branch;
 
     #[ORM\Column]
     private \DateTimeImmutable $scheduledAt;
@@ -45,12 +53,14 @@ class PtSession
     public function __construct(
         CoachProfile $coach,
         MemberProfile $member,
+        Branch $branch,
         \DateTimeImmutable $scheduledAt,
         int $durationMinutes,
     ) {
         $this->id = Uuid::v7();
         $this->coach = $coach;
         $this->member = $member;
+        $this->branch = $branch;
         $this->scheduledAt = $scheduledAt;
         $this->durationMinutes = $durationMinutes;
         $this->status = PtSessionStatus::PENDING;
@@ -70,6 +80,11 @@ class PtSession
     public function getMember(): MemberProfile
     {
         return $this->member;
+    }
+
+    public function getBranch(): Branch
+    {
+        return $this->branch;
     }
 
     public function getScheduledAt(): \DateTimeImmutable

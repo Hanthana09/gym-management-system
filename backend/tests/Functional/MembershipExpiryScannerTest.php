@@ -2,6 +2,7 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\Branch;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
@@ -65,7 +66,9 @@ final class MembershipExpiryScannerTest extends KernelTestCase
         $this->em->persist($owner);
         $gym = new Gym('Test Gym', '1 Main St', $owner);
         $this->em->persist($gym);
-        $plan = new MembershipPlan($gym, 'Standard', '49.99', 30, []);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($branch);
+        $plan = new MembershipPlan($branch, 'Standard', '49.99', 30, []);
         $this->em->persist($plan);
         $this->em->flush();
 
@@ -103,7 +106,9 @@ final class MembershipExpiryScannerTest extends KernelTestCase
         $this->em->persist($owner);
         $gym = new Gym('Test Gym', '1 Main St', $owner);
         $this->em->persist($gym);
-        $plan = new MembershipPlan($gym, 'Standard', '49.99', 30, []);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($branch);
+        $plan = new MembershipPlan($branch, 'Standard', '49.99', 30, []);
         $this->em->persist($plan);
         $this->em->flush();
 
@@ -135,7 +140,9 @@ final class MembershipExpiryScannerTest extends KernelTestCase
         $this->em->persist($owner);
         $gym = new Gym('Test Gym', '1 Main St', $owner);
         $this->em->persist($gym);
-        $plan = new MembershipPlan($gym, 'Standard', '49.99', 30, []);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($branch);
+        $plan = new MembershipPlan($branch, 'Standard', '49.99', 30, []);
         $this->em->persist($plan);
         $this->em->flush();
 

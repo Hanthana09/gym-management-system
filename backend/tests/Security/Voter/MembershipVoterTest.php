@@ -2,6 +2,7 @@
 
 namespace App\Tests\Security\Voter;
 
+use App\Entity\Branch;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
@@ -48,7 +49,9 @@ final class MembershipVoterTest extends TestCase
 
     private function plan(Gym $gym): MembershipPlan
     {
-        return new MembershipPlan($gym, 'Standard', '49.99', 30, ['Gym floor access']);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+
+        return new MembershipPlan($branch, 'Standard', '49.99', 30, ['Gym floor access']);
     }
 
     private function membership(MemberProfile $member, MembershipPlan $plan): Membership

@@ -6,6 +6,8 @@ import { CheckInIcon } from '../components/ui/icons'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/apiClient'
 import { useMembers } from '../members/useMembers'
+import { useBranches } from '../branches/useBranches'
+import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import type { MemberAccountStatus, MemberListItemDto } from '../members/types'
 
 // Same palette as OwnerMembersPage's Pill — one status vocabulary
@@ -56,10 +58,22 @@ function matchesSearch(member: MemberListItemDto, query: string): boolean {
  * check-in button per row, calling the new POST /members/:id/checkin.
  */
 export function StaffDashboardPage() {
-  const { authFetch } = useAuth()
+  const { user, authFetch } = useAuth()
   const { members, loaded } = useMembers()
+  const { branches } = useBranches()
   const [search, setSearch] = useState('')
   const [rowState, setRowState] = useState<Record<string, CheckInRowState>>({})
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
+
+  // functional requirements §14.2 / DESIGN-SYSTEM.md §4.2: Staff only
+  // ever picks among branches THEY'RE assigned to — never "all branches"
+  // (that option is Owner-reports-only), and genuinely absent from the
+  // UI if they're only assigned to one.
+  const myBranches = useMemo(
+    () => branches.filter((b) => b.assignments.some((a) => a.userId === user?.id)),
+    [branches, user?.id],
+  )
+  const activeBranchId = selectedBranchId ?? defaultBranchId(myBranches)
 
   const visibleMembers = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -71,7 +85,10 @@ export function StaffDashboardPage() {
     setRowState((prev) => ({ ...prev, [member.id]: { status: 'checking', message: '' } }))
 
     try {
-      const result = await authFetch<{ checkInAt: string }>(`/members/${member.id}/checkin`, { method: 'POST' })
+      const result = await authFetch<{ checkInAt: string }>(`/members/${member.id}/checkin`, {
+        method: 'POST',
+        body: { branchId: activeBranchId },
+      })
       const time = new Date(result.checkInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       setRowState((prev) => ({ ...prev, [member.id]: { status: 'success', message: `Checked in at ${time}` } }))
     } catch (err) {
@@ -90,7 +107,11 @@ export function StaffDashboardPage() {
     <div className="h-dvh">
       <NavShell role="staff" title="Gym" navItems={STAFF_NAV_ITEMS} activeHref="/staff/members">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
+            {/* Absent entirely when Staff is assigned to only one branch (DESIGN-SYSTEM.md §4.2). */}
+            <BranchSwitcher branches={myBranches} value={activeBranchId} onChange={setSelectedBranchId} />
+          </div>
 
           <Input
             label="Search"

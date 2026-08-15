@@ -134,6 +134,16 @@ export function LogoutIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function BranchIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M5.25 20.25V6.75a1.5 1.5 0 0 1 1.5-1.5h6a1.5 1.5 0 0 1 1.5 1.5v13.5" />
+      <path d="M14.25 20.25v-9a1.5 1.5 0 0 1 1.5-1.5h3a1.5 1.5 0 0 1 1.5 1.5v9" />
+      <path d="M3 20.25h18M8.25 8.75h1.5M8.25 12h1.5M8.25 15.25h1.5" />
+    </IconBase>
+  )
+}
+
 export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <IconBase {...props}>

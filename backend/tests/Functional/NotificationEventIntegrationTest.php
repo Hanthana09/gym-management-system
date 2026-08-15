@@ -117,13 +117,34 @@ final class NotificationEventIntegrationTest extends WebTestCase
 
     // ---- PT session events (architecture doc §8.2 / functional requirements §5.1-5.2) ----
 
+    /** roadmap Phase 16: PtSessionVoter::RESPOND now requires the Coach be assigned to the session's branch — every coach this test creates is assigned to the (single, primary) branch, matching the single-branch regression case. */
     private function createCoach(string $name, string $email): User
     {
         $user = $this->createUser($name, $email, UserRole::COACH);
         $this->em->persist(new CoachProfile($user));
+        $this->em->persist(new \App\Entity\BranchAssignment($user, $this->primaryBranch()));
         $this->em->flush();
 
         return $user;
+    }
+
+    private function primaryBranch(): \App\Entity\Branch
+    {
+        $gym = $this->em->getRepository(\App\Entity\Gym::class)->findOneBy([]);
+        if ($gym === null) {
+            $owner = $this->createUser('Olivia Owner', 'owner-' . bin2hex(random_bytes(4)) . '@example.com', UserRole::OWNER);
+            $gym = new \App\Entity\Gym("Olivia's Gym", '', $owner);
+            $this->em->persist($gym);
+        }
+
+        $branch = $this->em->getRepository(\App\Entity\Branch::class)->findOneBy(['gym' => $gym, 'isPrimary' => true]);
+        if ($branch === null) {
+            $branch = new \App\Entity\Branch($gym, 'Main', '', isPrimary: true);
+            $this->em->persist($branch);
+        }
+        $this->em->flush();
+
+        return $branch;
     }
 
     private function createMember(string $name, string $email): User

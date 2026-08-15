@@ -2,6 +2,7 @@
 
 namespace App\Repository;
 
+use App\Entity\Branch;
 use App\Entity\CoachProfile;
 use App\Entity\User;
 use App\Enum\UserStatus;
@@ -33,17 +34,28 @@ class CoachProfileRepository extends ServiceEntityRepository
      * their schedule). Joining on CoachProfile itself, rather than
      * filtering User by role, is what actually enforces that.
      *
+     * functional requirements §14.3: a Member booking a session can choose
+     * any branch where at least one Coach is assigned, not just their own
+     * enrolling branch — so the picker itself must be filterable by
+     * branch, not just by active status.
+     *
      * @return CoachProfile[]
      */
-    public function findAllWithActiveUser(): array
+    public function findAllWithActiveUser(?Branch $branch = null): array
     {
-        return $this->createQueryBuilder('c')
+        $qb = $this->createQueryBuilder('c')
             ->innerJoin('c.user', 'u')
             ->andWhere('u.status = :active')
             ->setParameter('active', UserStatus::ACTIVE)
-            ->orderBy('u.name', 'ASC')
-            ->getQuery()
-            ->getResult();
+            ->orderBy('u.name', 'ASC');
+
+        if ($branch !== null) {
+            $qb->innerJoin('u.branchAssignments', 'ba')
+                ->andWhere('ba.branch = :branch')
+                ->setParameter('branch', $branch);
+        }
+
+        return $qb->getQuery()->getResult();
     }
 
     /**
