@@ -80,7 +80,7 @@ final class AuthControllerTest extends WebTestCase
     /** Requests a code via the real endpoint and extracts the plaintext from the captured test email. */
     private function requestOtpAndCaptureCode(string $destination): string
     {
-        $this->postJson('/auth/otp/request', ['destination' => $destination]);
+        $this->postJson('/api/auth/otp/request', ['destination' => $destination]);
         $email = $this->getMailerMessage(0);
         self::assertNotNull($email, 'Expected an OTP email to have been sent.');
 
@@ -103,7 +103,7 @@ final class AuthControllerTest extends WebTestCase
     {
         $this->createUser('valid@example.com', '+15550000001', 'correct-password', UserRole::OWNER);
 
-        $result = $this->postJson('/auth/login', ['email' => 'valid@example.com', 'password' => 'correct-password']);
+        $result = $this->postJson('/api/auth/login', ['email' => 'valid@example.com', 'password' => 'correct-password']);
 
         self::assertSame(200, $result['status']);
         self::assertArrayHasKey('accessToken', $result['body']);
@@ -115,8 +115,8 @@ final class AuthControllerTest extends WebTestCase
     {
         $this->createUser('realuser@example.com', '+15550000002', 'correct-password');
 
-        $wrongPassword = $this->postJson('/auth/login', ['email' => 'realuser@example.com', 'password' => 'wrong-password']);
-        $nonExistentEmail = $this->postJson('/auth/login', ['email' => 'nobody@example.com', 'password' => 'anything']);
+        $wrongPassword = $this->postJson('/api/auth/login', ['email' => 'realuser@example.com', 'password' => 'wrong-password']);
+        $nonExistentEmail = $this->postJson('/api/auth/login', ['email' => 'nobody@example.com', 'password' => 'anything']);
 
         // Same status, same generic error for both — never confirms whether the email exists.
         self::assertSame(401, $wrongPassword['status']);
@@ -130,13 +130,13 @@ final class AuthControllerTest extends WebTestCase
         $this->createUser('lockout@example.com', '+15550000003', 'correct-password');
 
         for ($i = 0; $i < 5; ++$i) {
-            $attempt = $this->postJson('/auth/login', ['email' => 'lockout@example.com', 'password' => 'wrong']);
+            $attempt = $this->postJson('/api/auth/login', ['email' => 'lockout@example.com', 'password' => 'wrong']);
             self::assertSame(401, $attempt['status'], "Attempt {$i} should still be a plain 401, not yet rate-limited.");
         }
 
         // 6th try — even with the CORRECT password — must be rate-limited, per
         // "when I try again, then I'm rate-limited" (not "when I fail again").
-        $sixthAttempt = $this->postJson('/auth/login', ['email' => 'lockout@example.com', 'password' => 'correct-password']);
+        $sixthAttempt = $this->postJson('/api/auth/login', ['email' => 'lockout@example.com', 'password' => 'correct-password']);
 
         self::assertSame(429, $sixthAttempt['status']);
         self::assertSame('rate_limited', $sixthAttempt['body']['error']);
@@ -148,7 +148,7 @@ final class AuthControllerTest extends WebTestCase
     {
         $this->createUser('otpuser@example.com', '+15550000004');
 
-        $result = $this->postJson('/auth/otp/request', ['destination' => 'otpuser@example.com']);
+        $result = $this->postJson('/api/auth/otp/request', ['destination' => 'otpuser@example.com']);
 
         self::assertSame(200, $result['status']);
         self::assertSame(300, $result['body']['expiresInSeconds']);
@@ -162,7 +162,7 @@ final class AuthControllerTest extends WebTestCase
         $this->createUser('correctcode@example.com', '+15550000005', role: UserRole::MEMBER);
         $code = $this->requestOtpAndCaptureCode('correctcode@example.com');
 
-        $result = $this->postJson('/auth/otp/verify', ['destination' => 'correctcode@example.com', 'code' => $code]);
+        $result = $this->postJson('/api/auth/otp/verify', ['destination' => 'correctcode@example.com', 'code' => $code]);
 
         self::assertSame(200, $result['status']);
         self::assertArrayHasKey('accessToken', $result['body']);
@@ -174,8 +174,8 @@ final class AuthControllerTest extends WebTestCase
         $this->createUser('wrongcode@example.com', '+15550000006');
         $this->requestOtpAndCaptureCode('wrongcode@example.com');
 
-        $first = $this->postJson('/auth/otp/verify', ['destination' => 'wrongcode@example.com', 'code' => '000000']);
-        $second = $this->postJson('/auth/otp/verify', ['destination' => 'wrongcode@example.com', 'code' => '111111']);
+        $first = $this->postJson('/api/auth/otp/verify', ['destination' => 'wrongcode@example.com', 'code' => '000000']);
+        $second = $this->postJson('/api/auth/otp/verify', ['destination' => 'wrongcode@example.com', 'code' => '111111']);
 
         self::assertSame(401, $first['status']);
         self::assertSame('otp_incorrect', $first['body']['error']);
@@ -189,17 +189,17 @@ final class AuthControllerTest extends WebTestCase
         $this->requestOtpAndCaptureCode('lockedcode@example.com');
 
         for ($i = 0; $i < 4; ++$i) {
-            $attempt = $this->postJson('/auth/otp/verify', ['destination' => 'lockedcode@example.com', 'code' => '999999']);
+            $attempt = $this->postJson('/api/auth/otp/verify', ['destination' => 'lockedcode@example.com', 'code' => '999999']);
             self::assertSame('otp_incorrect', $attempt['body']['error'], "Attempt {$i} should still be plain 'incorrect'.");
         }
 
-        $fifthAttempt = $this->postJson('/auth/otp/verify', ['destination' => 'lockedcode@example.com', 'code' => '999999']);
+        $fifthAttempt = $this->postJson('/api/auth/otp/verify', ['destination' => 'lockedcode@example.com', 'code' => '999999']);
         self::assertSame('otp_locked_out', $fifthAttempt['body']['error']);
 
         // Even the real code must now be rejected — the code is dead, a new one is
         // required. Once already-locked-out, later attempts fold into the same
         // generic "expired or used" bucket as any other dead code.
-        $stillRejected = $this->postJson('/auth/otp/verify', ['destination' => 'lockedcode@example.com', 'code' => '123456']);
+        $stillRejected = $this->postJson('/api/auth/otp/verify', ['destination' => 'lockedcode@example.com', 'code' => '123456']);
         self::assertSame('otp_expired_or_used', $stillRejected['body']['error']);
     }
 
@@ -214,7 +214,7 @@ final class AuthControllerTest extends WebTestCase
             ['expiredcode@example.com'],
         );
 
-        $result = $this->postJson('/auth/otp/verify', ['destination' => 'expiredcode@example.com', 'code' => '123456']);
+        $result = $this->postJson('/api/auth/otp/verify', ['destination' => 'expiredcode@example.com', 'code' => '123456']);
 
         self::assertSame(401, $result['status']);
         self::assertSame('otp_expired_or_used', $result['body']['error']);
@@ -226,10 +226,10 @@ final class AuthControllerTest extends WebTestCase
         $this->createUser('usedcode@example.com', '+15550000009');
         $code = $this->requestOtpAndCaptureCode('usedcode@example.com');
 
-        $firstUse = $this->postJson('/auth/otp/verify', ['destination' => 'usedcode@example.com', 'code' => $code]);
+        $firstUse = $this->postJson('/api/auth/otp/verify', ['destination' => 'usedcode@example.com', 'code' => $code]);
         self::assertSame(200, $firstUse['status'], 'Sanity check: first use should succeed.');
 
-        $secondUse = $this->postJson('/auth/otp/verify', ['destination' => 'usedcode@example.com', 'code' => $code]);
+        $secondUse = $this->postJson('/api/auth/otp/verify', ['destination' => 'usedcode@example.com', 'code' => $code]);
 
         self::assertSame(401, $secondUse['status']);
         self::assertSame('otp_expired_or_used', $secondUse['body']['error']);
@@ -240,11 +240,11 @@ final class AuthControllerTest extends WebTestCase
         $this->createUser('ratelimited@example.com', '+15550000010');
 
         for ($i = 0; $i < 3; ++$i) {
-            $attempt = $this->postJson('/auth/otp/request', ['destination' => 'ratelimited@example.com']);
+            $attempt = $this->postJson('/api/auth/otp/request', ['destination' => 'ratelimited@example.com']);
             self::assertSame(200, $attempt['status'], "Request {$i} should still succeed.");
         }
 
-        $fourthRequest = $this->postJson('/auth/otp/request', ['destination' => 'ratelimited@example.com']);
+        $fourthRequest = $this->postJson('/api/auth/otp/request', ['destination' => 'ratelimited@example.com']);
 
         self::assertSame(429, $fourthRequest['status']);
         self::assertSame('rate_limited', $fourthRequest['body']['error']);
@@ -255,10 +255,10 @@ final class AuthControllerTest extends WebTestCase
     public function test_given_valid_refresh_token_when_access_token_expires_then_silently_refreshed(): void
     {
         $this->createUser('refresh@example.com', '+15550000011', 'correct-password');
-        $this->postJson('/auth/login', ['email' => 'refresh@example.com', 'password' => 'correct-password']);
+        $this->postJson('/api/auth/login', ['email' => 'refresh@example.com', 'password' => 'correct-password']);
         $oldRefreshCookie = $this->client->getCookieJar()->get('refresh_token', '/', 'localhost');
 
-        $refreshResult = $this->postJson('/auth/refresh', []);
+        $refreshResult = $this->postJson('/api/auth/refresh', []);
 
         self::assertSame(200, $refreshResult['status']);
         self::assertMatchesRegularExpression('/^[\w-]+\.[\w-]+\.[\w-]+$/', $refreshResult['body']['accessToken']);
@@ -271,7 +271,7 @@ final class AuthControllerTest extends WebTestCase
     {
         $this->injectRawRefreshTokenCookie('this-token-does-not-exist');
 
-        $result = $this->postJson('/auth/refresh', []);
+        $result = $this->postJson('/api/auth/refresh', []);
 
         self::assertSame(401, $result['status']);
         self::assertSame('invalid_refresh_token', $result['body']['error']);
@@ -286,7 +286,7 @@ final class AuthControllerTest extends WebTestCase
         $this->em->flush();
         $this->injectRawRefreshTokenCookie($rawToken);
 
-        $result = $this->postJson('/auth/refresh', []);
+        $result = $this->postJson('/api/auth/refresh', []);
 
         self::assertSame(401, $result['status']);
         self::assertSame('invalid_refresh_token', $result['body']['error']);
@@ -294,7 +294,7 @@ final class AuthControllerTest extends WebTestCase
 
     public function test_given_no_refresh_token_cookie_when_refresh_attempted_then_401(): void
     {
-        $result = $this->postJson('/auth/refresh', []);
+        $result = $this->postJson('/api/auth/refresh', []);
 
         self::assertSame(401, $result['status']);
         self::assertSame('invalid_refresh_token', $result['body']['error']);
@@ -305,13 +305,13 @@ final class AuthControllerTest extends WebTestCase
     public function test_refresh_token_is_rotated_and_the_old_one_cannot_be_reused(): void
     {
         $this->createUser('rotate@example.com', '+15550000013', 'correct-password');
-        $this->postJson('/auth/login', ['email' => 'rotate@example.com', 'password' => 'correct-password']);
+        $this->postJson('/api/auth/login', ['email' => 'rotate@example.com', 'password' => 'correct-password']);
         $oldCookie = $this->client->getCookieJar()->get('refresh_token', '/', 'localhost');
 
-        $this->postJson('/auth/refresh', []); // rotates: old token is now revoked
+        $this->postJson('/api/auth/refresh', []); // rotates: old token is now revoked
 
         $this->injectRawRefreshTokenCookie($oldCookie->getValue());
-        $reuseAttempt = $this->postJson('/auth/refresh', []);
+        $reuseAttempt = $this->postJson('/api/auth/refresh', []);
 
         self::assertSame(401, $reuseAttempt['status']);
     }

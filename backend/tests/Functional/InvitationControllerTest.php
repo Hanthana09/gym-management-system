@@ -344,7 +344,7 @@ final class InvitationControllerTest extends WebTestCase
 
         $this->client->request(
             'POST',
-            '/auth/otp/request',
+            '/api/auth/otp/request',
             server: ['CONTENT_TYPE' => 'application/json', 'HTTPS' => 'on'],
             content: json_encode(['destination' => 'brandnew@example.com']),
         );
@@ -354,7 +354,7 @@ final class InvitationControllerTest extends WebTestCase
 
         $this->client->request(
             'POST',
-            '/auth/otp/verify',
+            '/api/auth/otp/verify',
             server: ['CONTENT_TYPE' => 'application/json', 'HTTPS' => 'on'],
             content: json_encode(['destination' => 'brandnew@example.com', 'code' => $matches[1]]),
         );
