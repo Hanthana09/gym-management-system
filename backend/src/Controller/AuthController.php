@@ -14,6 +14,7 @@ use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\Routing\Attribute\Route;
 
+#[Route('/api/auth')]
 class AuthController
 {
     public function __construct(
@@ -26,7 +27,7 @@ class AuthController
     ) {
     }
 
-    #[Route('/auth/login', name: 'auth_login', methods: ['POST'])]
+    #[Route('/login', name: 'auth_login', methods: ['POST'])]
     public function login(Request $request): JsonResponse
     {
         $data = $this->decode($request);
@@ -57,7 +58,7 @@ class AuthController
         return $this->issueTokenResponse($user);
     }
 
-    #[Route('/auth/otp/request', name: 'auth_otp_request', methods: ['POST'])]
+    #[Route('/otp/request', name: 'auth_otp_request', methods: ['POST'])]
     public function otpRequest(Request $request): JsonResponse
     {
         $data = $this->decode($request);
@@ -82,7 +83,7 @@ class AuthController
         ]);
     }
 
-    #[Route('/auth/otp/verify', name: 'auth_otp_verify', methods: ['POST'])]
+    #[Route('/otp/verify', name: 'auth_otp_verify', methods: ['POST'])]
     public function otpVerify(Request $request): JsonResponse
     {
         $data = $this->decode($request);
@@ -113,7 +114,7 @@ class AuthController
         };
     }
 
-    #[Route('/auth/refresh', name: 'auth_refresh', methods: ['POST'])]
+    #[Route('/refresh', name: 'auth_refresh', methods: ['POST'])]
     public function refresh(Request $request): JsonResponse
     {
         $raw = $request->cookies->get(TokenIssuer::REFRESH_COOKIE_NAME);
