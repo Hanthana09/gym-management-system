@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Enum\PtSessionStatus;
 use App\Repository\PtSessionRepository;
 use Doctrine\ORM\Mapping as ORM;
@@ -14,7 +15,30 @@ use Symfony\Component\Uid\Uuid;
  * requirements §14.3: a Member can pick any branch where at least one
  * Coach is assigned, not just their own enrolling branch — this column
  * is genuinely member-selected, not derived.
+ *
+ * #[ApiResource(operations: []) — every §7 endpoint for this entity
+ * hits a different blocker, checked individually rather than assumed:
+ *   - `POST /pt-sessions`: PtSessionController::create() validates the
+ *     chosen coach is actually assigned to the chosen branch before
+ *     accepting the request (its own docblock explains why: an
+ *     unvalidated combination would create a permanently-unrespondable
+ *     session). A bare Post bypasses that entirely — same class of
+ *     regression as AttendanceLog's check-in, not declared for the same
+ *     reason.
+ *   - `PATCH /pt-sessions/:id/status`: the status enum only has domain
+ *     methods (confirm()/decline()/cancel()), no setStatus() — there is
+ *     no writable field for a bare Patch to denormalize onto.
+ *   - `GET /coaches/:id/schedule`: PtSessionController's own docblock
+ *     says outright there's "no dedicated 'coach schedule' Voter
+ *     attribute" — the real check is an identity comparison the
+ *     controller does directly (Owner, or this Coach viewing their own
+ *     id), not a single subject-based `is_granted()` expression this
+ *     pass can declare cleanly.
+ * `coach`/`member` also couldn't be exposed as linked resources even if
+ * an operation existed: both are `operations: []` (CoachProfile/
+ * MemberProfile's confirmed IRI-generation failure).
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: PtSessionRepository::class)]
 class PtSession
 {

@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\BranchAssignmentRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -14,7 +15,17 @@ use Symfony\Component\Uid\Uuid;
  * keeps `User::branchAssignments` in sync in memory (no EntityManager
  * needed), the same bidirectional-relation pattern used wherever else
  * this codebase needs a Voter to traverse a collection without DI.
+ *
+ * #[ApiResource(operations: []) — no operations added. §7 lists
+ * `POST/DELETE /branches/:id/assign(/:userId)`, but both act on Branch
+ * (the URL, and BranchVoter::MANAGE's subject, are Branch, not this
+ * entity) through a `{userId}` body, not a BranchAssignment
+ * representation. Modeling them here would invent a resource shape §7
+ * never specifies. Present only so this entity has ApiResource metadata
+ * like every other one in this file (task requirement), with zero live
+ * routes.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: BranchAssignmentRepository::class)]
 #[ORM\UniqueConstraint(name: 'user_branch_unique', columns: ['user_id', 'branch_id'])]
 class BranchAssignment

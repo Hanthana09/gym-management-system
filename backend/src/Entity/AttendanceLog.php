@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Enum\CheckInMethod;
 use App\Repository\AttendanceLogRepository;
 use Doctrine\ORM\Mapping as ORM;
@@ -18,7 +19,26 @@ use Symfony\Component\Uid\Uuid;
  * doc §5.2 / §6.12's hub model — a Member can check in at any branch,
  * this column just records which one they were physically at). It IS
  * what makes AttendanceVoter::VIEW's Staff branch meaningful, per §9.1.
+ *
+ * #[ApiResource(operations: []) — deliberately no live operations, for
+ * two independent reasons, not one:
+ *   1. §7's `POST /members/me/checkin` and `POST /members/:id/checkin`
+ *      are the single most business-rule-heavy actions in this app —
+ *      AttendanceService::checkIn() validates account suspension and
+ *      active/paused/expired/cancelled membership status before it will
+ *      insert a row at all (functional requirements §4.1). A bare
+ *      declarative Post using the default Doctrine processor would skip
+ *      every one of those checks and let any authenticated Member
+ *      fabricate an arbitrary, even backdated, check-in record by
+ *      supplying `checkIn` directly — a real regression, not just an
+ *      imperfect shape match, so this pass does not add it.
+ *   2. §7 has no plain entity-shaped GET for attendance at all — viewing
+ *      happens via `/reports/attendance` (a computed aggregate, not
+ *      AttendanceLog's own fields) and the Owner dashboard.
+ * AttendanceVoter::CHECK_IN / VIEW / VIEW_ALL stay exactly as they are,
+ * enforced by AttendanceController, unchanged by this pass.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: AttendanceLogRepository::class)]
 class AttendanceLog
 {

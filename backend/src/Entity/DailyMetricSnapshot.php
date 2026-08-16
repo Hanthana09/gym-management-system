@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\DailyMetricSnapshotRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -23,7 +24,14 @@ use Symfony\Component\Uid\Uuid;
  * rows for the same day. DailyMetricAggregator's own find-then-update-in-
  * place logic (never delete+recreate) is what actually prevents that in
  * practice; this constraint still does real work for the per-branch case.
+ *
+ * #[ApiResource(operations: []) — §7's `/reports/*` endpoints read this
+ * table internally (DailyMetricSnapshotRepository), but their response
+ * bodies are shaped as dashboard/trend/forecast DTOs, not this entity's
+ * own rows — same "aggregate endpoint, not entity CRUD" reasoning as
+ * Gym's docblock gives for the same `/reports/*` list.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: DailyMetricSnapshotRepository::class)]
 #[ORM\UniqueConstraint(name: 'gym_snapshot_date_unique', columns: ['gym_id', 'snapshot_date', 'branch_id'])]
 class DailyMetricSnapshot

@@ -2,21 +2,54 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Get;
 use App\Enum\MembershipStatus;
 use App\Repository\MembershipRepository;
+use App\Security\Voter\MembershipVoter;
+use App\State\CurrentMembershipProvider;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Uid\Uuid;
 
 /**
  * Fields match architecture doc §5.1's MEMBERSHIP entity, plus a
  * `cancelled` status value — see MembershipStatus for why.
+ *
+ * #[ApiResource] on request (architecture doc §7/§9.1), added alongside
+ * — not in place of — MemberController's own `/members/me/membership`
+ * route, under `/api/v1/...`:
+ *   - `GET /members/me/membership` → resolved via
+ *     CurrentMembershipProvider (no `{id}` — always the calling
+ *     Member's own), secured with MembershipVoter::VIEW. Confirmed safe:
+ *     unlike Patch/Post, a custom provider works correctly for Get (see
+ *     Gym's docblock for the confirmed Patch-specific failure this
+ *     avoids by only doing a Get here).
+ * `membership:me:read` deliberately excludes the `plan` and `member`
+ * relations: MembershipPlan and MemberProfile are both `operations: []`
+ * in this pass (see their own docblocks — no §7 endpoint for the
+ * former, a confirmed IRI-generation failure for the latter), so
+ * embedding either as a linked resource would itself fail to serialize.
  */
+#[ApiResource(
+    routePrefix: '/api/v1',
+    operations: [
+        new Get(
+            uriTemplate: '/members/me/membership',
+            uriVariables: [],
+            provider: CurrentMembershipProvider::class,
+            security: "is_granted('" . MembershipVoter::VIEW . "', object)",
+            normalizationContext: ['groups' => ['membership:me:read']],
+        ),
+    ],
+)]
 #[ORM\Entity(repositoryClass: MembershipRepository::class)]
 class Membership
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     #[ORM\GeneratedValue(strategy: 'NONE')]
+    #[Groups(['membership:me:read'])]
     private Uuid $id;
 
     #[ORM\ManyToOne(targetEntity: MemberProfile::class, inversedBy: 'memberships')]
@@ -28,15 +61,19 @@ class Membership
     private MembershipPlan $plan;
 
     #[ORM\Column(type: 'date_immutable')]
+    #[Groups(['membership:me:read'])]
     private \DateTimeImmutable $startDate;
 
     #[ORM\Column(type: 'date_immutable')]
+    #[Groups(['membership:me:read'])]
     private \DateTimeImmutable $endDate;
 
     #[ORM\Column(length: 20, enumType: MembershipStatus::class)]
+    #[Groups(['membership:me:read'])]
     private MembershipStatus $status;
 
     #[ORM\Column]
+    #[Groups(['membership:me:read'])]
     private bool $autoRenew;
 
     /**
@@ -50,6 +87,7 @@ class Membership
      * docblock).
      */
     #[ORM\Column(nullable: true)]
+    #[Groups(['membership:me:read'])]
     private ?\DateTimeImmutable $cancelledAt = null;
 
     public function __construct(

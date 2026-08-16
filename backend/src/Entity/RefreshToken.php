@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\RefreshTokenRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -12,7 +13,14 @@ use Symfony\Component\Uid\Uuid;
  * storage. This is the Phase 2 implementation of that requirement: the
  * raw token lives only in the httpOnly cookie, hashed at rest here the
  * same way OTP codes are.
+ *
+ * #[ApiResource(operations: []) — §7's `POST /auth/refresh` takes the
+ * httpOnly cookie, not a RefreshToken representation, and returns a new
+ * JWT pair — it stays on AuthController. This entity holds session
+ * material; even read access would let a client enumerate other users'
+ * token hashes/expiry, so it's never exposed directly regardless.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: RefreshTokenRepository::class)]
 class RefreshToken
 {

@@ -2,10 +2,14 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\GetCollection;
 use App\Enum\NotificationType;
 use App\Enum\UserRole;
 use App\Repository\NotificationRepository;
+use App\State\CurrentUserNotificationsProvider;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -15,13 +19,40 @@ use Symfony\Component\Uid\Uuid;
  * announcement or booking notification has an actor whose role should
  * color the tag (Owner/Coach/Member), but a scheduled reminder like
  * membership.expiring has no human actor, hence nullable.
+ *
+ * #[ApiResource] on request (architecture doc §7/§9.1), added alongside
+ * — not in place of — the existing hand-written controller, under
+ * `/api/v1/...`:
+ *   - `GET /notifications` → resolved via
+ *     CurrentUserNotificationsProvider (no `{id}`, always the calling
+ *     user's own), secured with the coarse `IS_AUTHENTICATED_FULLY`
+ *     gate — "any authenticated user, scoped to self" per §7, matching
+ *     NotificationVoter::VIEW's own-only rule, enforced by the
+ *     provider's query.
+ * §7's `PATCH /notifications/:id/read` is NOT declared: `read` only has
+ * a one-way `markRead()` domain method, no `setRead()` — there's no
+ * writable field for a bare Patch to target, same reasoning as
+ * PtSession's status Patch and Invoice's mark-paid Patch.
+ * `user` is excluded from the read group — User is `operations: []`.
  */
+#[ApiResource(
+    routePrefix: '/api/v1',
+    operations: [
+        new GetCollection(
+            uriTemplate: '/notifications',
+            provider: CurrentUserNotificationsProvider::class,
+            security: "is_granted('IS_AUTHENTICATED_FULLY')",
+            normalizationContext: ['groups' => ['notification:me:read']],
+        ),
+    ],
+)]
 #[ORM\Entity(repositoryClass: NotificationRepository::class)]
 class Notification
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     #[ORM\GeneratedValue(strategy: 'NONE')]
+    #[Groups(['notification:me:read'])]
     private Uuid $id;
 
     #[ORM\ManyToOne(targetEntity: User::class)]
@@ -29,21 +60,27 @@ class Notification
     private User $user;
 
     #[ORM\Column(length: 255)]
+    #[Groups(['notification:me:read'])]
     private string $title;
 
     #[ORM\Column(type: 'text')]
+    #[Groups(['notification:me:read'])]
     private string $body;
 
     #[ORM\Column(length: 20, enumType: NotificationType::class)]
+    #[Groups(['notification:me:read'])]
     private NotificationType $type;
 
     #[ORM\Column(length: 20, nullable: true, enumType: UserRole::class)]
+    #[Groups(['notification:me:read'])]
     private ?UserRole $sourceRole;
 
     #[ORM\Column]
+    #[Groups(['notification:me:read'])]
     private bool $read;
 
     #[ORM\Column]
+    #[Groups(['notification:me:read'])]
     private \DateTimeImmutable $createdAt;
 
     public function __construct(User $user, string $title, string $body, NotificationType $type, ?UserRole $sourceRole = null)

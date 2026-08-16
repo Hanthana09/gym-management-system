@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\MembershipPlanRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -13,7 +14,15 @@ use Symfony\Component\Uid\Uuid;
  * pricing) means MEMBERSHIP.plan_id indirectly ties a member to an
  * 'enrolling branch' ... informational, not restrictive — it does not
  * gate where they can check in").
+ *
+ * #[ApiResource(operations: []) — §7's list has no membership-plan
+ * endpoint at all (the real `/membership-plans` CRUD, MembershipController,
+ * is a roadmap Phase 4 addition that postdates §7's original text — the
+ * same "§7 predates most of this app" gap as branches/PT-session
+ * branch-scoping/referrals/etc.). Adding operations here would invent an
+ * endpoint beyond what §7 specifies.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: MembershipPlanRepository::class)]
 class MembershipPlan
 {

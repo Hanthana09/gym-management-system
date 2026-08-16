@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\ReferralCodeRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -19,7 +20,12 @@ use Symfony\Component\Uid\Uuid;
  * members (BillingService::issueInvoiceForMembership()) — the concrete
  * form "a free month" takes in a schema that only models Member-pays-gym
  * billing, not a separate Owner/platform subscription.
+ *
+ * #[ApiResource(operations: []) — a roadmap Phase 9/10 addition with no
+ * corresponding endpoint in §7 at all (§7 predates the go-to-market
+ * phases entirely, same gap as branches/referral-leads/gym-name/etc.).
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: ReferralCodeRepository::class)]
 class ReferralCode
 {

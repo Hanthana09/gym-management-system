@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Enum\Audience;
 use App\Repository\AnnouncementRepository;
 use Doctrine\ORM\Mapping as ORM;
@@ -18,7 +19,22 @@ use Symfony\Component\Uid\Uuid;
  * gym-wide choice — null means gym-wide (every branch), set means this
  * one branch specifically. A Coach's `own_clients` audience is unchanged
  * by this — that's still a direct client relationship, not branch-mediated.
+ *
+ * #[ApiResource(operations: []) — §7's only endpoint, `POST
+ * /announcements`, is not declared, for two independent reasons:
+ *   1. The constructor requires `gym` (Gym, `operations: []` — no route
+ *      exists for a client to even reference it via IRI) and `createdBy`
+ *      (User) — the latter must be the calling user, never
+ *      client-supplied, or a Coach could author an announcement as
+ *      someone else. Neither is safely expressible as a bare Post.
+ *   2. AnnouncementService's real recipient-resolution logic (who
+ *      actually receives it, per audience/branch) lives entirely outside
+ *      this entity — a bare Post would create the row but send nothing,
+ *      silently not doing what §7 describes at all.
+ * No GET is listed for Announcement in §7 either — its content reaches
+ * people via Notification, not by reading Announcement directly.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: AnnouncementRepository::class)]
 class Announcement
 {

@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\GymRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -13,7 +14,33 @@ use Symfony\Component\Uid\Uuid;
  * product (CLAUDE.md), so in practice there's exactly one row — lazily
  * created for an Owner the first time they send an invitation rather than
  * needing a separate "gym setup" screen not yet in the roadmap.
+ *
+ * #[ApiResource(operations: []) — empirically confirmed incompatible,
+ * not just theoretically awkward. §7's only Gym-shaped endpoint, `PATCH
+ * /gym/branding`, needs a custom provider (GymItemProvider, since it's a
+ * singleton with no `{id}` in its path) — tested against a real Owner
+ * token and confirmed two distinct, sequential problems:
+ *   1. Plain `security` on a Patch evaluates BEFORE a custom provider
+ *      populates `object` (confirmed null via direct instrumentation),
+ *      denying every request outright — fixed with
+ *      `securityPostDenormalize` instead (same fix Post already needs).
+ *   2. Once past that, the merge-patch deserializer still tried to
+ *      construct a brand-new Gym via its constructor (400: "requires
+ *      $address, $owner") rather than merging onto the object the
+ *      provider fetched — a custom provider doesn't register its result
+ *      as `previous_data` the way the default Doctrine provider does.
+ *      Setting `previous_data` manually inside GymItemProvider (the
+ *      standard workaround) did not resolve it either.
+ * Branch's Patch (default Doctrine provider, plain scalar `{id}`) works
+ * correctly by contrast — confirmed live. The pattern that fails here is
+ * specifically "custom provider + write operation," which every
+ * singleton "/me"-or-similar endpoint in §7 would also need — see
+ * User's docblock for the same conclusion applied there, without
+ * repeating this same experiment.
+ * §7's `GET /reports/*` are also NOT declared here regardless: their
+ * response bodies are computed aggregates, not Gym's own fields.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: GymRepository::class)]
 class Gym
 {

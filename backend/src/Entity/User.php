@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Repository\UserRepository;
@@ -18,7 +19,24 @@ use Symfony\Component\Uid\Uuid;
  * from a single OTP destination (email OR phone — architecture doc §6.7's
  * "invitee registers via their first OTP login"), so both being required
  * would make a phone-only or email-only account impossible to represent.
+ *
+ * #[ApiResource(operations: []) — §7's only User-shaped endpoint, `PATCH
+ * /users/me/notification-preferences`, needs the exact "custom provider
+ * resolving 'me' + write operation" combination confirmed broken on Gym
+ * (see Gym's own docblock for the full, empirically-tested finding: a
+ * plain `security` check runs before the provider populates `object`,
+ * and even past that, the merge-patch deserializer tries to construct a
+ * brand-new instance via the constructor rather than merge onto the
+ * provided one). User's constructor requires name/email/phone/role/
+ * status, so it would hit the identical 400. Not re-tested here since
+ * it's the same confirmed pattern, not a new hypothesis.
+ * §2's "invite/remove/suspend staff" capability and its own
+ * StaffManagementVoter::MANAGE (§9.1) are separately NOT declared here
+ * regardless — no `/staff/...`-shaped endpoint appears anywhere in §7's
+ * list (it predates roadmap Phase 15's Staff role), so adding one would
+ * invent an endpoint beyond what §7 specifies.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: '`user`')]
 class User implements UserInterface, PasswordAuthenticatedUserInterface

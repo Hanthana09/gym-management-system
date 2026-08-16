@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\AuditLogRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -17,7 +18,13 @@ use Symfony\Component\Uid\Uuid;
  * queried/joined usefully) and a `metadata` column added to carry
  * context (e.g. payment method) beyond what actor/action/entity alone
  * convey — genuinely new schema, documented here since it isn't in §5.1.
+ *
+ * #[ApiResource(operations: []) — no §7 endpoint reads or writes audit
+ * log entries at all; it's written internally whenever a covered action
+ * happens (invoice mark-paid, member suspend, etc.) and has no
+ * Owner-facing UI in this codebase yet.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: AuditLogRepository::class)]
 class AuditLog
 {

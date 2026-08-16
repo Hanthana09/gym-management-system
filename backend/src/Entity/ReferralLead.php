@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Enum\ReferralLeadStatus;
 use App\Repository\ReferralLeadRepository;
 use Doctrine\ORM\Mapping as ORM;
@@ -14,7 +15,11 @@ use Symfony\Component\Uid\Uuid;
  * new Gym/tenant. Provisioning a real customer from a converted lead
  * stays a manual sales step, not something this entity or its service
  * automates.
+ *
+ * #[ApiResource(operations: []) — same as ReferralCode: a roadmap Phase
+ * 9 addition with no corresponding endpoint anywhere in §7.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: ReferralLeadRepository::class)]
 class ReferralLead
 {

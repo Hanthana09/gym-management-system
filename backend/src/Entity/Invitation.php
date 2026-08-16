@@ -2,10 +2,14 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\GetCollection;
 use App\Enum\InvitationRole;
 use App\Enum\InvitationStatus;
 use App\Repository\InvitationRepository;
+use App\State\CurrentUserInvitationsProvider;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Attribute\Groups;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -14,13 +18,43 @@ use Symfony\Component\Uid\Uuid;
  * doesn't mark them so, but the invite form takes a single "email or
  * phone" destination per roadmap Phase 3 — only one of the two is ever
  * known for a given invitation).
+ *
+ * #[ApiResource] on request (architecture doc §7/§9.1), added alongside
+ * — not in place of — InvitationController, under `/api/v1/...`:
+ *   - `GET /invitations/me` → resolved via CurrentUserInvitationsProvider
+ *     (no `{id}`, always the calling user's own — matched by identity,
+ *     same as the real InvitationController::mine(), which applies no
+ *     separate Voter check either since the query itself is already
+ *     self-scoped).
+ * §7's `POST /invitations`, `PATCH /invitations/:id/approve`, and
+ * `PATCH /invitations/:id/decline` are NOT declared:
+ *   - POST's constructor needs `gym` (operations: [], unaddressable by
+ *     IRI), `invitedBy` (must be the calling Owner, never
+ *     client-supplied — this Voter's whole point per InvitationVoter::SEND),
+ *     and `expiresAt` (architecture doc §9: "defaults to 7 days,"
+ *     server-computed, not a client-suppliable value).
+ *   - approve()/decline() are no-param domain methods, no setStatus() —
+ *     the same "no writable field" pattern as PtSession/Notification/
+ *     Invoice's status-changing Patches.
  */
+#[ApiResource(
+    routePrefix: '/api/v1',
+    operations: [
+        new GetCollection(
+            uriTemplate: '/invitations/me',
+            provider: CurrentUserInvitationsProvider::class,
+            security: "is_granted('IS_AUTHENTICATED_FULLY')",
+            normalizationContext: ['groups' => ['invitation:me:read']],
+        ),
+    ],
+)]
 #[ORM\Entity(repositoryClass: InvitationRepository::class)]
 class Invitation
 {
     #[ORM\Id]
     #[ORM\Column(type: 'uuid', unique: true)]
     #[ORM\GeneratedValue(strategy: 'NONE')]
+    #[Groups(['invitation:me:read'])]
     private Uuid $id;
 
     #[ORM\ManyToOne(targetEntity: Gym::class)]
@@ -37,24 +71,31 @@ class Invitation
     private ?User $user;
 
     #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['invitation:me:read'])]
     private ?string $email;
 
     #[ORM\Column(length: 32, nullable: true)]
+    #[Groups(['invitation:me:read'])]
     private ?string $phone;
 
     #[ORM\Column(length: 20, enumType: InvitationRole::class)]
+    #[Groups(['invitation:me:read'])]
     private InvitationRole $role;
 
     #[ORM\Column(length: 20, enumType: InvitationStatus::class)]
+    #[Groups(['invitation:me:read'])]
     private InvitationStatus $status;
 
     #[ORM\Column]
+    #[Groups(['invitation:me:read'])]
     private \DateTimeImmutable $createdAt;
 
     #[ORM\Column(nullable: true)]
+    #[Groups(['invitation:me:read'])]
     private ?\DateTimeImmutable $respondedAt = null;
 
     #[ORM\Column]
+    #[Groups(['invitation:me:read'])]
     private \DateTimeImmutable $expiresAt;
 
     public function __construct(

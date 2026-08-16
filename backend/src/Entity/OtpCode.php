@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Repository\OtpCodeRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -9,7 +10,16 @@ use Symfony\Component\Uid\Uuid;
 /**
  * Fields match architecture doc §5.1's OTP_CODE entity exactly.
  * `codeHash` is never the plaintext code (architecture doc §9).
+ *
+ * #[ApiResource(operations: []) — §7 has no OTP_CODE-shaped endpoint;
+ * `/auth/otp/request` and `/auth/otp/verify` take a destination/code
+ * pair and return a JWT token pair, not this entity's own fields, and
+ * stay on AuthController. Never exposing this directly is also a hard
+ * security requirement on its own: even read access would let a client
+ * enumerate codeHash/attempt_count for accounts other than their own
+ * before they're even authenticated.
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: OtpCodeRepository::class)]
 class OtpCode
 {

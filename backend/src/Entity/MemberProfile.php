@@ -2,6 +2,7 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Metadata\ApiResource;
 use App\Enum\MembershipStatus;
 use App\Repository\MemberProfileRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -12,7 +13,27 @@ use Doctrine\ORM\Mapping as ORM;
  * Fields match architecture doc §5.1's MEMBER_PROFILE entity. All fields
  * besides the user link are nullable — none are collected at invitation
  * approval time (architecture doc §6.7); editing them is a later phase.
+ *
+ * #[ApiResource(operations: []) — empirically confirmed incompatible,
+ * not just theoretically awkward. §7's `GET /members` was attempted here
+ * (GetCollection + a matching Get, both secured with MemberVoter's real
+ * attributes) but every request 400s with "Unable to generate an IRI for
+ * the item of type MemberProfile" — tried against a real Owner token and
+ * real data, both with and without an explicit uriVariables/Link
+ * mapping. The cause: this entity's `#[ORM\Id]` is the `user` relation
+ * itself (a shared-PK pattern), and every format this API is configured
+ * to serve (jsonld/jsonapi/hal — config/packages/api_platform.yaml has
+ * no plain `json`) needs to generate a self-link per item, which this
+ * identifier shape defeats. CoachProfile has the identical shared-PK
+ * pattern and hits the same wall — see its own docblock.
+ * §7's `PATCH /members/:id/status` has a second, independent problem
+ * even setting the IRI issue aside: MemberVoter::MANAGE's subject is
+ * MemberProfile, but the field it authorizes changing (`status`) lives
+ * on the related User, not here — nothing on this entity to denormalize
+ * onto without a custom processor (see MemberService::updateStatus()
+ * for the real implementation this pass doesn't reimplement).
  */
+#[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: MemberProfileRepository::class)]
 class MemberProfile
 {
