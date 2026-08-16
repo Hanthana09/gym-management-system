@@ -14,6 +14,7 @@ api_platform:
     enable_re_doc: true
     enable_scalar: true
     defaults:
+        route_prefix: api
         stateless: true
         cache_headers:
             vary: [Content-Type, Authorization, Origin]
