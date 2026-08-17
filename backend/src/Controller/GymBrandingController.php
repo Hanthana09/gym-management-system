@@ -31,6 +31,7 @@ use League\Flysystem\FilesystemOperator;
  * Voter check and read-for-all GET rather than standing up a parallel
  * identity-settings endpoint for one field.
  */
+#[Route('/api')]
 class GymBrandingController extends AbstractController
 {
     private const ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'];

@@ -62,7 +62,7 @@ final class ReportControllerTest extends WebTestCase
     {
         $this->client->request(
             $method,
-            $uri,
+            '/api' . $uri,
             server: [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTPS' => 'on',
@@ -84,7 +84,7 @@ final class ReportControllerTest extends WebTestCase
     {
         $this->client->request(
             'GET',
-            $uri,
+            '/api' . $uri,
             server: [
                 'HTTPS' => 'on',
                 'HTTP_AUTHORIZATION' => 'Bearer ' . $this->accessTokenFor($actingAs),

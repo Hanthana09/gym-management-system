@@ -49,6 +49,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * subjects, and this phase's retrofit checklist doesn't ask for a
  * separate Staff-vs-coach-roster branch rule.
  */
+#[Route('/api')]
 class MemberController extends AbstractController
 {
     public function __construct(

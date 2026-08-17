@@ -43,7 +43,7 @@ final class MembershipPlanBranchScopingTest extends WebTestCase
         $token = static::getContainer()->get(TokenIssuer::class)->createAccessToken($actingAs);
         $this->client->request(
             $method,
-            $uri,
+            '/api' . $uri,
             server: ['CONTENT_TYPE' => 'application/json', 'HTTPS' => 'on', 'HTTP_AUTHORIZATION' => 'Bearer ' . $token],
             content: $method === 'GET' ? null : json_encode($data, \JSON_THROW_ON_ERROR),
         );

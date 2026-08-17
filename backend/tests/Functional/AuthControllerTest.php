@@ -302,6 +302,30 @@ final class AuthControllerTest extends WebTestCase
 
     // ---- Bonus coverage (not a numbered FR criterion, but a named §9 security property) --
 
+    public function test_given_logged_out_session_when_refresh_attempted_then_401_instead_of_silent_relogin(): void
+    {
+        $this->createUser('logout@example.com', '+15550000014', 'correct-password');
+        $this->postJson('/api/auth/login', ['email' => 'logout@example.com', 'password' => 'correct-password']);
+
+        $logoutResult = $this->postJson('/api/auth/logout', []);
+        self::assertSame(200, $logoutResult['status']);
+
+        // The refresh cookie the client jar is still holding must no longer
+        // work — otherwise reloading the page after logout silently signs
+        // the same user back in via the mount-time refresh() call.
+        $refreshResult = $this->postJson('/api/auth/refresh', []);
+
+        self::assertSame(401, $refreshResult['status']);
+        self::assertSame('invalid_refresh_token', $refreshResult['body']['error']);
+    }
+
+    public function test_logout_without_a_refresh_cookie_still_returns_200(): void
+    {
+        $result = $this->postJson('/api/auth/logout', []);
+
+        self::assertSame(200, $result['status']);
+    }
+
     public function test_refresh_token_is_rotated_and_the_old_one_cannot_be_reused(): void
     {
         $this->createUser('rotate@example.com', '+15550000013', 'correct-password');

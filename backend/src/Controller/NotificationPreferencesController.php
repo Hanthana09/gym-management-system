@@ -14,6 +14,7 @@ use Doctrine\ORM\EntityManagerInterface;
  * manages their own preferences — no Voter needed, "own account" is the
  * whole scope (same reasoning as GET /members/me/* endpoints elsewhere).
  */
+#[Route('/api')]
 class NotificationPreferencesController extends AbstractController
 {
     public function __construct(private readonly EntityManagerInterface $em)

@@ -27,6 +27,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * which per §7 is "any authenticated user in the gym — read-only, needed
  * for branch pickers in forms."
  */
+#[Route('/api')]
 class BranchController extends AbstractController
 {
     public function __construct(

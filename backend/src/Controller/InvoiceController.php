@@ -23,6 +23,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * deliberately restricted to cash/bank_transfer — see PaymentMethod's
  * docblock for why `gateway`/`referral_credit` are never client-supplied.
  */
+#[Route('/api')]
 class InvoiceController extends AbstractController
 {
     private const OWNER_SELECTABLE_METHODS = [PaymentMethod::CASH, PaymentMethod::BANK_TRANSFER];

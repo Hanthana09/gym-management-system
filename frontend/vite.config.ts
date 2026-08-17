@@ -30,7 +30,6 @@ export default defineConfig(({ mode }) => {
           target: backendTarget,
           changeOrigin: true,
           secure: false, // backend uses Caddy's self-signed dev certificate
-          rewrite: (path) => path.replace(/^\/api/, ''),
         },
         // roadmap Phase 15.2: gym logos are served straight off disk by
         // Caddy (frankenphp/Caddyfile's `root /app/public` + "serve if

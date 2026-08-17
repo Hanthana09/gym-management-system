@@ -126,6 +126,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(() => {
+    // Revoke the refresh token server-side and clear its cookie — without
+    // this, the still-live httpOnly cookie would silently re-authenticate
+    // the same user via the mount-time refresh() on the very next reload.
+    // Fire-and-forget: the user is logged out locally regardless of
+    // whether this network call succeeds.
+    void apiRequest('/auth/logout').catch(() => {})
     clearSession()
   }, [clearSession])
 

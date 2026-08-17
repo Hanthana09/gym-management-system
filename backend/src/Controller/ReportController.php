@@ -43,6 +43,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * which branch's numbers come back is a query concern (architecture doc
  * §6.8's own explicit note), not a permission concern.
  */
+#[Route('/api')]
 class ReportController extends AbstractController
 {
     public function __construct(

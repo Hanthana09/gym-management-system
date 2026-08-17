@@ -21,6 +21,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * as branding — this is just more fields on the same Gym entity Owners
  * already manage.
  */
+#[Route('/api')]
 class GymWhatsAppSettingsController extends AbstractController
 {
     public function __construct(

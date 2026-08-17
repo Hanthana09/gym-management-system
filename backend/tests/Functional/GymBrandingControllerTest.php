@@ -66,7 +66,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
 
-        $this->client->request('PATCH', '/gym/branding', ['name' => 'Iron Temple Gym'], [], $this->authHeaders($owner));
+        $this->client->request('PATCH', '/api/gym/branding', ['name' => 'Iron Temple Gym'], [], $this->authHeaders($owner));
         $result = json_decode($this->client->getResponse()->getContent(), true);
 
         self::assertSame(200, $this->client->getResponse()->getStatusCode());
@@ -77,7 +77,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
 
-        $this->client->request('PATCH', '/gym/branding', ['name' => '   '], [], $this->authHeaders($owner));
+        $this->client->request('PATCH', '/api/gym/branding', ['name' => '   '], [], $this->authHeaders($owner));
 
         self::assertSame(400, $this->client->getResponse()->getStatusCode());
     }
@@ -86,7 +86,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $coach = $this->createUser('Cara Coach', 'coach@example.com', UserRole::COACH);
 
-        $this->client->request('PATCH', '/gym/branding', ['name' => 'Hijacked Gym'], [], $this->authHeaders($coach));
+        $this->client->request('PATCH', '/api/gym/branding', ['name' => 'Hijacked Gym'], [], $this->authHeaders($coach));
 
         self::assertSame(403, $this->client->getResponse()->getStatusCode());
     }
@@ -95,9 +95,9 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
         $member = $this->createUser('Mia Member', 'mia@example.com', UserRole::MEMBER);
-        $this->client->request('PATCH', '/gym/branding', ['name' => 'Iron Temple Gym'], [], $this->authHeaders($owner));
+        $this->client->request('PATCH', '/api/gym/branding', ['name' => 'Iron Temple Gym'], [], $this->authHeaders($owner));
 
-        $this->client->request('GET', '/gym/branding', server: $this->authHeaders($member));
+        $this->client->request('GET', '/api/gym/branding', server: $this->authHeaders($member));
         $result = json_decode($this->client->getResponse()->getContent(), true);
 
         self::assertSame('Iron Temple Gym', $result['name']);
@@ -107,7 +107,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
 
-        $this->client->request('PATCH', '/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($owner));
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($owner));
         $result = json_decode($this->client->getResponse()->getContent(), true);
 
         self::assertSame(200, $this->client->getResponse()->getStatusCode());
@@ -120,7 +120,7 @@ final class GymBrandingControllerTest extends WebTestCase
 
         $this->client->request(
             'PATCH',
-            '/gym/branding',
+            '/api/gym/branding',
             [],
             ['logo' => $this->tempImage()],
             $this->authHeaders($owner),
@@ -135,7 +135,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
 
-        $this->client->request('PATCH', '/gym/branding', ['brandColor' => 'not-a-color'], [], $this->authHeaders($owner));
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => 'not-a-color'], [], $this->authHeaders($owner));
 
         self::assertSame(400, $this->client->getResponse()->getStatusCode());
     }
@@ -145,7 +145,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
 
-        $this->client->request('PATCH', '/gym/branding', ['hivisColor' => '#FF0000', 'brandColor' => '#00FF00'], [], $this->authHeaders($owner));
+        $this->client->request('PATCH', '/api/gym/branding', ['hivisColor' => '#FF0000', 'brandColor' => '#00FF00'], [], $this->authHeaders($owner));
         $result = json_decode($this->client->getResponse()->getContent(), true);
 
         self::assertSame(200, $this->client->getResponse()->getStatusCode());
@@ -157,7 +157,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $coach = $this->createUser('Cara Coach', 'coach@example.com', UserRole::COACH);
 
-        $this->client->request('PATCH', '/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($coach));
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($coach));
 
         self::assertSame(403, $this->client->getResponse()->getStatusCode());
     }
@@ -166,7 +166,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $staff = $this->createUser('Sam Staff', 'staff@example.com', UserRole::STAFF);
 
-        $this->client->request('PATCH', '/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($staff));
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($staff));
 
         self::assertSame(403, $this->client->getResponse()->getStatusCode());
     }
@@ -175,7 +175,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $member = $this->createUser('Mia Member', 'mia@example.com', UserRole::MEMBER);
 
-        $this->client->request('PATCH', '/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($member));
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($member));
 
         self::assertSame(403, $this->client->getResponse()->getStatusCode());
     }
@@ -185,7 +185,7 @@ final class GymBrandingControllerTest extends WebTestCase
     {
         $member = $this->createUser('Mia Member', 'mia@example.com', UserRole::MEMBER);
 
-        $this->client->request('GET', '/gym/branding', server: $this->authHeaders($member));
+        $this->client->request('GET', '/api/gym/branding', server: $this->authHeaders($member));
         $result = json_decode($this->client->getResponse()->getContent(), true);
 
         self::assertSame(200, $this->client->getResponse()->getStatusCode());
@@ -198,9 +198,9 @@ final class GymBrandingControllerTest extends WebTestCase
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
         $member = $this->createUser('Mia Member', 'mia@example.com', UserRole::MEMBER);
 
-        $this->client->request('PATCH', '/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($owner));
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($owner));
 
-        $this->client->request('GET', '/gym/branding', server: $this->authHeaders($member));
+        $this->client->request('GET', '/api/gym/branding', server: $this->authHeaders($member));
         $result = json_decode($this->client->getResponse()->getContent(), true);
 
         self::assertSame('#1A2B3C', $result['brandColor']);

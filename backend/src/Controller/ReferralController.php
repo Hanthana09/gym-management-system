@@ -20,6 +20,7 @@ use Symfony\Component\Routing\Attribute\Route;
  * role gates, not the row-level "own gym/own client" logic the Voter
  * abstraction exists for elsewhere in this codebase.
  */
+#[Route('/api')]
 class ReferralController extends AbstractController
 {
     public function __construct(private readonly ReferralService $referrals)

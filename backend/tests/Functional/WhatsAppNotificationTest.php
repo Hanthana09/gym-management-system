@@ -187,7 +187,7 @@ final class WhatsAppNotificationTest extends WebTestCase
 
         static::getClient()->request(
             'PATCH',
-            '/users/me/notification-preferences',
+            '/api/users/me/notification-preferences',
             server: ['CONTENT_TYPE' => 'application/json', 'HTTPS' => 'on', 'HTTP_AUTHORIZATION' => 'Bearer ' . $token],
             content: json_encode(['whatsappOptIn' => true], \JSON_THROW_ON_ERROR),
         );
@@ -202,7 +202,7 @@ final class WhatsAppNotificationTest extends WebTestCase
     {
         static::getClient()->request(
             'PATCH',
-            '/users/me/notification-preferences',
+            '/api/users/me/notification-preferences',
             server: ['CONTENT_TYPE' => 'application/json', 'HTTPS' => 'on'],
             content: json_encode(['whatsappOptIn' => true], \JSON_THROW_ON_ERROR),
         );

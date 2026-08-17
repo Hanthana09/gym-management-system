@@ -7,6 +7,7 @@ use App\Otp\OtpService;
 use App\Otp\OtpVerifyOutcome;
 use App\Repository\UserRepository;
 use App\Security\TokenIssuer;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -24,6 +25,7 @@ class AuthController
         private readonly OtpService $otpService,
         private readonly RateLimiterFactory $loginAttemptsLimiter,
         private readonly RateLimiterFactory $otpRequestLimiter,
+        private readonly EntityManagerInterface $em,
     ) {
     }
 
@@ -112,6 +114,29 @@ class AuthController
                 'message' => 'This code has expired or already been used. Please request a new code.',
             ], 401),
         };
+    }
+
+    /**
+     * Revokes the current refresh token server-side and clears the
+     * cookie — without this, logout only ever cleared the frontend's
+     * in-memory access token; the still-valid, still-live httpOnly
+     * refresh cookie would silently re-authenticate the same user via
+     * /auth/refresh on the very next page load.
+     */
+    #[Route('/logout', name: 'auth_logout', methods: ['POST'])]
+    public function logout(Request $request): JsonResponse
+    {
+        $raw = $request->cookies->get(TokenIssuer::REFRESH_COOKIE_NAME);
+        $token = $raw !== null ? $this->tokenIssuer->resolveValidRefreshToken($raw) : null;
+        if ($token !== null) {
+            $token->revoke();
+            $this->em->flush();
+        }
+
+        $response = new JsonResponse(['message' => 'Logged out.']);
+        $response->headers->setCookie($this->tokenIssuer->expiredCookie());
+
+        return $response;
     }
 
     #[Route('/refresh', name: 'auth_refresh', methods: ['POST'])]

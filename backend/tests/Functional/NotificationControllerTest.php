@@ -51,7 +51,7 @@ final class NotificationControllerTest extends WebTestCase
     {
         $this->client->request(
             $method,
-            $uri,
+            '/api' . $uri,
             server: [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTPS' => 'on',
