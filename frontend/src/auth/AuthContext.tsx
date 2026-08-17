@@ -42,8 +42,8 @@ interface AuthContextValue {
   authFetch: <T>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>
   /** Same auth/refresh handling as authFetch, for endpoints that return a file (roadmap Phase 11's report export) instead of JSON. */
   authFetchBlob: (path: string) => Promise<{ blob: Blob; filename: string }>
-  /** Same auth/refresh handling as authFetch, for endpoints that take a file (roadmap Phase 15.2's logo upload) instead of a JSON body. */
-  authFetchForm: <T>(path: string, formData: FormData) => Promise<T>
+  /** Same auth/refresh handling as authFetch, for endpoints that take a file (roadmap Phase 15.2's logo upload, Phase 17's expense receipt upload) instead of a JSON body. `method` defaults to 'PATCH' (branding's shape); Phase 17's receipt-on-create passes 'POST'. */
+  authFetchForm: <T>(path: string, formData: FormData, method?: string) => Promise<T>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -174,14 +174,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const authFetchForm = useCallback(
-    async <T,>(path: string, formData: FormData): Promise<T> => {
+    async <T,>(path: string, formData: FormData, method?: string): Promise<T> => {
       try {
-        return await apiRequestForm<T>(path, formData, accessTokenRef.current)
+        return await apiRequestForm<T>(path, formData, accessTokenRef.current, method)
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
           const refreshed = await refresh()
           if (refreshed) {
-            return apiRequestForm<T>(path, formData, accessTokenRef.current)
+            return apiRequestForm<T>(path, formData, accessTokenRef.current, method)
           }
         }
         throw error

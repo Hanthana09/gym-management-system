@@ -152,3 +152,44 @@ export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
     </IconBase>
   )
 }
+
+// roadmap Phase 17: Expense & Retail Tracking nav/icon set.
+
+export function ExpenseIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M6.25 3.75h9.5l2 2v14.5a.75.75 0 0 1-1.09.67L14.5 19.5l-2.25 1.5-2.25-1.5-2.25 1.5-2.16-1.38a.75.75 0 0 1-1.09-.67V4.5a.75.75 0 0 1 .75-.75Z" />
+      <path d="M8.5 9.25h7M8.5 12.75h7M8.5 16.25h4" />
+    </IconBase>
+  )
+}
+
+export function ProductIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 3.75 20.25 8v8L12 20.25 3.75 16V8Z" />
+      <path d="M3.75 8 12 12.25 20.25 8M12 12.25v8" />
+    </IconBase>
+  )
+}
+
+export function SellIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M3.75 5.25h1.75l1 11a1.5 1.5 0 0 0 1.5 1.35h8.5a1.5 1.5 0 0 0 1.48-1.24l1.02-6.51H6" />
+      <circle cx="9.5" cy="20" r="1.15" />
+      <circle cx="16.5" cy="20" r="1.15" />
+    </IconBase>
+  )
+}
+
+export function FinanceIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M3.75 20.25h16.5" />
+      <rect x="5.5" y="13" width="3" height="7.25" rx="0.5" />
+      <rect x="10.5" y="8.5" width="3" height="11.75" rx="0.5" />
+      <rect x="15.5" y="4.5" width="3" height="15.75" rx="0.5" />
+    </IconBase>
+  )
+}

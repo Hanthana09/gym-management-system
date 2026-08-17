@@ -84,6 +84,37 @@ class InvoiceRepository extends ServiceEntityRepository
         return $sum ?? '0.00';
     }
 
+    /**
+     * roadmap Phase 17 / FinancialSummaryController: the range variant of
+     * sumPaidAmountOnDate() above — same "realized when paid, not issued"
+     * rule, just over an arbitrary [from, toExclusive) window instead of
+     * one calendar day. Purely additive: sumPaidAmountOnDate() itself is
+     * untouched, and this reads Invoice, it never writes it — no billing
+     * code path is modified to add this.
+     */
+    public function sumPaidAmountForDateRange(\DateTimeImmutable $from, \DateTimeImmutable $toExclusive, ?Branch $branch = null): string
+    {
+        $qb = $this->createQueryBuilder('i')
+            ->select('SUM(i.amount)')
+            ->andWhere('i.status = :paid')
+            ->andWhere('i.paidAt >= :start')
+            ->andWhere('i.paidAt < :end')
+            ->setParameter('paid', InvoiceStatus::PAID)
+            ->setParameter('start', $from)
+            ->setParameter('end', $toExclusive);
+
+        if ($branch !== null) {
+            $qb->innerJoin('i.membership', 'm')
+                ->innerJoin('m.plan', 'p')
+                ->andWhere('p.branch = :branch')
+                ->setParameter('branch', $branch);
+        }
+
+        $sum = $qb->getQuery()->getSingleScalarResult();
+
+        return $sum ?? '0.00';
+    }
+
     /** Earliest payment on record — DailyMetricAggregator's backfill start bound. */
     public function findEarliestPaidAtDate(): ?\DateTimeImmutable
     {

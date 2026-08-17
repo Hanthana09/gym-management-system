@@ -21,6 +21,10 @@ import { DevComponentsPage } from './pages/DevComponentsPage'
 import { StaffDashboardPage } from './pages/StaffDashboardPage'
 import { OwnerSettingsPage } from './pages/OwnerSettingsPage'
 import { OwnerBranchesPage } from './pages/OwnerBranchesPage'
+import { ExpensesPage } from './pages/ExpensesPage'
+import { OwnerProductsPage } from './pages/OwnerProductsPage'
+import { RetailSalePage } from './pages/RetailSalePage'
+import { OwnerFinancialSummaryPage } from './pages/OwnerFinancialSummaryPage'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth()
@@ -208,6 +212,54 @@ function App() {
         element={
           <RequireAuth>
             <StaffDashboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/expenses"
+        element={
+          <RequireAuth>
+            <ExpensesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/expenses"
+        element={
+          <RequireAuth>
+            <ExpensesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/products"
+        element={
+          <RequireAuth>
+            <OwnerProductsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/sell"
+        element={
+          <RequireAuth>
+            <RetailSalePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/sell"
+        element={
+          <RequireAuth>
+            <RetailSalePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/finance"
+        element={
+          <RequireAuth>
+            <OwnerFinancialSummaryPage />
           </RequireAuth>
         }
       />

@@ -96,10 +96,20 @@ export async function apiRequestBlob(path: string, accessToken: string | null): 
  * can't express that. No explicit Content-Type header here on purpose:
  * the browser sets `multipart/form-data; boundary=...` itself only when
  * left to infer it from a FormData body.
+ *
+ * roadmap Phase 17: expense receipts are the second multipart use case,
+ * and unlike branding they're attached on *create* (POST /expenses), not
+ * just update — `method` defaults to 'PATCH' so every existing call site
+ * (branding) is unaffected, but a caller can pass 'POST' for creates.
  */
-export async function apiRequestForm<T>(path: string, formData: FormData, accessToken: string | null): Promise<T> {
+export async function apiRequestForm<T>(
+  path: string,
+  formData: FormData,
+  accessToken: string | null,
+  method: string = 'PATCH',
+): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
-    method: 'PATCH',
+    method,
     credentials: 'include',
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     body: formData,

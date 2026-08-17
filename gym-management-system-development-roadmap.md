@@ -2,7 +2,7 @@
 
 **Companion to:** `gym-management-system-architecture.md` (data model, Voters, API design, sequence diagrams — this doc doesn't repeat those, it sequences building them) and `gym-management-system-go-to-market.md` (Phase 9 specifically implements features named in that doc's strategic pillars — each Phase 9 item cross-references which pillar it supports).
 **How to use this file:** work top to bottom. Each phase ends with a **Definition of Done** — don't start the next phase until it's checked off. Every phase ships a working vertical slice (backend endpoint + a real, responsive screen), not backend-only work followed by a frontend catch-up at the end.
-**Status note:** Phases 0–8 are the core product. Phase 9 builds go-to-market-driven growth features once the core product works, before Billing — see Phase 9's intro for why it's sequenced there. Phase 11 (Analytics & Reporting) is sequenced after Billing (Phase 10) specifically because revenue forecasting needs real invoice history to be meaningful.
+**Status note:** Phases 0–8 are the core product. Phase 9 builds go-to-market-driven growth features once the core product works, before Billing — see Phase 9's intro for why it's sequenced there. Phase 11 (Analytics & Reporting) is sequenced after Billing (Phase 10) specifically because revenue forecasting needs real invoice history to be meaningful. Phase 17 (Expense & Retail Tracking) is sequenced last because it extends Phase 11's snapshot job and reuses Phase 16's branch scoping — both need to exist first.
 
 ---
 
@@ -373,6 +373,34 @@ Work through this in order; each item names the exact Voter/entity change alread
 - Confirm a single-branch gym's behavior is unchanged from pre-Phase-16 — this is a regression check, not a new-feature check.
 
 **Definition of Done:** every item in the retrofit checklist is verified against its updated Voter logic in architecture doc §9.1, all previously-passing Phase 4/5/6/7/11/15 tests still pass (updated where the expected scope genuinely changed), and a two-branch test scenario demonstrates correct Staff scoping alongside correct Member hub access.
+
+---
+
+## Phase 17 — Expense & Retail Tracking
+
+**Goal:** give the Owner a real financial picture beyond membership billing — operating costs (rent, utilities, salaries) and non-membership income (retail sales of apparel/supplements/accessories). Sequenced after Phase 16 because expenses and retail sales are branch-level events (architecture doc §6.13) and need `Branch`/`BranchAssignment` and `hasAssignedBranch()` to scope Staff correctly, and after Phase 11 because it **extends the existing `DAILY_METRIC_SNAPSHOT` aggregation job** rather than building a second one — that job needs to already exist. This is a purely additive module: it must never modify the `Invoice` entity, table, or the Phase 10 manual-payment flow (architecture doc §6.13's exclusion note).
+
+**Backend** (architecture doc §6.13, §5.1's `EXPENSE_CATEGORY`/`EXPENSE`/`PRODUCT_CATEGORY`/`PRODUCT`/`PRODUCT_SALE`, §9.1's `ExpenseVoter`/`ProductVoter`/`ProductSaleVoter`, §7's new endpoints):
+- [ ] `ExpenseCategory`, `Expense`, `ProductCategory`, `Product`, `ProductSale` entities + migrations, exactly per §5.1 — no `unit_cost` on `Product`, no margin/profitability fields anywhere, no linkage from `ProductSale` to `Invoice`/`Membership` billing.
+- [ ] Copy `ExpenseVoter`, `ProductVoter`, `ProductSaleVoter` from §9.1 — Owner full CRUD on expenses; Staff create + read only (own assigned branch(es), reusing `hasAssignedBranch()` from Phase 16); Coach/Staff-catalog-write and Member get `403` on everything in this phase. Product catalog writes (create/update/deactivate) are Owner-only; Staff gets read-only catalog access to make a sale.
+- [ ] API Platform resources for `Expense`, `Product`, `ProductSale` (`route_prefix: api`) per §7 — entity-generated routes only.
+- [ ] `FinancialSummaryController` — a hand-written controller (not a plain API Platform resource, since it aggregates across `Invoice`/PT revenue/`ProductSale`/`Expense`), gated by the existing `ReportVoter::VIEW` (no new Voter needed — same "Owner, own gym only" shape §9.1 already notes `ReportVoter` covers). Give it a class-level `#[Route('/api', ...)]` prefix, same fix pattern as `AuthController`, and register framework routes in `config/routes/api_platform.php` if any are added outside entity-generated ones.
+- [ ] Extend the existing nightly `DAILY_METRIC_SNAPSHOT` job (§6.8/§8.3's scheduler pattern) to also populate `retail_revenue`, `expense_total`, and `expense_by_category` (JSON, same flexible-data rationale as `WORKOUT_LOG.metrics` per §5.2) per branch per day. **Do not build a second aggregation mechanism** — one nightly job, more columns.
+
+**Frontend:**
+- [ ] Expense entry form + filterable list (branch, category, date range) — visible to Owner and Staff only; hidden/disabled for Coach and Member, backed by the `403` the Voter already returns if someone bypasses the UI.
+- [ ] Product catalog CRUD screen — Owner-only for create/edit/deactivate; uses the shared `Card`/`Button`/form primitives from Phase 1, no new visual patterns.
+- [ ] Retail sale quick-entry form: product picker, quantity, optional member search (search existing members only — never creates a member record from this form), payment method, computed total.
+- [ ] Owner financial dashboard: revenue breakdown (membership / PT / retail) vs. expenses, net total, branch selector reusing the Phase 16 branch-switcher primitive (`DESIGN-SYSTEM.md` §4.2) for multi-branch Owners. All currency figures in `font-mono` (IBM Plex Mono) per `DESIGN-SYSTEM.md` §2.
+- [ ] **No purchase-history section on the Member profile page** — `ProductSale.member_id` is for filtering/reporting only, not a profile-page feature (architecture doc §6.13).
+
+**Testing:**
+- `ExpenseVoter`/`ProductVoter`/`ProductSaleVoter`: Owner pass case + Staff pass case (create/read) + Staff `403` (update/delete) + Coach/Member `403` on every new endpoint — same two-case minimum every other Voter in this project requires.
+- Financial summary math (`net = membership + PT + retail − expenses`) verified against seeded test data, including the branch-scoping case: a multi-branch Owner querying branch A doesn't see branch B's figures unless requesting the all-branch rollup.
+- Confirm no test in this phase touches or asserts against the existing `Invoice` entity/table — this phase must not alter existing billing test coverage.
+- Nightly snapshot job: confirm expense/retail totals populate without breaking existing membership/PT snapshot fields (regression check on Phase 11's existing aggregation).
+
+**Definition of Done:** an Owner can record an expense and a retail sale, see both reflected in a financial summary (membership + PT + retail revenue vs. expenses, net total) filterable by date range and branch, a Staff account can create/read but not edit/delete expenses and can't see the financial summary at all (`403`, not a hidden button), and the existing `Invoice` entity/table/migration history is unchanged.
 
 ---
 

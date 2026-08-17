@@ -38,6 +38,11 @@
 | Check in / out | Can check in others, any branch (front desk) | Self | **Can check in others, own assigned branch(es) only (front desk)** | **Self, at any branch — hub access, see note below** |
 | Personal workout & body-metric tracking | — | — | — | Own data |
 | View revenue & reports | Full, all branches or per-branch filter | — | **— (explicitly excluded)** | — |
+| **Record expenses (own branch)** | Full, all branches | — | **Create + view only, no edit/delete, own assigned branch(es)** | — |
+| **Manage expenses (edit/delete)** | Full, all branches | — | — | — |
+| **Manage product catalog** | Full | — | View only (to make a sale) | — |
+| **Record retail sales (own branch)** | Full, all branches | — | **Create + view only, own assigned branch(es)** | — |
+| **View financial summary (revenue/expenses/net)** | Full, all branches or per-branch filter | — | **— (explicitly excluded, same as reports)** | — |
 | Send announcements | Gym-wide or one branch | To own clients | — | — |
 | Manage own profile & billing | — | Own | Own | Own |
 | Log in via OTP or password | Both | Both | Both | Both |
@@ -176,6 +181,9 @@ erDiagram
     GYM ||--o{ ANNOUNCEMENT : publishes
     GYM ||--o{ INVITATION : sends
     GYM ||--o{ DAILY_METRIC_SNAPSHOT : tracks
+    GYM ||--o{ EXPENSE_CATEGORY : configures
+    GYM ||--o{ PRODUCT_CATEGORY : configures
+    GYM ||--o{ PRODUCT : sells
 
     BRANCH ||--o{ MEMBERSHIP_PLAN : offers
     BRANCH ||--o{ ATTENDANCE_LOG : location_of
@@ -184,6 +192,12 @@ erDiagram
     BRANCH ||--o{ BRANCH_ASSIGNMENT : staffed_by
     BRANCH ||--o{ DAILY_METRIC_SNAPSHOT : "tracks (per-branch rows)"
     BRANCH ||--o{ ANNOUNCEMENT : "scoped to (nullable — null = gym-wide)"
+    BRANCH ||--o{ EXPENSE : incurred_at
+    BRANCH ||--o{ PRODUCT_SALE : sold_at
+
+    EXPENSE_CATEGORY ||--o{ EXPENSE : categorizes
+    PRODUCT_CATEGORY ||--o{ PRODUCT : categorizes
+    PRODUCT ||--o{ PRODUCT_SALE : sold_as
 
     USER ||--o| COACH_PROFILE : has
     USER ||--o| MEMBER_PROFILE : has
@@ -191,6 +205,10 @@ erDiagram
     USER ||--o{ OTP_CODE : requests
     USER ||--o| INVITATION : responds_to
     USER ||--o{ BRANCH_ASSIGNMENT : assigned_to
+    USER ||--o{ EXPENSE : records
+    USER ||--o{ PRODUCT_SALE : sells
+
+    MEMBER_PROFILE ||--o{ PRODUCT_SALE : "purchases (nullable — walk-in sales allowed, reporting only)"
 
     MEMBER_PROFILE ||--o{ MEMBERSHIP : holds
     MEMBERSHIP }o--|| MEMBERSHIP_PLAN : based_on
@@ -315,6 +333,56 @@ erDiagram
         timestamp paid_at "null until marked paid"
     }
 
+    EXPENSE_CATEGORY {
+        uuid id PK
+        uuid gym_id FK
+        string name "seeded defaults: Utilities, Rent, Equipment, Maintenance, Salaries, Other — Owner can add more, gym-scoped not global"
+    }
+
+    EXPENSE {
+        uuid id PK
+        uuid branch_id FK "which branch incurred this cost — gym is derivable via branch, same as ATTENDANCE_LOG/PT_SESSION"
+        uuid category_id FK
+        decimal amount
+        string currency "default LKR"
+        text description
+        date expense_date
+        uuid recorded_by FK "Owner or Staff — never Coach/Member, see ExpenseVoter §9.1"
+        string receipt_url "nullable — Flysystem local-disk upload, same pattern as profile photos/gym logo, no OCR"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    PRODUCT_CATEGORY {
+        uuid id PK
+        uuid gym_id FK
+        string name "seeded defaults: Apparel, Supplements, Accessories — Owner can add more"
+    }
+
+    PRODUCT {
+        uuid id PK
+        uuid gym_id FK "catalog is business-wide, not per-branch — same shared-across-branches pattern as GYM.brand_color"
+        uuid category_id FK
+        string name
+        string sku "nullable"
+        decimal unit_price
+        bool is_active
+    }
+
+    PRODUCT_SALE {
+        uuid id PK
+        uuid branch_id FK "which branch the sale happened at"
+        uuid product_id FK
+        uuid member_id FK "nullable — walk-in sales allowed; record-keeping/reporting only, never billing — see §6.13"
+        int quantity
+        decimal unit_price_at_sale "snapshotted at sale time — a later Product price change never rewrites past sales"
+        decimal total_amount "= unit_price_at_sale * quantity"
+        enum payment_method "cash | card | other — mirrors INVOICE.payment_method's shape but never touches INVOICE"
+        uuid sold_by FK "Owner or Staff — never Coach/Member"
+        timestamp sale_date
+        timestamp created_at
+    }
+
     ATTENDANCE_LOG {
         uuid id PK
         uuid member_id FK
@@ -397,6 +465,9 @@ erDiagram
         int cancelled_members_count
         decimal revenue
         int at_risk_members_count
+        decimal retail_revenue "new, Phase 17 — sum of that day/branch's PRODUCT_SALE.total_amount"
+        decimal expense_total "new, Phase 17 — sum of that day/branch's EXPENSE.amount"
+        json expense_by_category "new, Phase 17 — category_id => amount, same flexible-data rationale as WORKOUT_LOG.metrics (§5.2), avoids a rigid column per category"
     }
 ```
 
@@ -414,6 +485,8 @@ erDiagram
 - **`GYM` is now the business/account level; `BRANCH` is the physical location** (Phase 16). This is a genuine restructuring, not just a new table — everything that used to hang off `gym_id` directly (plans, attendance, PT sessions, classes) now hangs off `branch_id` instead, because that's where those things actually happen. `GYM` keeps only what's genuinely business-wide: the Owner relationship, billing identity, and branding (logo/color) — a decision worth noting since it means a business's brand is shared across all its branches, not set per-branch.
 - **Members are hub-scoped, Coaches/Staff are branch-assigned — this asymmetry is deliberate, not an oversight.** `MEMBER_PROFILE` has no `branch_id` at all: a Member's `ATTENDANCE_LOG` rows carry the branch they checked into, but nothing restricts *which* branch they're allowed to check into — that's the "one badge, every branch" decision. `BRANCH_ASSIGNMENT` exists specifically for Coach/Staff, who need scoped visibility (a Staff member at Branch A generally shouldn't manage Branch B's day-to-day) — see §9.1's updated Voters for how this plays out in practice.
 - **`MEMBERSHIP_PLAN.branch_id` (per-branch pricing) means `MEMBERSHIP.plan_id` indirectly ties a member to an "enrolling branch."** That's informational, not restrictive — it explains where their price point came from, it does not gate where they can check in. Worth being explicit about this in code comments wherever `Membership` is queried, since "which branch is this member's plan from" and "which branches can this member check into" are two different questions with two different answers.
+- **`EXPENSE`/`PRODUCT_SALE` are additive, standalone entities (Phase 17) — neither touches `INVOICE`.** `PRODUCT_SALE.member_id` is nullable and exists purely for filtering/reporting ("show me this member's purchases"); it is never a billing relationship, never written by the `Membership`/`Invoice` flow, and never surfaced on the Member profile page. `PRODUCT.unit_price` has no matching `unit_cost` — margin/profitability tracking is a deliberately deferred future phase, not an oversight here.
+- **`PRODUCT`/`PRODUCT_CATEGORY` are gym-scoped, not branch-scoped** — unlike `MEMBERSHIP_PLAN`, a retail catalog is shared across a business's branches (same reasoning as `GYM.brand_color`); only the sale event (`PRODUCT_SALE.branch_id`) is location-specific. `EXPENSE_CATEGORY` is gym-scoped for the same reason — Owners configure their own category list once, not per branch.
 - **`DAILY_METRIC_SNAPSHOT.branch_id` is nullable by design**, not an afterthought: the nightly job produces one row per branch *and* one gym-wide rollup row (branch_id = null) per day, so "show me Branch A's numbers" and "show me the whole business's numbers" are both simple queries against the same table, not two different aggregation paths.
 - **`DAILY_METRIC_SNAPSHOT` is a pre-aggregated read model, not a source of truth.** Attendance trends, revenue forecasts, and the live dashboard all need to answer "what happened over the last N days" fast — querying `ATTENDANCE_LOG`/`INVOICE` directly and re-aggregating on every dashboard load doesn't scale as history grows. A nightly job (§6.8) computes one row per gym per day; every other analytics feature reads from this table, never from raw logs. If the numbers are ever wrong, the nightly job is the one place to check — the source tables (`ATTENDANCE_LOG`, `MEMBERSHIP`, `INVOICE`) are still the ground truth it's computed from.
 - **`INVOICE.payment_method`/`recorded_by`/`paid_at` support manual payment recording** (§6.9) without requiring a gateway. `recorded_by` matters specifically because marking an invoice paid is a trust-sensitive, auditable action — it should always be traceable to the Owner who did it, the same way §9's audit log covers suspensions and plan changes. When gateway integration is added later, `payment_method = 'gateway'` and `recorded_by` becomes null (the webhook did it, not a person), so the schema doesn't need to change to support both paths simultaneously.
@@ -502,6 +575,17 @@ erDiagram
 - **Reporting works at two granularities**, both reading from the same `DAILY_METRIC_SNAPSHOT` table (§6.8, now branch-aware): an Owner can view one branch's numbers or the whole business's rollup, without two different aggregation code paths.
 - **Retrofit, not just new code:** this phase changes the meaning of `gym_id` on several already-built entities (`MEMBERSHIP_PLAN`, `ATTENDANCE_LOG`, `PT_SESSION`, `CLASS`) to `branch_id`. Every Voter and endpoint touching those entities from Phases 4–7 and 11 needs to be revisited, not just extended — see the roadmap's Phase 16 retrofit checklist for the specific list.
 
+### 6.13 Expense & Retail Tracking (Phase 17)
+
+- **Purely additive — never touches `Invoice`/billing.** Membership revenue keeps flowing through `Membership` → `Invoice` (§6.9) exactly as before; this module adds two new, independent revenue/cost streams: retail product sales (`ProductSale`) and operating expenses (`Expense`). Neither entity references `Invoice`, and no existing billing code path is modified to support this.
+- **Expenses are branch-level events** (`Expense.branch_id`) — an Owner records what a specific branch spent (rent, utilities, salaries, equipment, maintenance), against a gym-configurable `ExpenseCategory` list. Staff can record and view expenses for their own assigned branch(es) only (`hasAssignedBranch()`, reused from Phase 16); only the Owner can edit or delete one, and only the Owner can add/edit expense categories.
+- **Retail sales are a standalone sales ledger, not inventory or billing.** `ProductSale` records what was sold, at what price, at which branch, by whom, optionally to which member — nothing more. No stock counts, no low-stock alerts, no reorder logic (this is explicitly not inventory software), no payment gateway integration (cash/card/other are recorded manually, mirroring `Invoice.payment_method`'s shape without sharing its table), and `unit_price_at_sale` is snapshotted per sale so a later catalog price change never rewrites historical sales figures.
+- **The product catalog (`Product`/`ProductCategory`) is Owner-managed, Staff-readable.** Staff needs to see the catalog to ring up a sale but can't create, edit, or deactivate products — that stays an Owner action, same asymmetry as `MembershipPlan` management.
+- **`FinancialSummaryController` aggregates across modules on read, not via a new write path.** It sums `Invoice` (membership revenue), `ProductSale.total_amount` (retail revenue), and `Expense.amount` (costs) for a given date range and optional branch filter, returning `net = membership + PT + retail − expenses`. This is a hand-written controller rather than a plain `#[ApiResource]` because the response shape doesn't map onto a single entity — same rationale as why `AuthController`/`ReportController` are hand-written elsewhere in this codebase. It's gated by the existing `ReportVoter::VIEW` (§9.1) — no new Voter, since "Owner, own gym only, optional branch filter" is the exact same shape `ReportVoter` already covers for every other analytics endpoint.
+- **PT revenue is a derived, read-time estimate — there is no `PT_SESSION`-to-`Invoice` link anywhere in this codebase (PT sessions have never been billed).** `COACH_PROFILE.hourly_rate` exists in the data model specifically for this: PT revenue for a range is `Σ (coach.hourly_rate × session.duration_minutes / 60)` over `PT_SESSION` rows with status `confirmed` or `completed` in that range/branch, computed the same way `RevenueForecaster`/`RetentionAnalyzer` already compute derived figures on read rather than persisting new state. This is the minimal use of an existing, otherwise-unused field — it does not create PT billing/invoicing, which stays out of scope for this phase.
+- **The nightly `DAILY_METRIC_SNAPSHOT` job (§6.8) is extended, not duplicated** — it now also aggregates `retail_revenue`, `expense_total`, and `expense_by_category` per branch per day (§5.1). Analytics/dashboard code that already reads this table gets these new figures without a second aggregation mechanism to keep in sync.
+- **Explicit exclusions, so future phases don't reintroduce this scope by accident:** no `unit_cost`/margin tracking on `Product` (a future retail-analytics phase, not this one), no supplier/vendor management, no tax/VAT calculation, no automated recurring-expense scheduling (every expense is manually entered), no receipt OCR or auto-categorization, and no coach commission/payout entity or category — that's a separate future phase and must not be smuggled in as an `ExpenseCategory` row.
+
 ---
 
 ## 7. API Design (overview)
@@ -557,6 +641,22 @@ GET    /api/v1/reports/revenue         (Owner; optional ?branch_id)
 GET    /api/v1/reports/revenue-forecast (Owner — 30/60/90-day projection; optional ?branch_id)
 GET    /api/v1/reports/retention       (Owner — at-risk member list with reasons; optional ?branch_id)
 GET    /api/v1/reports/export          (Owner — CSV/PDF, any of the above by date range; optional ?branch_id)
+
+GET    /api/v1/expense-categories      (Owner — manage; Staff — read only)
+POST   /api/v1/expenses                (Owner — any branch; Staff — own assigned branch(es) only)
+GET    /api/v1/expenses                (Owner — any branch, filterable by branch/category/date range; Staff — own assigned branch(es) only)
+PATCH  /api/v1/expenses/:id            (Owner only)
+DELETE /api/v1/expenses/:id            (Owner only)
+
+GET    /api/v1/product-categories      (Owner — manage; any authenticated gym user — read, for catalog pickers)
+GET    /api/v1/products                (Owner — manage; Staff — read only, to make a sale)
+POST   /api/v1/products                (Owner only)
+PATCH  /api/v1/products/:id            (Owner only — edit/deactivate)
+
+POST   /api/v1/product-sales           (Owner — any branch; Staff — own assigned branch(es) only)
+GET    /api/v1/product-sales           (Owner — any branch, filterable by branch/product/member/date range; Staff — own assigned branch(es) only)
+
+GET    /api/financial-summary          (Owner — membership + PT + retail revenue, total expenses, net; filterable by date range and optional ?branch_id, defaults to gym-wide rollup — note: hand-written FinancialSummaryController uses the plain /api prefix, same as /api/auth/* and /api/reports/*, not /api/v1 like the entity-generated resources above)
 ```
 
 Every non-Owner endpoint enforces row-level scoping in the service layer, not just the controller guard — defense in depth against a missed check.
@@ -1001,6 +1101,97 @@ final class InvoiceVoter extends AppVoter
     }
 }
 ```
+
+**ExpenseVoter** — record/view/manage operating expenses (§2's expense rows, Phase 17). Owner: full CRUD, any branch. Staff: create + view only, own assigned branch(es) — reuses `hasAssignedBranch()` from Phase 16. Coach/Member: denied entirely.
+```php
+final class ExpenseVoter extends AppVoter
+{
+    const CREATE = 'EXPENSE_CREATE'; // Owner: any branch; Staff: own assigned branch(es) only
+    const VIEW   = 'EXPENSE_VIEW';   // Owner: any branch; Staff: own assigned branch(es) only
+    const MANAGE = 'EXPENSE_MANAGE'; // update/delete — Owner only, no exceptions
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, [self::CREATE, self::VIEW, self::MANAGE])
+            && $subject instanceof Expense;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        $user = $token->getUser();
+
+        if ($this->isOwner($user)) {
+            return $subject->getBranch()->getGym()->getOwner() === $user; // full CRUD, all branches
+        }
+
+        if ($this->isStaff($user) && in_array($attribute, [self::CREATE, self::VIEW], true)) {
+            return $this->hasAssignedBranch($user, $subject->getBranch()); // create + read only
+        }
+
+        return false; // Coach and Member: denied entirely
+    }
+}
+```
+
+**ProductVoter** — manage/read the retail product catalog (§2's catalog row, Phase 17). Owner-only for create/update/deactivate; Staff gets read-only access to make a sale.
+```php
+final class ProductVoter extends AppVoter
+{
+    const MANAGE = 'PRODUCT_MANAGE'; // create/update/deactivate — Owner only
+    const VIEW   = 'PRODUCT_VIEW';   // Owner and Staff — read the catalog to make a sale
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, [self::MANAGE, self::VIEW])
+            && ($subject instanceof Product || $subject instanceof ProductCategory);
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        $user = $token->getUser();
+        $gymMatches = $subject->getGym() === $user->getGym();
+
+        if ($attribute === self::MANAGE) {
+            return $this->isOwner($user) && $gymMatches;
+        }
+        // VIEW
+        return ($this->isOwner($user) || $this->isStaff($user)) && $gymMatches;
+    }
+}
+```
+
+**ProductSaleVoter** — record/view retail sales (§2's retail-sale row, Phase 17). Same permission shape as `ExpenseVoter`.
+```php
+final class ProductSaleVoter extends AppVoter
+{
+    const CREATE = 'PRODUCT_SALE_CREATE'; // Owner: any branch; Staff: own assigned branch(es) only
+    const VIEW   = 'PRODUCT_SALE_VIEW';   // Owner: any branch; Staff: own assigned branch(es) only
+    const MANAGE = 'PRODUCT_SALE_MANAGE'; // update/delete — Owner only, no exceptions
+
+    protected function supports(string $attribute, mixed $subject): bool
+    {
+        return in_array($attribute, [self::CREATE, self::VIEW, self::MANAGE])
+            && $subject instanceof ProductSale;
+    }
+
+    protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
+    {
+        $user = $token->getUser();
+
+        if ($this->isOwner($user)) {
+            return $subject->getBranch()->getGym()->getOwner() === $user;
+        }
+
+        if ($this->isStaff($user) && in_array($attribute, [self::CREATE, self::VIEW], true)) {
+            return $this->hasAssignedBranch($user, $subject->getBranch());
+        }
+
+        return false;
+    }
+}
+```
+
+**Financial summary** reuses `ReportVoter::VIEW` as-is (§2's financial-summary row) — `FinancialSummaryController` is gated the same way every other Owner-only analytics endpoint is, no new Voter needed.
 
 **AnnouncementVoter** — Owner broadcasts gym-wide or to one branch, Coach broadcasts to own clients only (§2's announcements row — Owner's branch option is new in Phase 16)
 ```php

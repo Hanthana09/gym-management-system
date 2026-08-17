@@ -252,6 +252,44 @@ Format: **Given / When / Then** per criterion. Role in brackets after each story
 
 ---
 
+## 15. Expense & Retail Tracking (Owner/Staff)
+
+**Scope note:** this section covers operating expenses and non-membership (retail) income only. It never touches membership billing (§8) — an Owner's expense/retail figures and their invoice history are two separate views that both roll up into one financial summary (15.4), but neither writes to the other's data.
+
+### 15.1 Recording an expense
+**As an** Owner or Staff member, **I want to** record an operating expense (rent, utilities, salaries, equipment, maintenance) against a category and a branch, **so that** the gym's costs are tracked accurately.
+- Given I submit an expense with a positive amount, a category, a branch, and a date, when I save it, then it appears immediately in the expense list for that branch.
+- Given I submit an expense with a zero or negative amount, or missing category/branch, when I try to save, then I see a specific validation error, not a silent failure.
+- Given I am Staff, when I record an expense, then I can only do so for a branch I'm assigned to (same scoping principle as check-in/attendance, architecture doc §9.1's `hasAssignedBranch()`).
+- Given I am Staff and try to edit or delete an existing expense (including one I created), when I attempt it, then I get a permission error — only the Owner can edit or delete an expense.
+- Given I am a Coach or Member, when I attempt to view, create, edit, or delete an expense via any route, then I get a permission error — this role has no access to this feature at all.
+- Given I attach a receipt to an expense, when I save it, then it's stored as a simple file upload — no automated categorization or text extraction is expected or performed.
+
+### 15.2 Product catalog
+**As an** Owner, **I want to** maintain a catalog of retail products (name, category, price), **so that** front-desk staff can sell them without me being present.
+- Given I create a product with a name, category, and unit price, when I save it, then it's immediately available for sale.
+- Given I deactivate a product, when that happens, then it stops appearing in the sale quick-entry picker but past sales referencing it remain intact and reportable.
+- Given I am Staff, when I view the product catalog, then I can see it (to make a sale) but have no create/edit/deactivate actions available — attempting one via a manipulated request is rejected, not just hidden from the UI.
+- Given I am a Coach or Member, when I attempt to access the product catalog via any route, then I get a permission error.
+
+### 15.3 Recording a retail sale
+**As an** Owner or Staff member, **I want to** record a retail sale (product, quantity, optional member, payment method), **so that** non-membership income is tracked alongside membership revenue.
+- Given I select a product and quantity, when I save the sale, then the total is computed automatically (unit price at the time of sale × quantity) and recorded — a later catalog price change never changes this sale's recorded figures.
+- Given I optionally search for and attach an existing member to the sale, when I save it, then the sale is linked to that member for reporting/filtering purposes only — it never affects that member's billing, invoices, or account balance in any way.
+- Given no member is attached (a walk-in sale), when I save it, then the sale is recorded successfully with no error — member attachment is optional, not required.
+- Given the member search in this form returns no match, when that happens, then I cannot create a new member record from this screen — member creation only ever happens through the invite/approve flow (§2).
+- Given I am Staff, when I record a sale, then I can only do so for a branch I'm assigned to, same scoping as 15.1.
+- Given I am a Coach or Member, when I attempt to record or view retail sales via any route, then I get a permission error.
+
+### 15.4 Owner financial summary
+**As an** Owner, **I want to** see membership revenue, PT revenue, retail revenue, total expenses, and net total in one view, filterable by date range and branch, **so that** I understand my gym's actual financial position, not just billing status.
+- Given I select a date range, when the summary loads, then I see membership revenue, PT revenue, retail revenue, total expenses, and a net total (`membership + PT + retail − expenses`) for that range.
+- Given I am a multi-branch Owner and select a specific branch, when the summary loads, then every figure reflects only that branch's activity.
+- Given I select "all branches" / leave no branch filter, when the summary loads, then the figures are the business-wide rollup, not just one branch's numbers (same rule as §14.5's reporting behavior).
+- Given I am Staff, Coach, or Member, when I attempt to view the financial summary via any route, then I get a permission error — this view is Owner-only, same exclusion as §9.1's reports.
+
+---
+
 ## Non-functional acceptance criteria (apply across all features above)
 
 - Every screen above must be usable at a 375px viewport with no horizontal scroll and no touch target under 44×44px (per the development roadmap's Phase 1 rules).

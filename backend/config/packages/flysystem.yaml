@@ -10,3 +10,13 @@ flysystem:
             adapter: 'local'
             options:
                 directory: '%kernel.project_dir%/public/uploads/gym-logos'
+
+        # roadmap Phase 17 / functional requirements §15.1: "stored as a
+        # simple file upload — no automated categorization or text
+        # extraction." Same local-disk-under-public/ pattern as
+        # gym_logos.storage above, for the same reason (no dedicated
+        # download controller needed).
+        expense_receipts.storage:
+            adapter: 'local'
+            options:
+                directory: '%kernel.project_dir%/public/uploads/expense-receipts'

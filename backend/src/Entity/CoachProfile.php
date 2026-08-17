@@ -18,6 +18,17 @@ use Doctrine\ORM\Mapping as ORM;
  * §7 also has no CoachProfile-shaped endpoint of its own anyway (coaches
  * appear only via `GET /coaches/:id/schedule`, which returns PtSession
  * data, not this entity's fields).
+ *
+ * roadmap Phase 17: `getHourlyRate()`/`setHourlyRate()` are added here —
+ * this field existed since Phase 2 but had no accessor at all (nothing
+ * in this codebase ever read or wrote it before now). Architecture doc
+ * §6.13's note explains why: it's "the minimal use of an existing,
+ * otherwise-unused field" for FinancialSummaryController's read-time PT
+ * revenue estimate. No setter existed anywhere to test against, so
+ * `setHourlyRate()` is added alongside the getter — still no dedicated
+ * "edit coach profile" endpoint exists in this codebase, so it's set
+ * directly (tests aside) only where a future coach-profile-management
+ * phase would naturally add one.
  */
 #[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: CoachProfileRepository::class)]
@@ -45,5 +56,15 @@ class CoachProfile
     public function getUser(): User
     {
         return $this->user;
+    }
+
+    public function getHourlyRate(): ?string
+    {
+        return $this->hourlyRate;
+    }
+
+    public function setHourlyRate(?string $hourlyRate): void
+    {
+        $this->hourlyRate = $hourlyRate;
     }
 }

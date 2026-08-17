@@ -8,8 +8,10 @@ use App\Entity\Gym;
 use App\Repository\AttendanceLogRepository;
 use App\Repository\BranchRepository;
 use App\Repository\DailyMetricSnapshotRepository;
+use App\Repository\ExpenseRepository;
 use App\Repository\InvoiceRepository;
 use App\Repository\MembershipRepository;
+use App\Repository\ProductSaleRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -34,6 +36,12 @@ use Doctrine\ORM\EntityManagerInterface;
  * number here is reconstructed from permanent, always-accurate
  * historical facts (check-in timestamps, membership start/end dates,
  * invoice paid_at), so backfilled history is otherwise exact.
+ *
+ * roadmap Phase 17: extended, not duplicated — aggregate() now also
+ * computes retail_revenue/expense_total/expense_by_category from
+ * ProductSaleRepository/ExpenseRepository and persists them onto the
+ * same snapshot row, per §6.13's explicit "one nightly job, more
+ * columns" rule.
  */
 class DailyMetricAggregator
 {
@@ -44,6 +52,8 @@ class DailyMetricAggregator
         private readonly DailyMetricSnapshotRepository $snapshots,
         private readonly RetentionAnalyzer $retention,
         private readonly BranchRepository $branches,
+        private readonly ExpenseRepository $expenses,
+        private readonly ProductSaleRepository $productSales,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -59,10 +69,23 @@ class DailyMetricAggregator
         $cancelledMembersCount = $this->memberships->countCancelledOnDate($date, $branch);
         $revenue = $this->invoices->sumPaidAmountOnDate($date, $branch);
         $atRiskMembersCount = count($this->retention->atRiskMembers($date, $branch));
+        $retailRevenue = $this->productSales->sumTotalAmountOnDate($date, $branch);
+        $expenseTotal = $this->expenses->sumAmountOnDate($date, $branch);
+        $expenseByCategory = $this->expenses->amountByCategoryOnDate($date, $branch);
 
         $existing = $this->snapshots->findOneForDate($gym, $date, $branch);
         if ($existing !== null) {
-            $existing->update($checkinsCount, $activeMembersCount, $newMembersCount, $cancelledMembersCount, $revenue, $atRiskMembersCount);
+            $existing->update(
+                $checkinsCount,
+                $activeMembersCount,
+                $newMembersCount,
+                $cancelledMembersCount,
+                $revenue,
+                $atRiskMembersCount,
+                $retailRevenue,
+                $expenseTotal,
+                $expenseByCategory,
+            );
             $this->em->flush();
 
             return $existing;
@@ -78,6 +101,9 @@ class DailyMetricAggregator
             $revenue,
             $atRiskMembersCount,
             $branch,
+            $retailRevenue,
+            $expenseTotal,
+            $expenseByCategory,
         );
         $this->em->persist($snapshot);
         $this->em->flush();

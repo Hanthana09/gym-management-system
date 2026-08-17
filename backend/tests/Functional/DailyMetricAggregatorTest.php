@@ -4,14 +4,20 @@ namespace App\Tests\Functional;
 
 use App\Entity\AttendanceLog;
 use App\Entity\Branch;
+use App\Entity\Expense;
+use App\Entity\ExpenseCategory;
 use App\Entity\Gym;
 use App\Entity\Invoice;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
+use App\Entity\Product;
+use App\Entity\ProductCategory;
+use App\Entity\ProductSale;
 use App\Entity\User;
 use App\Enum\CheckInMethod;
 use App\Enum\PaymentMethod;
+use App\Enum\RetailPaymentMethod;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
 use App\Repository\DailyMetricSnapshotRepository;
@@ -59,7 +65,7 @@ final class DailyMetricAggregatorTest extends KernelTestCase
         $this->aggregator = static::getContainer()->get(DailyMetricAggregator::class);
         $this->snapshots = static::getContainer()->get(DailyMetricSnapshotRepository::class);
         $this->em->getConnection()->executeStatement(
-            'TRUNCATE daily_metric_snapshot, invoice, attendance_log, audit_log, membership, membership_plan, coach_profile, member_profile, invitation, gym, otp_code, refresh_token, "user" CASCADE',
+            'TRUNCATE daily_metric_snapshot, expense, expense_category, product_sale, product, product_category, invoice, attendance_log, audit_log, membership, membership_plan, coach_profile, member_profile, invitation, gym, otp_code, refresh_token, "user" CASCADE',
         );
     }
 
@@ -289,5 +295,66 @@ final class DailyMetricAggregatorTest extends KernelTestCase
         self::assertSame(0, $snapshot->getCancelledMembersCount());
         self::assertSame('0.00', $snapshot->getRevenue());
         self::assertSame(0, $snapshot->getAtRiskMembersCount());
+        // roadmap Phase 17: the three new fields default cleanly too, not just the pre-existing ones.
+        self::assertSame('0.00', $snapshot->getRetailRevenue());
+        self::assertSame('0.00', $snapshot->getExpenseTotal());
+        self::assertSame([], $snapshot->getExpenseByCategory());
+    }
+
+    /**
+     * roadmap Phase 17 / testing requirement: "confirm expense/retail
+     * totals populate without breaking existing membership/PT snapshot
+     * fields (regression check on Phase 11's existing aggregation)." Same
+     * known dataset shape as this file's other tests, extended with an
+     * Expense and a ProductSale on the same day, hand-computed.
+     */
+    public function test_expense_and_retail_totals_populate_without_breaking_existing_snapshot_fields(): void
+    {
+        $owner = new User('Olivia Owner', 'owner@example.com', null, UserRole::OWNER, UserStatus::ACTIVE);
+        $this->em->persist($owner);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $this->em->persist($gym);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($branch);
+        $plan = new MembershipPlan($branch, 'Gold', '50.00', 30, []);
+        $this->em->persist($plan);
+        $this->em->flush();
+
+        $day = (new \DateTimeImmutable('-4 days'))->setTime(9, 0);
+        $member = $this->memberUser('Member A', 'a@example.com');
+        $this->enrollAndPay($member, $plan, $day, 30, $owner);
+        $this->checkIn($member, $branch, $day->modify('+1 hour'));
+
+        $utilities = new ExpenseCategory($gym, 'Utilities');
+        $rent = new ExpenseCategory($gym, 'Rent');
+        $this->em->persist($utilities);
+        $this->em->persist($rent);
+        $expenseA = new Expense($branch, $utilities, '30.00', 'LKR', 'Electricity', $day, $owner);
+        $expenseB = new Expense($branch, $rent, '200.00', 'LKR', 'Monthly rent', $day, $owner);
+        $this->em->persist($expenseA);
+        $this->em->persist($expenseB);
+
+        $category = new ProductCategory($gym, 'Apparel');
+        $this->em->persist($category);
+        $product = new Product($gym, $category, 'Gym T-Shirt', '10.00');
+        $this->em->persist($product);
+        $sale = new ProductSale($branch, $product, 3, RetailPaymentMethod::CASH, $owner, null, $day);
+        $this->em->persist($sale);
+        $this->em->flush();
+
+        $snapshot = $this->aggregator->aggregate($gym, $day, $branch);
+
+        // pre-existing fields: unaffected by this phase's addition.
+        self::assertSame(1, $snapshot->getCheckinsCount());
+        self::assertSame(1, $snapshot->getActiveMembersCount());
+        self::assertSame(1, $snapshot->getNewMembersCount());
+        self::assertSame('50.00', $snapshot->getRevenue());
+
+        // roadmap Phase 17 fields: expenses = 30 + 200 = 230.00; retail = 10.00 * 3 = 30.00.
+        self::assertSame('230.00', $snapshot->getExpenseTotal());
+        self::assertSame('30.00', $snapshot->getRetailRevenue());
+        $byCategory = $snapshot->getExpenseByCategory();
+        self::assertSame('30.00', $byCategory[(string) $utilities->getId()]);
+        self::assertSame('200.00', $byCategory[(string) $rent->getId()]);
     }
 }
