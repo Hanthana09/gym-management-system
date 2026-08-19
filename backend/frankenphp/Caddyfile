@@ -60,6 +60,14 @@
 		}
 	}
 
+	# setly-phase-exercise-media.md §6: filenames are content-hashed at
+	# import time (ImportExercisesCommand), so a long immutable cache is
+	# safe — a re-import that changes an image gets a new URL rather than
+	# needing manual invalidation. This project runs Caddy, not Nginx (the
+	# infra the phase doc assumes) — same header contract, Caddy directive.
+	@exerciseMedia path /media/exercises/*
+	header @exerciseMedia Cache-Control "public, immutable, max-age=31536000"
+
 	file_server {
 		hide *.php
 	}

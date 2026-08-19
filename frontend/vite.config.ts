@@ -40,6 +40,16 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // setly-phase-exercise-media.md §6: same straight-off-disk Caddy
+        // serving as /uploads above, for ImportExercisesCommand's WebP
+        // catalog media (immutable long-cache headers set in the
+        // Caddyfile) — a different path prefix so imported reference data
+        // stays visually distinct from user-uploaded content.
+        '/media': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   }

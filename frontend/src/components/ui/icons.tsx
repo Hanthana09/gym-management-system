@@ -193,3 +193,15 @@ export function FinanceIcon(props: SVGProps<SVGSVGElement>) {
     </IconBase>
   )
 }
+
+// Setly workout scheduling & assignment phase: a dumbbell for the
+// Coach/Member "Workouts" nav entry.
+export function WorkoutIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M6.5 9.5v5M17.5 9.5v5" />
+      <path d="M4.25 11v2.5M19.75 11v2.5" />
+      <path d="M6.5 12h11" />
+    </IconBase>
+  )
+}

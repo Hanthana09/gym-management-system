@@ -21,13 +21,16 @@ RUN <<-EOF
 	apt-get update
 	apt-get install -y --no-install-recommends \
 		file \
-		git
+		git \
+		libwebp-dev
 	install-php-extensions \
 		@composer \
 		apcu \
 		intl \
 		opcache \
-		zip
+		zip \
+		gd \
+		redis
 	rm -rf /var/lib/apt/lists/*
 EOF
 

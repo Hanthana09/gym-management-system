@@ -11,6 +11,7 @@
 
 ###> league/flysystem-bundle ###
 /public/uploads/
+/public/media/
 ###< league/flysystem-bundle ###
 
 ###> lexik/jwt-authentication-bundle ###

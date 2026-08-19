@@ -20,3 +20,14 @@ flysystem:
             adapter: 'local'
             options:
                 directory: '%kernel.project_dir%/public/uploads/expense-receipts'
+
+        # setly-phase-exercise-media.md §3/§6: platform-wide catalog media,
+        # written once by ImportExercisesCommand (never a user upload) —
+        # under public/media/ rather than public/uploads/ to keep "imported
+        # reference data" visually distinct from user-uploaded content in
+        # the same tree, and to match the /media/exercises/* path the
+        # Caddyfile's immutable-cache header block matches on.
+        exercise_media.storage:
+            adapter: 'local'
+            options:
+                directory: '%kernel.project_dir%/public/media/exercises'

@@ -21,6 +21,16 @@ doctrine:
         identity_generation_preferences:
             Doctrine\DBAL\Platforms\PostgreSQLPlatform: identity
         auto_mapping: true
+        # setly-phase-exercise-media.md §3/§5: primary_muscles/secondary_muscles
+        # are JSON arrays; filtering "is X in this array" has no DQL-native
+        # operator, so this registers Postgres's own `jsonb_exists()` as a
+        # DQL function — the idiomatic Doctrine way to use a platform-specific
+        # SQL operator inside a DQL query (vs. hand-writing raw SQL per
+        # call site). Used by ExerciseRepository::findFilteredIds() and
+        # WorkoutScheduleExerciseRepository's scoped muscle filter.
+        dql:
+            string_functions:
+                JSONB_EXISTS: App\Doctrine\JsonbExistsFunction
         mappings:
             App:
                 type: attribute

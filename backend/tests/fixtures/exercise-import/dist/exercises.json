@@ -1,0 +1,52 @@
+[
+  {
+    "id": "Test_Bench_Press",
+    "name": "Test Bench Press",
+    "force": "push",
+    "level": "beginner",
+    "mechanic": "compound",
+    "equipment": "barbell",
+    "primaryMuscles": ["chest"],
+    "secondaryMuscles": ["triceps", "shoulders"],
+    "instructions": ["Lie on the bench.", "Press the bar up."],
+    "category": "strength",
+    "images": ["Test_Bench_Press/0.jpg", "Test_Bench_Press/1.jpg"]
+  },
+  {
+    "id": "Test_Squat",
+    "name": "Test Squat",
+    "force": "push",
+    "level": "intermediate",
+    "mechanic": "compound",
+    "equipment": "barbell",
+    "primaryMuscles": ["quadriceps"],
+    "secondaryMuscles": ["glutes"],
+    "instructions": ["Stand with the bar on your back.", "Squat down."],
+    "category": "strength",
+    "images": ["Test_Squat/0.jpg"]
+  },
+  {
+    "id": "Test_Missing_Name",
+    "name": "",
+    "level": "beginner",
+    "primaryMuscles": ["biceps"],
+    "category": "strength",
+    "images": []
+  },
+  {
+    "id": "Test_Missing_Category",
+    "name": "Test Missing Category",
+    "level": "beginner",
+    "primaryMuscles": ["biceps"],
+    "category": "",
+    "images": []
+  },
+  {
+    "id": "Test_Missing_Muscles",
+    "name": "Test Missing Muscles",
+    "level": "beginner",
+    "primaryMuscles": [],
+    "category": "strength",
+    "images": []
+  }
+]

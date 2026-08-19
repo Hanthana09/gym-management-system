@@ -25,6 +25,8 @@ import { ExpensesPage } from './pages/ExpensesPage'
 import { OwnerProductsPage } from './pages/OwnerProductsPage'
 import { RetailSalePage } from './pages/RetailSalePage'
 import { OwnerFinancialSummaryPage } from './pages/OwnerFinancialSummaryPage'
+import { CoachWorkoutSchedulesPage } from './pages/CoachWorkoutSchedulesPage'
+import { MemberWorkoutSchedulePage } from './pages/MemberWorkoutSchedulePage'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth()
@@ -260,6 +262,22 @@ function App() {
         element={
           <RequireAuth>
             <OwnerFinancialSummaryPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/coach/workout-schedules"
+        element={
+          <RequireAuth>
+            <CoachWorkoutSchedulesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/member/workouts"
+        element={
+          <RequireAuth>
+            <MemberWorkoutSchedulePage />
           </RequireAuth>
         }
       />

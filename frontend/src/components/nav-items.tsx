@@ -15,6 +15,7 @@ import {
   SessionsIcon,
   SettingsIcon,
   TrackingIcon,
+  WorkoutIcon,
 } from './ui/icons'
 
 // Per roadmap Phase 1: Member's four bottom-tab items. Check-in is
@@ -24,6 +25,7 @@ import {
 export const MEMBER_NAV_ITEMS: NavItem[] = [
   { label: 'Check-in', href: '/member/check-in', icon: <CheckInIcon /> },
   { label: 'Sessions', href: '/member/sessions', icon: <SessionsIcon /> },
+  { label: 'Workouts', href: '/member/workouts', icon: <WorkoutIcon /> },
   { label: 'Tracking', href: '/member/tracking', icon: <TrackingIcon /> },
   { label: 'Notifications', href: '/member/notifications', icon: <BellIcon /> },
 ]
@@ -54,6 +56,7 @@ export const COACH_NAV_ITEMS: NavItem[] = [
   { label: 'Home', href: '/', icon: <HomeIcon /> },
   { label: 'Dashboard', href: '/coach/dashboard', icon: <DashboardIcon /> },
   { label: 'Sessions', href: '/coach/sessions', icon: <SessionsIcon /> },
+  { label: 'Workouts', href: '/coach/workout-schedules', icon: <WorkoutIcon /> },
   { label: 'Members', href: '/coach/members', icon: <MembersIcon /> },
 ]
 
