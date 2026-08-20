@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import type { MemberListItemDto } from './types'
+import type { MemberListItemDto, MemberProfileDetailDto, MemberProfileFieldsInput } from './types'
 
 export function useMembers() {
   const { authFetch } = useAuth()
@@ -28,5 +28,12 @@ export function useMembers() {
     [authFetch],
   )
 
-  return { members, loaded, refresh, updateStatus }
+  /** gym-management-member-profile-extension.md §4: dob/gender/address* only, via PATCH /members/:id. */
+  const updateProfile = useCallback(
+    (id: string, fields: MemberProfileFieldsInput) =>
+      authFetch<MemberProfileDetailDto>(`/members/${id}`, { method: 'PATCH', body: fields }),
+    [authFetch],
+  )
+
+  return { members, loaded, refresh, updateStatus, updateProfile }
 }

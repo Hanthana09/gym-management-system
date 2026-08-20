@@ -148,6 +148,57 @@ final class MemberVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
+    // ---- gym scoping (gym-management-member-profile-extension.md §6.1/§9.1) ----
+
+    public function test_owner_can_view_a_member_of_their_own_gym(): void
+    {
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+        $profile->assignGym($gym);
+
+        $result = $this->voter->vote($this->tokenFor($owner), $profile, [MemberVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
+    public function test_owner_cannot_view_a_member_of_a_different_owners_gym_403(): void
+    {
+        $ownerA = $this->user(UserRole::OWNER);
+        $ownerB = $this->user(UserRole::OWNER);
+        $gymB = new Gym('Gym B', '2 Side St', $ownerB);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+        $profile->assignGym($gymB);
+
+        $result = $this->voter->vote($this->tokenFor($ownerA), $profile, [MemberVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /** Pre-backfill window: a row with no gym assigned yet stays visible to any Owner, same as the pre-this-phase collapse. */
+    public function test_owner_can_view_a_member_with_no_gym_assigned_yet(): void
+    {
+        $owner = $this->user(UserRole::OWNER);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+
+        $result = $this->voter->vote($this->tokenFor($owner), $profile, [MemberVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
+    public function test_owner_cannot_manage_a_member_of_a_different_owners_gym_403(): void
+    {
+        $ownerA = $this->user(UserRole::OWNER);
+        $ownerB = $this->user(UserRole::OWNER);
+        $gymB = new Gym('Gym B', '2 Side St', $ownerB);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+        $profile->assignGym($gymB);
+
+        $result = $this->voter->vote($this->tokenFor($ownerA), $profile, [MemberVoter::MANAGE]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
     // ---- MANAGE ---------------------------------------------------------
 
     public function test_owner_can_manage_any_member(): void
@@ -180,13 +231,71 @@ final class MemberVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
-    /** functional requirements §11.2: Staff has "no edit/suspend/remove actions available." */
+    /** functional requirements §11.2: Staff has "no edit/suspend/remove actions available." Unchanged by the EDIT_PROFILE follow-up feature — MANAGE (suspend/reactivate) deliberately stays Owner-only. */
     public function test_staff_cannot_manage_a_member_403(): void
     {
         $staff = $this->user(UserRole::STAFF);
         $profile = new MemberProfile($this->user(UserRole::MEMBER));
 
         $result = $this->voter->vote($this->tokenFor($staff), $profile, [MemberVoter::MANAGE]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    // ---- EDIT_PROFILE (follow-up feature: editable/manual Member ID mode) ----
+
+    public function test_owner_can_edit_profile_of_a_member_in_their_own_gym(): void
+    {
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+        $profile->assignGym($gym);
+
+        $result = $this->voter->vote($this->tokenFor($owner), $profile, [MemberVoter::EDIT_PROFILE]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
+    public function test_owner_cannot_edit_profile_of_a_member_in_a_different_owners_gym_403(): void
+    {
+        $ownerA = $this->user(UserRole::OWNER);
+        $ownerB = $this->user(UserRole::OWNER);
+        $gymB = new Gym('Gym B', '2 Side St', $ownerB);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+        $profile->assignGym($gymB);
+
+        $result = $this->voter->vote($this->tokenFor($ownerA), $profile, [MemberVoter::EDIT_PROFILE]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /** Deliberately gym-wide/unscoped — no branch context exists for a freshly walk-in-created member (see this Voter's docblock). */
+    public function test_staff_can_edit_profile_of_any_member_unscoped(): void
+    {
+        $staff = $this->user(UserRole::STAFF);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+
+        $result = $this->voter->vote($this->tokenFor($staff), $profile, [MemberVoter::EDIT_PROFILE]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
+    }
+
+    public function test_coach_cannot_edit_profile_of_a_member_403(): void
+    {
+        $coach = $this->user(UserRole::COACH);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+
+        $result = $this->voter->vote($this->tokenFor($coach), $profile, [MemberVoter::EDIT_PROFILE]);
+
+        self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    public function test_member_cannot_edit_their_own_profile_via_edit_profile_403(): void
+    {
+        $memberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($memberUser);
+
+        $result = $this->voter->vote($this->tokenFor($memberUser), $profile, [MemberVoter::EDIT_PROFILE]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }

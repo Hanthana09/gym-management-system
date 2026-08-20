@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
+use App\Enum\MemberIdMode;
 use App\Repository\GymRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Uid\Uuid;
@@ -91,6 +92,30 @@ class Gym
     #[ORM\Column(length: 64, nullable: true)]
     private ?string $whatsappPhoneNumberId = null;
 
+    /**
+     * gym-management-member-profile-extension.md §3: prefix for
+     * memberId (`{gymCode}-{0001}`). Nullable — pre-existing gyms get
+     * one lazily via GymCodeGenerator (either at first memberId
+     * generation, or immediately for any gym provisioned from here on,
+     * see GymProvisioningService). Unique so two gyms never produce
+     * colliding memberIds.
+     */
+    #[ORM\Column(length: 8, unique: true, nullable: true)]
+    private ?string $gymCode = null;
+
+    /**
+     * Follow-up feature request: some gyms already have their own member
+     * numbering scheme and want front-desk staff to enter it at
+     * registration rather than accept the auto `{gymCode}-{0001}`
+     * sequence. Gym-level, not per-member — mixing schemes within one
+     * gym would let MemberIdGenerator's blind counter eventually collide
+     * with a manually-entered value (see that class's docblock); a
+     * manual-mode gym simply never touches the counter table at all.
+     * Defaults to AUTO so every pre-existing gym keeps today's behavior.
+     */
+    #[ORM\Column(length: 10, enumType: MemberIdMode::class, options: ['default' => 'auto'])]
+    private MemberIdMode $memberIdMode = MemberIdMode::AUTO;
+
     public function __construct(string $name, string $address, User $owner)
     {
         $this->id = Uuid::v7();
@@ -177,5 +202,25 @@ class Gym
     public function isWhatsappConfigured(): bool
     {
         return $this->whatsappAccessToken !== null && $this->whatsappPhoneNumberId !== null;
+    }
+
+    public function getGymCode(): ?string
+    {
+        return $this->gymCode;
+    }
+
+    public function setGymCode(?string $gymCode): void
+    {
+        $this->gymCode = $gymCode;
+    }
+
+    public function getMemberIdMode(): MemberIdMode
+    {
+        return $this->memberIdMode;
+    }
+
+    public function setMemberIdMode(MemberIdMode $memberIdMode): void
+    {
+        $this->memberIdMode = $memberIdMode;
     }
 }

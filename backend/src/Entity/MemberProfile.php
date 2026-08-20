@@ -3,6 +3,7 @@
 namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
+use App\Enum\Gender;
 use App\Enum\MembershipStatus;
 use App\Repository\MemberProfileRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -32,6 +33,17 @@ use Doctrine\ORM\Mapping as ORM;
  * on the related User, not here — nothing on this entity to denormalize
  * onto without a custom processor (see MemberService::updateStatus()
  * for the real implementation this pass doesn't reimplement).
+ *
+ * gym-management-member-profile-extension.md: adds `gender`/`address*`/
+ * `gym`/`memberId` and finally wires up getters/setters for the
+ * pre-existing (but previously unused — no accessor at all) `dateOfBirth`
+ * column. That spec doc calls the field `dob`; this codebase already had
+ * the column as `dateOfBirth` from an earlier phase, so the existing
+ * name is kept rather than renaming a column with no functional reason
+ * to (CLAUDE.md: don't touch existing columns without a migration
+ * reason — a naming preference in a later spec isn't one).
+ * `emergencyContact`/`healthNotes`/`goals` stay unwired — out of this
+ * phase's scope, not part of this spec.
  */
 #[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: MemberProfileRepository::class)]
@@ -53,6 +65,52 @@ class MemberProfile
 
     #[ORM\Column(type: 'text', nullable: true)]
     private ?string $goals = null;
+
+    #[ORM\Column(length: 20, enumType: Gender::class, nullable: true)]
+    private ?Gender $gender = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $addressLine = null;
+
+    #[ORM\Column(length: 100, nullable: true)]
+    private ?string $addressCity = null;
+
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $addressPostalCode = null;
+
+    /**
+     * gym-management-member-profile-extension.md §3/§6.1: nullable only
+     * during the pre-existing-row backfill window (app:member:backfill-ids)
+     * — every row created from here on (invite-acceptance or manual
+     * walk-in) gets one immediately via MemberIdGenerator.
+     *
+     * Mutability is deliberately NOT enforced here (plain setter, no
+     * throw-if-already-set guard). A follow-up feature made mutability
+     * gym-policy-dependent — Gym::memberIdMode AUTO keeps it effectively
+     * immutable (MemberController rejects `memberId` in any write
+     * payload for those gyms), MANUAL allows Owner/Staff to correct it
+     * anytime. Trying to express both rules on the entity itself would
+     * need two setters with confusing semantics; the controller is
+     * already the single place that decides "can this request touch
+     * memberId at all," so it's the right enforcement point.
+     */
+    #[ORM\Column(length: 20, unique: true, nullable: true)]
+    private ?string $memberId = null;
+
+    /**
+     * gym-management-member-profile-extension.md §6.1/§9.1: added
+     * against architecture doc §5.2's original hub-scoped design (no
+     * gym_id on this entity) specifically so memberId can be scoped
+     * per-gym and MemberVoter's Owner branches can enforce a real
+     * cross-gym boundary instead of the single-gym-product collapse
+     * used everywhere else (GymRepository::findTheOnlyGym()). Nullable
+     * only pre-backfill, same as memberId — MemberVoter treats a null
+     * gym as "still visible to any Owner" so existing access doesn't
+     * regress until the backfill command has run.
+     */
+    #[ORM\ManyToOne(targetEntity: Gym::class)]
+    #[ORM\JoinColumn(name: 'gym_id', nullable: true)]
+    private ?Gym $gym = null;
 
     /**
      * roadmap Phase 16 / architecture doc §9.1's MemberVoter: the Staff
@@ -116,5 +174,86 @@ class MemberProfile
     public function hasCoach(User $coach): bool
     {
         return false;
+    }
+
+    public function getDateOfBirth(): ?\DateTimeImmutable
+    {
+        return $this->dateOfBirth;
+    }
+
+    public function setDateOfBirth(?\DateTimeImmutable $dateOfBirth): void
+    {
+        $this->dateOfBirth = $dateOfBirth;
+    }
+
+    /** gym-management-member-profile-extension.md §3: computed, not persisted — null when dateOfBirth is null. */
+    public function getAge(): ?int
+    {
+        if ($this->dateOfBirth === null) {
+            return null;
+        }
+
+        return $this->dateOfBirth->diff(new \DateTimeImmutable())->y;
+    }
+
+    public function getGender(): ?Gender
+    {
+        return $this->gender;
+    }
+
+    public function setGender(?Gender $gender): void
+    {
+        $this->gender = $gender;
+    }
+
+    public function getAddressLine(): ?string
+    {
+        return $this->addressLine;
+    }
+
+    public function setAddressLine(?string $addressLine): void
+    {
+        $this->addressLine = $addressLine;
+    }
+
+    public function getAddressCity(): ?string
+    {
+        return $this->addressCity;
+    }
+
+    public function setAddressCity(?string $addressCity): void
+    {
+        $this->addressCity = $addressCity;
+    }
+
+    public function getAddressPostalCode(): ?string
+    {
+        return $this->addressPostalCode;
+    }
+
+    public function setAddressPostalCode(?string $addressPostalCode): void
+    {
+        $this->addressPostalCode = $addressPostalCode;
+    }
+
+    public function getMemberId(): ?string
+    {
+        return $this->memberId;
+    }
+
+    public function setMemberId(?string $memberId): void
+    {
+        $this->memberId = $memberId;
+    }
+
+    public function getGym(): ?Gym
+    {
+        return $this->gym;
+    }
+
+    /** @internal only MemberIdGenerator/the backfill command may call this. */
+    public function assignGym(Gym $gym): void
+    {
+        $this->gym = $gym;
     }
 }

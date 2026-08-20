@@ -6,6 +6,7 @@ import { OtpVerifyPage } from './pages/OtpVerifyPage'
 import { HomePage } from './pages/HomePage'
 import { OwnerPlansPage } from './pages/OwnerPlansPage'
 import { OwnerMembersPage } from './pages/OwnerMembersPage'
+import { MemberDetailPage } from './pages/MemberDetailPage'
 import { OwnerInvoicesPage } from './pages/OwnerInvoicesPage'
 import { MemberInvoicesPage } from './pages/MemberInvoicesPage'
 import { OwnerBulkImportPage } from './pages/OwnerBulkImportPage'
@@ -86,6 +87,14 @@ function App() {
         element={
           <RequireAuth>
             <OwnerMembersPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/members/:id"
+        element={
+          <RequireAuth>
+            <MemberDetailPage />
           </RequireAuth>
         }
       />

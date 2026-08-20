@@ -43,6 +43,21 @@ Format: **Given / When / Then** per criterion. Role in brackets after each story
 - Given I decline, when the action completes, then no profile is created, the invitation is closed, and the Owner is notified of the decline (not the reason, unless I choose to provide one).
 - Given I try to approve/decline an invitation that isn't mine, when I attempt it, then I get a permission error — this must hold even if I somehow have the invitation's ID.
 
+### 2.3 Owner or Staff creates a walk-in member (added by `gym-management-member-profile-extension.md`; widened to Staff by its "editable/manual Member ID mode" follow-up)
+**As an** Owner or Staff member, **I want to** register a walk-in Member directly at the front desk, **so that** someone joining in person doesn't have to wait on an invite/OTP round trip.
+- Given I submit a name and at least one of email/phone, when I save it, then a Member account is created immediately `active` (no pending-approval step, no OTP) with a `memberId` — system-generated, or entered by me if this gym is in manual Member ID mode (§2.4).
+- Given I am Staff, when I do this, then it succeeds the same as it would for an Owner — this was Owner-only when the feature first shipped, then widened to Staff since front-desk registration is typically a Staff task. Suspending/reactivating an existing account (§3.2-adjacent) is a separate permission and stayed Owner-only.
+- Given I am a Coach or Member, when I attempt this via any route, then I get a permission error.
+- Given two walk-in creations happen back to back for the same gym, when both complete, then both succeed with distinct, sequential `memberId`s — no collision, no failure under concurrency.
+- This does not change §2.1/§2.2's invite/approve flow for Coach accounts, or for Members who prefer it — it's an additional path, not a replacement.
+
+### 2.4 Owner configures Member ID mode (added by the "editable/manual Member ID mode" follow-up feature)
+**As an** Owner, **I want to** choose whether Member IDs are auto-generated or entered by hand, **so that** a gym with its own existing numbering scheme can keep using it.
+- Given I switch a gym to manual mode, when front desk (Owner or Staff) registers a walk-in member from then on, then `memberId` is required on that form and I choose the value, not the system.
+- Given I try to switch modes after the gym already has any members, when I attempt it, then I get a validation error — the mode is locked in once real data depends on it.
+- Given two members are given the same `memberId` in manual mode, when the second save is attempted, then it's rejected — Member IDs stay unique per gym regardless of mode.
+- Given I am Staff, Coach, or Member, when I attempt to change this setting via any route, then I get a permission error — only an Owner can change the mode, though Staff can still read it (needed to render the registration form correctly).
+
 ---
 
 ## 3. Membership Management
@@ -277,7 +292,7 @@ Format: **Given / When / Then** per criterion. Role in brackets after each story
 - Given I select a product and quantity, when I save the sale, then the total is computed automatically (unit price at the time of sale × quantity) and recorded — a later catalog price change never changes this sale's recorded figures.
 - Given I optionally search for and attach an existing member to the sale, when I save it, then the sale is linked to that member for reporting/filtering purposes only — it never affects that member's billing, invoices, or account balance in any way.
 - Given no member is attached (a walk-in sale), when I save it, then the sale is recorded successfully with no error — member attachment is optional, not required.
-- Given the member search in this form returns no match, when that happens, then I cannot create a new member record from this screen — member creation only ever happens through the invite/approve flow (§2).
+- Given the member search in this form returns no match, when that happens, then I cannot create a new member record from this screen — this form only attaches an *existing* member, it never creates one. (Member creation happens through the invite/approve flow, §2, or — as of `gym-management-member-profile-extension.md` — Owner's manual walk-in path, `POST /members`; either way, not from the retail-sale screen.)
 - Given I am Staff, when I record a sale, then I can only do so for a branch I'm assigned to, same scoping as 15.1.
 - Given I am a Coach or Member, when I attempt to record or view retail sales via any route, then I get a permission error.
 

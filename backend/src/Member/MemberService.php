@@ -5,6 +5,7 @@ namespace App\Member;
 use App\Audit\AuditLogger;
 use App\Entity\MemberProfile;
 use App\Entity\User;
+use App\Enum\Gender;
 use App\Enum\UserStatus;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -48,6 +49,53 @@ class MemberService
         $this->auditLogger->log($actingOwner, 'member.status_changed', 'User', $user->getId(), [
             'previousStatus' => $previousStatus->value,
             'newStatus' => $newStatus->value,
+        ]);
+    }
+
+    /**
+     * gym-management-member-profile-extension.md §4: dob/gender/address*,
+     * plus `memberId` for gyms in Gym::memberIdMode MANUAL (follow-up
+     * feature) — the controller has already decided whether `memberId`
+     * is allowed in this payload at all (rejected outright for AUTO-mode
+     * gyms) and pre-checked its uniqueness before calling this, so this
+     * method just applies whatever the caller validated. $fields only
+     * contains keys the caller actually validated as present in the
+     * incoming payload (PATCH semantics: an omitted key leaves the
+     * existing value untouched, a present key with value null clears it
+     * — except memberId, which the controller never allows to be
+     * cleared to null, only replaced with another non-empty value).
+     *
+     * @param array{dob?: ?\DateTimeImmutable, gender?: ?Gender, addressLine?: ?string, addressCity?: ?string, addressPostalCode?: ?string, memberId?: string} $fields
+     */
+    public function updateProfile(MemberProfile $member, array $fields, User $actingUser): void
+    {
+        if ($fields === []) {
+            return;
+        }
+
+        if (array_key_exists('dob', $fields)) {
+            $member->setDateOfBirth($fields['dob']);
+        }
+        if (array_key_exists('gender', $fields)) {
+            $member->setGender($fields['gender']);
+        }
+        if (array_key_exists('addressLine', $fields)) {
+            $member->setAddressLine($fields['addressLine']);
+        }
+        if (array_key_exists('addressCity', $fields)) {
+            $member->setAddressCity($fields['addressCity']);
+        }
+        if (array_key_exists('addressPostalCode', $fields)) {
+            $member->setAddressPostalCode($fields['addressPostalCode']);
+        }
+        if (array_key_exists('memberId', $fields)) {
+            $member->setMemberId($fields['memberId']);
+        }
+
+        $this->em->flush();
+
+        $this->auditLogger->log($actingUser, 'member.profile_updated', 'User', $member->getUser()->getId(), [
+            'fields' => array_keys($fields),
         ]);
     }
 }

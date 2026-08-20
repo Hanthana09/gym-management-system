@@ -20,15 +20,35 @@ use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
  * MemberProfile belongs to it. Staff's branch, unlike Owner's, is a real
  * per-user check now (hasAssignedBranch()), not a collapse — that's the
  * actual point of this phase.
+ *
+ * gym-management-member-profile-extension.md §6.1/§9.1: MemberProfile
+ * now carries a real `gym` (added specifically so this Voter can enforce
+ * a genuine cross-gym boundary instead of the collapse above). Both
+ * isOwner() branches below check `$subject->getGym()->getOwner() ===
+ * $user`, but only when a gym is actually set — a still-null gym (the
+ * pre-backfill window right after this phase's migration runs, before
+ * app:member:backfill-ids has processed that row) falls back to the old
+ * collapse so existing Owner access to not-yet-migrated rows doesn't
+ * regress.
+ *
+ * Follow-up feature (editable/manual Member ID mode) adds EDIT_PROFILE,
+ * deliberately separate from MANAGE: creation + profile data entry
+ * (dob, gender, address fields, memberId when the gym is in manual mode)
+ * widen to Owner+Staff, gym-wide/unscoped for Staff (no branch context
+ * exists for a freshly walk-in-created member — it has no membership
+ * yet), but MANAGE (suspend/reactivate an existing account) stays
+ * Owner-only, untouched — the widening is scoped to what was actually
+ * asked for, not a blanket Staff-gets-MANAGE-too change.
  */
 final class MemberVoter extends AppVoter
 {
     const MANAGE = 'MEMBER_MANAGE';   // add / suspend / remove — Owner only
     const VIEW = 'MEMBER_VIEW';     // Owner: any; Coach: own clients; Staff: own branch(es) only; Member: self
+    const EDIT_PROFILE = 'MEMBER_EDIT_PROFILE'; // create + dob/gender/address*/memberId — Owner: own gym; Staff: gym-wide, unscoped
 
     protected function supports(string $attribute, mixed $subject): bool
     {
-        return in_array($attribute, [self::MANAGE, self::VIEW])
+        return in_array($attribute, [self::MANAGE, self::VIEW, self::EDIT_PROFILE])
             && $subject instanceof MemberProfile;
     }
 
@@ -37,7 +57,11 @@ final class MemberVoter extends AppVoter
         $user = $token->getUser();
 
         if ($this->isOwner($user)) {
-            return true; // single-gym product — every MemberProfile is this Owner's
+            $gym = $subject->getGym();
+
+            // null gym = not yet backfilled (gym-management-member-profile-extension.md) —
+            // stays visible to any Owner, same as the pre-this-phase collapse.
+            return $gym === null || $gym->getOwner() === $user;
         }
 
         if ($attribute === self::VIEW && $this->isCoach($user)) {
@@ -58,6 +82,10 @@ final class MemberVoter extends AppVoter
 
         if ($attribute === self::VIEW && $this->isMember($user)) {
             return $subject->getUser() === $user; // "own record only"
+        }
+
+        if ($attribute === self::EDIT_PROFILE && $this->isStaff($user)) {
+            return true; // gym-wide, unscoped — see this class's docblock
         }
 
         return false;

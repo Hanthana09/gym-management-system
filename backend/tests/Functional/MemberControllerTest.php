@@ -368,4 +368,411 @@ final class MemberControllerTest extends WebTestCase
         self::assertSame('checkin_blocked', $checkin['body']['error']);
         self::assertSame('account_suspended', $checkin['body']['reason']);
     }
+
+    // ---- gym-management-member-profile-extension.md: POST /members (manual walk-in) ----
+
+    public function test_owner_can_create_a_member_manually(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+
+        $result = $this->request('POST', '/members', $owner, [
+            'name' => 'Walter Walkin',
+            'email' => 'walter@example.com',
+            'dob' => '1990-05-15',
+            'gender' => 'male',
+            'addressLine' => '12 Elm St',
+            'addressCity' => 'Springfield',
+            'addressPostalCode' => '00100',
+        ]);
+
+        self::assertSame(201, $result['status']);
+        self::assertMatchesRegularExpression('/^[A-Z0-9]+-\d{4}$/', $result['body']['memberId']);
+        self::assertSame('active', $result['body']['status']);
+        self::assertSame(1990, (new \DateTimeImmutable($result['body']['dob']))->format('Y') + 0);
+        self::assertSame('male', $result['body']['gender']);
+        self::assertIsInt($result['body']['age']);
+    }
+
+    /** Follow-up feature (editable/manual Member ID mode): widened from Owner-only — front-desk registration is typically a Staff task. */
+    public function test_staff_can_create_a_member_manually(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St']); // lazily provisions the gym
+        $staff = $this->createUser('Sam Staff', 'staff@example.com', UserRole::STAFF);
+
+        $result = $this->request('POST', '/members', $staff, ['name' => 'Walter Walkin', 'email' => 'walter@example.com']);
+
+        self::assertSame(201, $result['status']);
+        self::assertMatchesRegularExpression('/^[A-Z0-9]+-\d{4}$/', $result['body']['memberId']);
+    }
+
+    public function test_coach_cannot_create_a_member_manually_403(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St']);
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+
+        $result = $this->request('POST', '/members', $coach, ['name' => 'Walter Walkin', 'email' => 'walter@example.com']);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_creating_a_member_with_a_memberId_in_the_payload_is_rejected(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+
+        $result = $this->request('POST', '/members', $owner, [
+            'name' => 'Walter Walkin', 'email' => 'walter@example.com', 'memberId' => 'HACK-0001',
+        ]);
+
+        self::assertSame(422, $result['status']);
+    }
+
+    /** Race-safety proof at the app level: sequential calls for the same Owner get distinct, sequential memberIds — the atomic UPSERT guarantees this holds under real concurrency too. */
+    public function test_two_members_created_in_a_row_get_distinct_sequential_member_ids(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+
+        $first = $this->request('POST', '/members', $owner, ['name' => 'First Walkin', 'email' => 'first@example.com']);
+        $second = $this->request('POST', '/members', $owner, ['name' => 'Second Walkin', 'email' => 'second@example.com']);
+
+        self::assertNotSame($first['body']['memberId'], $second['body']['memberId']);
+        $prefix = substr((string) $first['body']['memberId'], 0, strrpos((string) $first['body']['memberId'], '-'));
+        self::assertSame($prefix . '-0002', $second['body']['memberId']);
+    }
+
+    // ---- GET/PATCH /members/:id (profile) ----
+
+    public function test_owner_can_read_a_members_full_profile(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertArrayHasKey('dob', $result['body']);
+        self::assertArrayHasKey('gender', $result['body']);
+        self::assertArrayHasKey('addressLine', $result['body']);
+        self::assertNull($result['body']['age']); // no dob set
+    }
+
+    public function test_member_can_read_their_own_full_profile(): void
+    {
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}", $member);
+
+        self::assertSame(200, $result['status']);
+        self::assertArrayHasKey('dob', $result['body']);
+    }
+
+    public function test_a_different_member_cannot_read_someone_elses_profile_403(): void
+    {
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $someoneElse = $this->createApprovedMember('Owen Other', 'owen@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}", $someoneElse);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_coach_cannot_read_a_members_full_profile_403(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}", $coach);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    /**
+     * gym-management-member-profile-extension.md §7: the Coach-facing
+     * member picker (workout-scheduling's own endpoint, untouched by this
+     * phase) must never gain the new PII fields — asserted directly on
+     * its response shape, not just inferred from it being unreachable.
+     */
+    public function test_coach_facing_member_list_never_exposes_the_new_pii_fields(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', '/workout-assignments/members', $coach);
+
+        self::assertSame(200, $result['status']);
+        self::assertNotEmpty($result['body']['members']);
+        foreach ($result['body']['members'] as $entry) {
+            self::assertArrayNotHasKey('dob', $entry);
+            self::assertArrayNotHasKey('gender', $entry);
+            self::assertArrayNotHasKey('addressLine', $entry);
+        }
+    }
+
+    public function test_owner_can_update_a_members_profile_fields(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}", $owner, [
+            'dob' => '1995-01-20',
+            'gender' => 'female',
+            'addressLine' => '5 Oak Ave',
+            'addressCity' => 'Metropolis',
+            'addressPostalCode' => '20001',
+        ]);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('1995-01-20', $result['body']['dob']);
+        self::assertSame('female', $result['body']['gender']);
+        self::assertSame('5 Oak Ave', $result['body']['addressLine']);
+        self::assertIsInt($result['body']['age']);
+    }
+
+    /** Follow-up feature (editable/manual Member ID mode): MemberVoter::EDIT_PROFILE grants Staff gym-wide, unscoped — unlike MANAGE (suspend/reactivate), which stays Owner-only. */
+    public function test_staff_can_update_a_members_profile_fields(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St']); // lazily provisions the gym
+        $staff = $this->createUser('Sam Staff', 'staff@example.com', UserRole::STAFF);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}", $staff, ['dob' => '1995-01-20']);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('1995-01-20', $result['body']['dob']);
+    }
+
+    public function test_staff_still_cannot_suspend_a_member_403(): void
+    {
+        $staff = $this->createUser('Sam Staff', 'staff@example.com', UserRole::STAFF);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}/status", $staff, ['status' => 'suspended']);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_coach_cannot_update_a_members_profile_fields_403(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}", $coach, ['dob' => '1995-01-20']);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    /** functional requirements-style negative case: memberId is immutable, rejected even attached to an otherwise-valid update. */
+    public function test_updating_a_member_with_a_memberId_in_the_payload_is_rejected_and_value_unchanged(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $created = $this->request('POST', '/members', $owner, ['name' => 'Walter Walkin', 'email' => 'walter@example.com']);
+        $originalMemberId = $created['body']['memberId'];
+
+        $result = $this->request('PATCH', "/members/{$created['body']['id']}", $owner, [
+            'memberId' => 'HACKED-0001',
+            'addressCity' => 'Newtown',
+        ]);
+
+        self::assertSame(422, $result['status']);
+
+        $unchanged = $this->request('GET', "/members/{$created['body']['id']}", $owner);
+        self::assertSame($originalMemberId, $unchanged['body']['memberId']);
+        self::assertNull($unchanged['body']['addressCity']); // the rest of the payload was rejected too, not partially applied
+    }
+
+    public function test_dob_is_rejected_when_not_a_valid_date(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}", $owner, ['dob' => 'not-a-date']);
+
+        self::assertSame(400, $result['status']);
+    }
+
+    // ---- cross-gym isolation (gym-management-member-profile-extension.md §6.1/§7) ----
+
+    public function test_owner_of_a_different_gym_cannot_read_or_write_a_members_profile_403(): void
+    {
+        $ownerA = $this->createUser('Olivia OwnerA', 'ownerA@example.com', UserRole::OWNER);
+        $ownerB = $this->createUser('Bella OwnerB', 'ownerB@example.com', UserRole::OWNER);
+        $created = $this->request('POST', '/members', $ownerA, ['name' => 'Walter Walkin', 'email' => 'walter@example.com']);
+
+        $read = $this->request('GET', "/members/{$created['body']['id']}", $ownerB);
+        $write = $this->request('PATCH', "/members/{$created['body']['id']}", $ownerB, ['addressCity' => 'Newtown']);
+
+        self::assertSame(403, $read['status']);
+        self::assertSame(403, $write['status']);
+    }
+
+    // ---- PT schedule / attendance / payments tabs ----
+
+    public function test_owner_can_read_a_members_pt_schedule(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}/pt-schedule", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame([], $result['body']['ptSessions']);
+        self::assertSame([], $result['body']['workoutAssignments']);
+    }
+
+    public function test_coach_cannot_read_a_members_pt_schedule_403(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}/pt-schedule", $coach);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_coach_cannot_read_a_members_payment_history_403(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}/payments", $coach);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_payment_history_is_an_explicit_not_available_stub_not_an_empty_list(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}/payments", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertFalse($result['body']['available']);
+        self::assertSame('not_yet_available', $result['body']['reason']);
+        self::assertSame([], $result['body']['payments']);
+    }
+
+    /** Deactivation is a status transition, not a row deletion — history stays queryable via the existing endpoints. */
+    public function test_a_deactivated_members_attendance_history_stays_queryable(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $plan = $this->request('POST', '/membership-plans', $owner, ['name' => 'Gold', 'price' => '49.99', 'durationDays' => 30, 'features' => []]);
+        $this->request('POST', '/memberships', $owner, ['memberUserId' => (string) $member->getId(), 'planId' => $plan['body']['id']]);
+        $this->request('POST', '/members/me/checkin', $member);
+
+        $this->request('PATCH', "/members/{$member->getId()}/status", $owner, ['status' => 'suspended']);
+        $result = $this->request('GET', "/members/{$member->getId()}/attendance", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame(1, $result['body']['total']);
+        self::assertCount(1, $result['body']['logs']);
+    }
+
+    // ---- getAge() ----
+
+    public function test_age_is_null_when_dob_is_not_set(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('GET', "/members/{$member->getId()}", $owner);
+
+        self::assertNull($result['body']['age']);
+    }
+
+    public function test_age_is_computed_correctly_once_dob_is_set(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $twentyYearsAgo = (new \DateTimeImmutable('-20 years -1 day'))->format('Y-m-d');
+
+        $this->request('PATCH', "/members/{$member->getId()}", $owner, ['dob' => $twentyYearsAgo]);
+        $result = $this->request('GET', "/members/{$member->getId()}", $owner);
+
+        self::assertSame(20, $result['body']['age']);
+    }
+
+    // ---- follow-up feature: editable/manual Member ID mode ----
+
+    private function switchToManualMode(User $owner): void
+    {
+        $result = $this->request('PATCH', '/gym/member-id-settings', $owner, ['mode' => 'manual']);
+        self::assertSame(200, $result['status']);
+    }
+
+    public function test_manual_mode_requires_member_id_on_create(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->switchToManualMode($owner);
+
+        $result = $this->request('POST', '/members', $owner, ['name' => 'Walter Walkin', 'email' => 'walter@example.com']);
+
+        self::assertSame(400, $result['status']);
+    }
+
+    public function test_manual_mode_accepts_a_hand_entered_member_id_on_create(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->switchToManualMode($owner);
+
+        $result = $this->request('POST', '/members', $owner, [
+            'name' => 'Walter Walkin', 'email' => 'walter@example.com', 'memberId' => 'LEGACY-042',
+        ]);
+
+        self::assertSame(201, $result['status']);
+        self::assertSame('LEGACY-042', $result['body']['memberId']);
+    }
+
+    public function test_manual_mode_rejects_a_duplicate_member_id(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->switchToManualMode($owner);
+        $this->request('POST', '/members', $owner, ['name' => 'First Walkin', 'email' => 'first@example.com', 'memberId' => 'LEGACY-042']);
+
+        $result = $this->request('POST', '/members', $owner, ['name' => 'Second Walkin', 'email' => 'second@example.com', 'memberId' => 'LEGACY-042']);
+
+        self::assertSame(409, $result['status']);
+    }
+
+    /** Unlike auto mode's immutable-once-assigned rule, manual mode allows correcting a front-desk typo anytime. */
+    public function test_manual_mode_allows_editing_the_member_id_later(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->switchToManualMode($owner);
+        $created = $this->request('POST', '/members', $owner, [
+            'name' => 'Walter Walkin', 'email' => 'walter@example.com', 'memberId' => 'LEGACY-042',
+        ]);
+
+        $result = $this->request('PATCH', "/members/{$created['body']['id']}", $owner, ['memberId' => 'LEGACY-043']);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('LEGACY-043', $result['body']['memberId']);
+    }
+
+    public function test_manual_mode_rejects_an_empty_member_id_on_update(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $this->switchToManualMode($owner);
+        $created = $this->request('POST', '/members', $owner, [
+            'name' => 'Walter Walkin', 'email' => 'walter@example.com', 'memberId' => 'LEGACY-042',
+        ]);
+
+        $result = $this->request('PATCH', "/members/{$created['body']['id']}", $owner, ['memberId' => '']);
+
+        self::assertSame(400, $result['status']);
+    }
+
+    /** Regression: auto mode (the default) is untouched by this feature — still 422, still immutable via the payload. */
+    public function test_auto_mode_still_rejects_member_id_in_payload(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+
+        $result = $this->request('PATCH', "/members/{$member->getId()}", $owner, ['memberId' => 'HACKED-0001']);
+
+        self::assertSame(422, $result['status']);
+    }
 }

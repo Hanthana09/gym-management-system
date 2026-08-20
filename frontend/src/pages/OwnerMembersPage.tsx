@@ -5,7 +5,15 @@ import { Button, Card, Input, Modal, Pagination, Select } from '../components/ui
 import { CheckInIcon } from '../components/ui/icons'
 import { ApiError } from '../lib/apiClient'
 import { useAuth } from '../auth/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import { useMembers } from '../members/useMembers'
+import { useCreateMember } from '../members/useCreateMember'
+import {
+  EMPTY_MEMBER_PROFILE_FORM_VALUES,
+  MemberProfileForm,
+  type MemberProfileFormValues,
+} from '../members/MemberProfileForm'
+import { useGymMemberIdSettings } from '../gym/useGymMemberIdSettings'
 import { useOwnerPlans } from '../membership/useOwnerPlans'
 import { useEnrollMember } from '../membership/useEnrollMember'
 import { useBranches } from '../branches/useBranches'
@@ -100,11 +108,13 @@ function compareBy(field: SortField, a: MemberListItemDto, b: MemberListItemDto)
  * viewport crosses the lg: breakpoint.
  */
 export function OwnerMembersPage() {
-  const { authFetch } = useAuth()
+  const { authFetch, user } = useAuth()
+  const navigate = useNavigate()
   const { members, loaded, refresh, updateStatus } = useMembers()
   const { plans, loaded: plansLoaded } = useOwnerPlans()
   const { enroll } = useEnrollMember()
   const { branches } = useBranches()
+  const [addingMember, setAddingMember] = useState(false)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
   const [sortField, setSortField] = useState<SortField>('name')
@@ -209,10 +219,16 @@ export function OwnerMembersPage() {
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/members">
         <div className="mx-auto flex max-w-4xl flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
-            {/* Filters the roster below and picks the front-desk check-in branch — absent for single-branch gyms (DESIGN-SYSTEM.md §4.2). */}
-            <BranchSwitcher branches={branches} value={selectedBranchId} onChange={setSelectedBranchId} allowAll />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
+              {/* Filters the roster below and picks the front-desk check-in branch — absent for single-branch gyms (DESIGN-SYSTEM.md §4.2). */}
+              <BranchSwitcher branches={branches} value={selectedBranchId} onChange={setSelectedBranchId} allowAll />
+            </div>
+            {/* gym-management-member-profile-extension.md §4/§8: walk-in creation, a new path alongside the existing invite flow. Owner + Staff (follow-up feature widened this from Owner-only — front-desk registration is typically a Staff task). */}
+            {user?.role === 'owner' || user?.role === 'staff' ? (
+              <Button onClick={() => setAddingMember(true)}>Add Member</Button>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -275,10 +291,22 @@ export function OwnerMembersPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-ink">{member.name}</p>
+                      {member.role === 'member' ? (
+                        <button
+                          type="button"
+                          className="text-sm font-semibold text-ink underline-offset-2 hover:underline"
+                          onClick={() => navigate(`/owner/members/${member.id}`)}
+                        >
+                          {member.name}
+                        </button>
+                      ) : (
+                        <p className="text-sm font-semibold text-ink">{member.name}</p>
+                      )}
                       <Pill label={member.role} styles={ROLE_STYLES[member.role]} />
                     </div>
                     <p className="mt-0.5 text-sm text-ink-soft">{member.email ?? member.phone}</p>
+                    {/* gym-management-member-profile-extension.md §8: memberId shown here, age deliberately not shown at list granularity. */}
+                    {member.memberId ? <p className="mt-0.5 font-mono text-xs text-ink-soft">{member.memberId}</p> : null}
                   </div>
                   <Pill label={member.status} styles={ACCOUNT_STATUS_STYLES[member.status]} />
                 </div>
@@ -359,21 +387,33 @@ export function OwnerMembersPage() {
             <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
               <thead>
                 <tr className="text-left text-sm text-ink-soft">
-                  <SortableHeader field="name" label="Name" active={sortField === 'name'} indicator={sortIndicator} onClick={toggleSort} className="w-[14%]" />
-                  <th className="w-[16%] border-b border-line px-4 py-3">Contact</th>
+                  <SortableHeader field="name" label="Name" active={sortField === 'name'} indicator={sortIndicator} onClick={toggleSort} className="w-[24%]" />
+                  {/* gym-management-member-profile-extension.md §8: memberId column — not sortable, it's an identifier not a ranking. */}
+                  <th className="w-[12%] border-b border-line px-4 py-3">Member ID</th>
                   <SortableHeader field="role" label="Role" active={sortField === 'role'} indicator={sortIndicator} onClick={toggleSort} className="w-[7%]" />
                   <SortableHeader field="status" label="Status" active={sortField === 'status'} indicator={sortIndicator} onClick={toggleSort} className="w-[8%]" />
-                  <SortableHeader field="plan" label="Plan" active={sortField === 'plan'} indicator={sortIndicator} onClick={toggleSort} className="w-[14%]" />
-                  <SortableHeader field="joined" label="Joined" active={sortField === 'joined'} indicator={sortIndicator} onClick={toggleSort} className="w-[9%]" />
+                  <SortableHeader field="plan" label="Plan" active={sortField === 'plan'} indicator={sortIndicator} onClick={toggleSort} className="w-[16%]" />
                   {/* Widest column on purpose — this is the only one holding two buttons (or, mid-confirm, "Suspend {name}?" text plus two more), not just a badge or a date. */}
-                  <th className="w-[32%] border-b border-line px-4 py-3">Actions</th>
+                  <th className="w-[33%] border-b border-line px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedMembers.map((member) => (
                   <tr key={member.id} className="text-sm text-ink">
-                    <td className="border-b border-line/60 px-4 py-3 font-medium break-words">{member.name}</td>
-                    <td className="border-b border-line/60 px-4 py-3 text-ink-soft break-words">{member.email ?? member.phone}</td>
+                    <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
+                      {member.role === 'member' ? (
+                        <button
+                          type="button"
+                          className="underline-offset-2 hover:underline"
+                          onClick={() => navigate(`/owner/members/${member.id}`)}
+                        >
+                          {member.name}
+                        </button>
+                      ) : (
+                        member.name
+                      )}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 font-mono text-xs whitespace-nowrap text-ink-soft">{member.memberId ?? '—'}</td>
                     <td className="border-b border-line/60 px-4 py-3">
                       <Pill label={member.role} styles={ROLE_STYLES[member.role]} />
                     </td>
@@ -396,9 +436,6 @@ export function OwnerMembersPage() {
                           Enroll in plan
                         </Button>
                       )}
-                    </td>
-                    <td className="border-b border-line/60 px-4 py-3 font-mono text-xs text-ink-soft">
-                      {new Date(member.joinedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                     </td>
                     <td className="border-b border-line/60 px-4 py-3">
                       {member.role === 'member' ? (
@@ -468,8 +505,86 @@ export function OwnerMembersPage() {
           onEnroll={enroll}
           onEnrolled={refresh}
         />
+
+        <AddMemberModal open={addingMember} onClose={() => setAddingMember(false)} onCreated={refresh} />
       </NavShell>
     </div>
+  )
+}
+
+interface AddMemberModalProps {
+  open: boolean
+  onClose: () => void
+  onCreated: () => Promise<void>
+}
+
+/**
+ * gym-management-member-profile-extension.md §4/§8: the walk-in path,
+ * separate entry point from the invite flow, reusing MemberProfileForm.
+ * Owner + Staff — this modal is only ever opened from the "Add Member"
+ * button above, which renders for both roles.
+ */
+function AddMemberModal({ open, onClose, onCreated }: AddMemberModalProps) {
+  const { create } = useCreateMember()
+  const { settings: memberIdSettings } = useGymMemberIdSettings()
+  const [values, setValues] = useState<MemberProfileFormValues>(EMPTY_MEMBER_PROFILE_FORM_VALUES)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  function handleClose() {
+    setValues(EMPTY_MEMBER_PROFILE_FORM_VALUES)
+    setError(null)
+    setSubmitting(false)
+    onClose()
+  }
+
+  async function handleSubmit() {
+    if (values.name.trim() === '' || (values.email.trim() === '' && values.phone.trim() === '')) {
+      setError('Name and at least one of email/phone are required.')
+      return
+    }
+    if (memberIdSettings.mode === 'manual' && values.memberId.trim() === '') {
+      setError('Member ID is required — this gym assigns Member IDs manually.')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+    try {
+      await create({
+        name: values.name.trim(),
+        email: values.email.trim() || null,
+        phone: values.phone.trim() || null,
+        ...(memberIdSettings.mode === 'manual' ? { memberId: values.memberId.trim() } : {}),
+        dob: values.dob || null,
+        gender: values.gender || null,
+        addressLine: values.addressLine || null,
+        addressCity: values.addressCity || null,
+        addressPostalCode: values.addressPostalCode || null,
+      })
+      await onCreated()
+      handleClose()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={handleClose} title="Add Member">
+      <div className="flex flex-col gap-4">
+        <MemberProfileForm
+          values={values}
+          onChange={setValues}
+          includeIdentity
+          memberIdMode={memberIdSettings.mode}
+          error={error ?? undefined}
+        />
+        <Button fullWidth onClick={handleSubmit} disabled={submitting}>
+          {submitting ? 'Creating…' : 'Create member'}
+        </Button>
+      </div>
+    </Modal>
   )
 }
 

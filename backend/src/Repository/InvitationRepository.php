@@ -62,6 +62,26 @@ class InvitationRepository extends ServiceEntityRepository
     }
 
     /**
+     * gym-management-member-profile-extension.md: the memberId backfill
+     * command's source of truth for "which gym did this pre-existing
+     * member actually join" — same reasoning as
+     * findApprovedUsersForGym()'s docblock below, applied in the other
+     * direction (user -&gt; gym instead of gym -&gt; users).
+     */
+    public function findApprovedForUser(User $user): ?Invitation
+    {
+        return $this->createQueryBuilder('i')
+            ->andWhere('i.user = :user')
+            ->andWhere('i.status = :approved')
+            ->setParameter('user', $user)
+            ->setParameter('approved', \App\Enum\InvitationStatus::APPROVED)
+            ->orderBy('i.respondedAt', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
      * Roadmap Phase 7: "gym-wide" announcement recipients. User has no
      * direct gym_id (single-gym product, architecture doc §5.1) — an
      * approved Invitation.gym is the only place a Coach/Member is ever

@@ -3,6 +3,7 @@
 namespace App\Repository;
 
 use App\Entity\CoachProfile;
+use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\PtSession;
 use App\Entity\User;
@@ -75,5 +76,23 @@ class MemberProfileRepository extends ServiceEntityRepository
             ->setParameter('ids', $memberUserIds)
             ->getQuery()
             ->getResult();
+    }
+
+    /** Manual Member ID mode's uniqueness pre-check — a clean validation error instead of a caught unique-constraint exception. */
+    public function findOneByGymAndMemberId(Gym $gym, string $memberId): ?MemberProfile
+    {
+        return $this->findOneBy(['gym' => $gym, 'memberId' => $memberId]);
+    }
+
+    /** Gates the "can't change Member ID mode once members exist" rule (GymMemberIdSettingsController). */
+    public function existsForGym(Gym $gym): bool
+    {
+        return $this->createQueryBuilder('m')
+            ->select('1')
+            ->andWhere('m.gym = :gym')
+            ->setParameter('gym', $gym)
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult() !== null;
     }
 }

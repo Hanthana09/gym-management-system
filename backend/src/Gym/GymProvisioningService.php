@@ -46,6 +46,7 @@ class GymProvisioningService
         private readonly BranchRepository $branches,
         private readonly ExpenseCategoryRepository $expenseCategories,
         private readonly ProductCategoryRepository $productCategories,
+        private readonly GymCodeGenerator $gymCodes,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -62,6 +63,10 @@ class GymProvisioningService
         $this->ensurePrimaryBranch($gym);
         $this->ensureDefaultExpenseCategories($gym);
         $this->ensureDefaultProductCategories($gym);
+        // gym-management-member-profile-extension.md §3: every gym needs a
+        // code the moment memberId generation could need it — assigning it
+        // here means no future gym ever falls into the backfill fallback path.
+        $this->gymCodes->ensureCodeFor($gym);
 
         return $gym;
     }

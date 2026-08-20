@@ -30,6 +30,13 @@ use League\Flysystem\FilesystemOperator;
  * everyone-readable, shown in NavShell" shape, so it reuses the same
  * Voter check and read-for-all GET rather than standing up a parallel
  * identity-settings endpoint for one field.
+ *
+ * `gymCode` briefly lived here too (gym-management-member-profile-
+ * extension.md §3/§6.1) but was relocated to GymMemberIdSettingsController
+ * once the "editable/manual Member ID mode" follow-up feature gave it a
+ * real sibling setting (memberIdMode) — that's its own concern, not
+ * branding, same reasoning WhatsApp settings got their own controller
+ * instead of piling onto this one.
  */
 #[Route('/api')]
 class GymBrandingController extends AbstractController

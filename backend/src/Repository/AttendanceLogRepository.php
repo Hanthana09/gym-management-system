@@ -89,6 +89,36 @@ class AttendanceLogRepository extends ServiceEntityRepository
         return $this->findBy(['member' => $member], ['checkIn' => 'DESC']);
     }
 
+    /**
+     * gym-management-member-profile-extension.md §5: Owner Member
+     * Detail's Attendance tab — same "newest first" ordering as
+     * findAllForMember(), paginated instead of returning the full
+     * history at once.
+     *
+     * @return AttendanceLog[]
+     */
+    public function findPaginatedForMember(MemberProfile $member, int $page, int $perPage): array
+    {
+        return $this->createQueryBuilder('a')
+            ->andWhere('a.member = :member')
+            ->setParameter('member', $member)
+            ->orderBy('a.checkIn', 'DESC')
+            ->setFirstResult(($page - 1) * $perPage)
+            ->setMaxResults($perPage)
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function countForMember(MemberProfile $member): int
+    {
+        return (int) $this->createQueryBuilder('a')
+            ->select('COUNT(a.id)')
+            ->andWhere('a.member = :member')
+            ->setParameter('member', $member)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
     /** Branch delete facility: a branch with any attendance ever recorded against it can't be hard-deleted (functional requirements §14.1 — history must stay reportable). */
     public function existsForBranch(Branch $branch): bool
     {
