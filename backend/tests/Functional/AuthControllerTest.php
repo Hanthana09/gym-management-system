@@ -2,10 +2,12 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\Gym;
 use App\Entity\RefreshToken;
 use App\Entity\User;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
+use App\Notification\WhatsAppSenderInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\MailerAssertionsTrait;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -28,7 +30,7 @@ final class AuthControllerTest extends WebTestCase
     {
         $this->client = static::createClient([], ['HTTPS' => 'on']);
         $this->em = static::getContainer()->get(EntityManagerInterface::class);
-        $this->em->getConnection()->executeStatement('TRUNCATE otp_code, refresh_token, "user" CASCADE');
+        $this->em->getConnection()->executeStatement('TRUNCATE otp_code, refresh_token, gym, "user" CASCADE');
 
         // The rate limiter's storage is a filesystem cache pool, which
         // persists across separate test *runs* (unlike the DB, which is
@@ -88,6 +90,17 @@ final class AuthControllerTest extends WebTestCase
         self::assertNotEmpty($matches, 'Expected a 6-digit code in the email body.');
 
         return $matches[1];
+    }
+
+    private function createOwnerWithConfiguredWhatsApp(): void
+    {
+        $owner = new User('Olivia Owner', 'owner-whatsapp@example.com', null, UserRole::OWNER, UserStatus::ACTIVE);
+        $this->em->persist($owner);
+        $gym = new Gym("Owner's Gym", '', $owner);
+        $gym->setWhatsappAccessToken('test-token');
+        $gym->setWhatsappPhoneNumberId('test-phone-id');
+        $this->em->persist($gym);
+        $this->em->flush();
     }
 
     private function injectRawRefreshTokenCookie(string $rawToken): void
@@ -155,6 +168,85 @@ final class AuthControllerTest extends WebTestCase
         $this->assertEmailCount(1);
         preg_match('/\b(\d{6})\b/', $this->getMailerMessage(0)->getTextBody(), $matches);
         self::assertNotEmpty($matches, 'Expected a 6-digit code in the email body.');
+    }
+
+    /**
+     * Bug fix: phone-based OTP requests used to be a permanent log-only
+     * no-op (no SMS gateway ever existed) — even after an Owner
+     * configured real WhatsApp Business Cloud API credentials, which sit
+     * on the exact same phone-number channel unused. EmailOrWhatsAppOtpDelivery
+     * now reuses those credentials for phone OTP delivery.
+     */
+    public function test_given_phone_destination_and_gym_whatsapp_configured_when_otp_requested_then_code_sent_via_whatsapp(): void
+    {
+        $this->createOwnerWithConfiguredWhatsApp();
+        $this->createUser('otpphoneuser@example.com', '+15550009001');
+        $sender = new FakeWhatsAppSender();
+        static::getContainer()->set(WhatsAppSenderInterface::class, $sender);
+
+        $result = $this->postJson('/api/auth/otp/request', ['destination' => '+15550009001']);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(1, $sender->sent);
+        self::assertSame('+15550009001', $sender->sent[0]['to']);
+        preg_match('/\b(\d{6})\b/', $sender->sent[0]['message'], $matches);
+        self::assertNotEmpty($matches, 'Expected a 6-digit code in the WhatsApp message body.');
+    }
+
+    /** The code delivered via WhatsApp is a real, usable OTP — not just logged. */
+    public function test_a_whatsapp_delivered_code_can_be_verified(): void
+    {
+        $this->createOwnerWithConfiguredWhatsApp();
+        $this->createUser('otpphoneverify@example.com', '+15550009002', role: UserRole::MEMBER);
+        $sender = new FakeWhatsAppSender();
+        static::getContainer()->set(WhatsAppSenderInterface::class, $sender);
+        $this->postJson('/api/auth/otp/request', ['destination' => '+15550009002']);
+        preg_match('/\b(\d{6})\b/', $sender->sent[0]['message'], $matches);
+
+        $result = $this->postJson('/api/auth/otp/verify', ['destination' => '+15550009002', 'code' => $matches[1]]);
+
+        self::assertSame(200, $result['status']);
+        self::assertArrayHasKey('accessToken', $result['body']);
+    }
+
+    /**
+     * `whatsappEnabled` gates the Notification module's booking/billing
+     * fan-out, not OTP delivery — deliberately a different concern (the
+     * user just explicitly requested this code by submitting their
+     * phone number). Only `isWhatsappConfigured()` (credentials present)
+     * gates this.
+     */
+    public function test_otp_via_whatsapp_ignores_the_notification_master_switch(): void
+    {
+        $owner = new User('Olivia Owner', 'owner-switch@example.com', null, UserRole::OWNER, UserStatus::ACTIVE);
+        $this->em->persist($owner);
+        $gym = new Gym("Owner's Gym", '', $owner);
+        $gym->setWhatsappAccessToken('test-token');
+        $gym->setWhatsappPhoneNumberId('test-phone-id');
+        $gym->setWhatsappEnabled(false); // notification channel explicitly off
+        $this->em->persist($gym);
+        $this->em->flush();
+        $this->createUser('otpphoneswitch@example.com', '+15550009003');
+        $sender = new FakeWhatsAppSender();
+        static::getContainer()->set(WhatsAppSenderInterface::class, $sender);
+
+        $result = $this->postJson('/api/auth/otp/request', ['destination' => '+15550009003']);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(1, $sender->sent);
+    }
+
+    /** No WhatsApp credentials configured (and no SMS gateway) — request still succeeds, just delivers nothing, same as before this fix. */
+    public function test_given_phone_destination_and_no_whatsapp_configured_when_otp_requested_then_no_delivery_but_no_error(): void
+    {
+        $this->createUser('otpphonenowa@example.com', '+15550009004');
+        $sender = new FakeWhatsAppSender();
+        static::getContainer()->set(WhatsAppSenderInterface::class, $sender);
+
+        $result = $this->postJson('/api/auth/otp/request', ['destination' => '+15550009004']);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(0, $sender->sent);
     }
 
     public function test_given_correct_code_before_expiry_when_verify_then_receives_jwt_pair(): void

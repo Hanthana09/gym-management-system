@@ -10,10 +10,13 @@ use App\Enum\UserStatus;
 use App\Notification\NotificationService;
 use App\Notification\SendNotificationWhatsAppMessage;
 use App\Notification\SendNotificationWhatsAppMessageHandler;
+use App\Notification\WhatsAppCloudApiSender;
 use App\Notification\WhatsAppSenderInterface;
 use App\Security\TokenIssuer;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
@@ -208,5 +211,59 @@ final class WhatsAppNotificationTest extends WebTestCase
         );
 
         self::assertSame(401, static::getClient()->getResponse()->getStatusCode());
+    }
+
+    /**
+     * Bug fix: WhatsAppCloudApiSender (the real implementation behind
+     * WhatsAppSenderInterface, bypassed by FakeWhatsAppSender in every
+     * other test in this file) used to let a Graph API error response
+     * propagate as an uncaught exception. That used to only fail one
+     * queued Messenger message; since App\Otp\EmailOrWhatsAppOtpDelivery
+     * started calling this synchronously from the OTP request endpoint,
+     * an invalid/expired access token would 500 a user's login attempt
+     * instead of just skipping delivery — proven against the real class
+     * here, not the fake.
+     */
+    public function test_a_graph_api_error_response_does_not_throw(): void
+    {
+        $owner = $this->createOwner('Olivia Owner');
+        $this->createEnabledGym($owner);
+
+        // HttpClientInterface is already initialized elsewhere in the
+        // container by boot time (the test container refuses to
+        // `set()` an already-initialized service) — constructed
+        // directly instead, wired to the real GymRepository/logger from
+        // the container, same components WhatsAppCloudApiSender would
+        // normally be autowired with.
+        $mockHttpClient = new MockHttpClient(new MockResponse('{"error":{"message":"Invalid OAuth access token"}}', ['http_code' => 401]));
+        $sender = new WhatsAppCloudApiSender(
+            $mockHttpClient,
+            static::getContainer()->get(\Psr\Log\LoggerInterface::class),
+            static::getContainer()->get(\App\Repository\GymRepository::class),
+        );
+
+        $sender->send('+15550001234', 'Your sign-in code is 123456. It expires in 5 minutes.');
+
+        self::assertTrue(true, 'send() must not throw on a Graph API error response.');
+    }
+
+    /** Same guard for a network-level failure (DNS/timeout/connection refused), not just an HTTP error status. */
+    public function test_a_transport_level_failure_does_not_throw(): void
+    {
+        $owner = $this->createOwner('Olivia Owner');
+        $this->createEnabledGym($owner);
+
+        $mockHttpClient = new MockHttpClient(function () {
+            throw new \Symfony\Component\HttpClient\Exception\TransportException('Could not resolve host.');
+        });
+        $sender = new WhatsAppCloudApiSender(
+            $mockHttpClient,
+            static::getContainer()->get(\Psr\Log\LoggerInterface::class),
+            static::getContainer()->get(\App\Repository\GymRepository::class),
+        );
+
+        $sender->send('+15550001234', 'Your sign-in code is 123456. It expires in 5 minutes.');
+
+        self::assertTrue(true, 'send() must not throw on a transport-level failure.');
     }
 }

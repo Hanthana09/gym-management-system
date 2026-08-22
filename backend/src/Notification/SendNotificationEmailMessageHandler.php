@@ -14,7 +14,7 @@ use Symfony\Component\Mime\Email;
  * exists anywhere in the data model yet (not in §5.1, not named in this
  * phase's roadmap bullets) — inventing one would be scope creep, so this
  * simplifies to "email always sent, in-app always created," matching
- * MailerOtpDelivery's style for phone-only (no email) recipients.
+ * EmailOrWhatsAppOtpDelivery's style for phone-only (no email) recipients.
  */
 #[AsMessageHandler]
 class SendNotificationEmailMessageHandler
