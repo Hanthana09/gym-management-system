@@ -91,6 +91,11 @@ class CreateOwnerCommand extends Command
 
         $user = new User($name, $email, $phone !== null && $phone !== '' ? $phone : null, UserRole::OWNER, UserStatus::ACTIVE);
         $user->setPasswordHash($this->passwordHasher->hashPassword($user, $password));
+        // gym-management-password-auth.md's requiresPasswordChange defaults
+        // true on every new User (forces a mandatory change after an
+        // *Owner* assigns someone else's password) — doesn't apply here,
+        // the Owner is choosing their own password at first-run bootstrap.
+        $user->setRequiresPasswordChange(false);
         $this->em->persist($user);
         $this->em->flush();
 

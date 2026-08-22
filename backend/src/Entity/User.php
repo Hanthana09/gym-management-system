@@ -59,6 +59,26 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $passwordHash = null;
 
+    /**
+     * gym-management-password-auth.md §2.1: true whenever an Owner
+     * assigns/resets this user's password on their behalf (forces the
+     * mandatory "set a new password" gate on next login); false once the
+     * user has set their own password (self-service change, or the
+     * forgot-password flow). Meaningless while passwordHash is null
+     * (OTP-only account, no password to be forced to change) — callers
+     * must check passwordHash !== null first.
+     */
+    #[ORM\Column(options: ['default' => true])]
+    private bool $requiresPasswordChange = true;
+
+    /** Audit: which Owner last set this user's password; null if the user set it themself. */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?User $passwordSetBy = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $passwordSetAt = null;
+
     #[ORM\Column(length: 20, enumType: UserRole::class)]
     private UserRole $role;
 
@@ -126,6 +146,36 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setPasswordHash(?string $passwordHash): void
     {
         $this->passwordHash = $passwordHash;
+    }
+
+    public function isRequiresPasswordChange(): bool
+    {
+        return $this->requiresPasswordChange;
+    }
+
+    public function setRequiresPasswordChange(bool $requiresPasswordChange): void
+    {
+        $this->requiresPasswordChange = $requiresPasswordChange;
+    }
+
+    public function getPasswordSetBy(): ?self
+    {
+        return $this->passwordSetBy;
+    }
+
+    public function setPasswordSetBy(?self $passwordSetBy): void
+    {
+        $this->passwordSetBy = $passwordSetBy;
+    }
+
+    public function getPasswordSetAt(): ?\DateTimeImmutable
+    {
+        return $this->passwordSetAt;
+    }
+
+    public function setPasswordSetAt(?\DateTimeImmutable $passwordSetAt): void
+    {
+        $this->passwordSetAt = $passwordSetAt;
     }
 
     public function getRole(): UserRole

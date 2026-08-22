@@ -154,6 +154,11 @@ class SeedDemoAccountsCommand extends Command
             $this->em->persist($user);
         }
         $user->setPasswordHash($this->passwordHasher->hashPassword($user, $password));
+        // gym-management-password-auth.md's requiresPasswordChange defaults
+        // true on every new User (forces a mandatory change after an
+        // *Owner* assigns someone else's password) — doesn't apply to a
+        // demo account seeded directly by this command.
+        $user->setRequiresPasswordChange(false);
 
         if ($role === UserRole::COACH) {
             if ($this->coachProfiles->findOneByUser($user) === null) {

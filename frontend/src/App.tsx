@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext'
 import { LoginPage } from './pages/LoginPage'
 import { OtpVerifyPage } from './pages/OtpVerifyPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { ForcedPasswordChangePage } from './pages/ForcedPasswordChangePage'
 import { HomePage } from './pages/HomePage'
 import { OwnerPlansPage } from './pages/OwnerPlansPage'
 import { OwnerMembersPage } from './pages/OwnerMembersPage'
@@ -29,11 +32,20 @@ import { OwnerFinancialSummaryPage } from './pages/OwnerFinancialSummaryPage'
 import { CoachWorkoutSchedulesPage } from './pages/CoachWorkoutSchedulesPage'
 import { MemberWorkoutSchedulePage } from './pages/MemberWorkoutSchedulePage'
 
+const FORCED_PASSWORD_CHANGE_PATH = '/change-password'
+
 function RequireAuth({ children }: { children: ReactNode }) {
-  const { status } = useAuth()
+  const { status, mustChangePassword } = useAuth()
+  const location = useLocation()
 
   if (status === 'loading') return null
   if (status === 'unauthenticated') return <Navigate to="/login" replace />
+  // gym-management-password-auth.md §3.1 step 5: this mandatory gate
+  // intercepts every other route until the forced change is complete —
+  // except its own route, which would otherwise redirect to itself forever.
+  if (mustChangePassword && location.pathname !== FORCED_PASSWORD_CHANGE_PATH) {
+    return <Navigate to={FORCED_PASSWORD_CHANGE_PATH} replace />
+  }
 
   return <>{children}</>
 }
@@ -72,6 +84,30 @@ function App() {
           <RedirectIfAuthenticated>
             <OtpVerifyPage />
           </RedirectIfAuthenticated>
+        }
+      />
+      <Route
+        path="/forgot-password"
+        element={
+          <RedirectIfAuthenticated>
+            <ForgotPasswordPage />
+          </RedirectIfAuthenticated>
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={
+          <RedirectIfAuthenticated>
+            <ResetPasswordPage />
+          </RedirectIfAuthenticated>
+        }
+      />
+      <Route
+        path={FORCED_PASSWORD_CHANGE_PATH}
+        element={
+          <RequireAuth>
+            <ForcedPasswordChangePage />
+          </RequireAuth>
         }
       />
       <Route

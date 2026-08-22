@@ -22,6 +22,7 @@ export interface AuthUser {
 interface TokenResponse {
   accessToken: string
   user: AuthUser
+  password_change_required: boolean
 }
 
 interface OtpRequestResponse {
@@ -34,9 +35,18 @@ type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 interface AuthContextValue {
   status: AuthStatus
   user: AuthUser | null
+  /**
+   * gym-management-password-auth.md §3.1 step 5: true right after an
+   * Owner assigns/resets this user's password, until they complete the
+   * mandatory change. Route guards (App.tsx's RequireAuth) redirect to
+   * the forced-change screen while this is true.
+   */
+  mustChangePassword: boolean
   login: (email: string, password: string) => Promise<void>
   requestOtp: (destination: string) => Promise<OtpRequestResponse>
   verifyOtp: (destination: string, code: string) => Promise<void>
+  /** §4: self-service change — `currentPassword` is omitted for the mandatory first change (requiresPasswordChange) or when the account never had a password. */
+  changePassword: (input: { currentPassword?: string; newPassword: string }) => Promise<void>
   logout: () => void
   /** For future protected calls: attaches the access token and silently refreshes once on a 401. */
   authFetch: <T>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>
@@ -51,6 +61,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [mustChangePassword, setMustChangePassword] = useState(false)
   // Access token lives in memory only — never localStorage — so it can't
   // be read back out by a future XSS payload or survive a reload. Session
   // continuity across reloads comes from the httpOnly refresh cookie
@@ -68,12 +79,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback((data: TokenResponse) => {
     accessTokenRef.current = data.accessToken
     setUser(data.user)
+    setMustChangePassword(data.password_change_required)
     setStatus('authenticated')
   }, [])
 
   const clearSession = useCallback(() => {
     accessTokenRef.current = null
     setUser(null)
+    setMustChangePassword(false)
     setStatus('unauthenticated')
   }, [])
 
@@ -190,9 +203,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   )
 
+  const changePassword = useCallback(
+    async (input: { currentPassword?: string; newPassword: string }) => {
+      await authFetch('/auth/change-password', { method: 'POST', body: input })
+      setMustChangePassword(false)
+    },
+    [authFetch],
+  )
+
   return (
     <AuthContext.Provider
-      value={{ status, user, login, requestOtp, verifyOtp, logout, authFetch, authFetchBlob, authFetchForm }}
+      value={{
+        status,
+        user,
+        mustChangePassword,
+        login,
+        requestOtp,
+        verifyOtp,
+        changePassword,
+        logout,
+        authFetch,
+        authFetchBlob,
+        authFetchForm,
+      }}
     >
       {children}
     </AuthContext.Provider>

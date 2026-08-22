@@ -1,10 +1,14 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Button, Card, Input } from '../components/ui'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/apiClient'
 
 type LoginMode = 'password' | 'otp'
+
+interface LocationState {
+  resetSuccess?: boolean
+}
 
 /**
  * Built entirely from shared primitives (Card, Input, Button). The
@@ -14,7 +18,9 @@ type LoginMode = 'password' | 'otp'
  */
 export function LoginPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { login, requestOtp } = useAuth()
+  const resetSuccess = (location.state as LocationState | null)?.resetSuccess ?? false
 
   const [mode, setMode] = useState<LoginMode>('password')
   const [email, setEmail] = useState('')
@@ -61,6 +67,12 @@ export function LoginPage() {
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Sign in</h1>
             <p className="mt-1 text-sm text-ink-soft">Welcome back to your gym</p>
           </div>
+
+          {resetSuccess ? (
+            <p className="mb-4 rounded-md border border-green-200 bg-green-50 p-3 text-center text-sm text-green-800">
+              Password reset. Sign in with your new password.
+            </p>
+          ) : null}
 
           <div className="mb-5 flex gap-2 rounded-md bg-paper-dim p-1">
             <Button
@@ -110,6 +122,9 @@ export function LoginPage() {
               <Button type="submit" fullWidth disabled={submitting}>
                 {submitting ? 'Signing in…' : 'Sign in'}
               </Button>
+              <Link to="/forgot-password" className="text-center text-sm font-medium text-ink underline">
+                Forgot password?
+              </Link>
             </form>
           ) : (
             <form className="flex flex-col gap-4" onSubmit={handleOtpSubmit}>

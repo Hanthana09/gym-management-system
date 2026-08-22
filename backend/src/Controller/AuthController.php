@@ -5,9 +5,12 @@ namespace App\Controller;
 use App\Entity\User;
 use App\Otp\OtpService;
 use App\Otp\OtpVerifyOutcome;
+use App\PasswordReset\PasswordResetOutcome;
+use App\PasswordReset\PasswordResetService;
 use App\Repository\UserRepository;
 use App\Security\TokenIssuer;
 use Doctrine\ORM\EntityManagerInterface;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -16,15 +19,21 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\Routing\Attribute\Route;
 
 #[Route('/api/auth')]
-class AuthController
+class AuthController extends AbstractController
 {
+    private const MIN_PASSWORD_LENGTH = 8;
+
     public function __construct(
         private readonly UserRepository $users,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly TokenIssuer $tokenIssuer,
         private readonly OtpService $otpService,
+        private readonly PasswordResetService $passwordResetService,
         private readonly RateLimiterFactory $loginAttemptsLimiter,
         private readonly RateLimiterFactory $otpRequestLimiter,
+        private readonly RateLimiterFactory $forgotPasswordIdentifierLimiter,
+        private readonly RateLimiterFactory $forgotPasswordIpLimiter,
+        private readonly RateLimiterFactory $resetPasswordLimiter,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -156,10 +165,118 @@ class AuthController
         $accessToken = $this->tokenIssuer->createAccessToken($user);
         $cookie = $this->tokenIssuer->rotateRefreshCookie($token);
 
-        $response = new JsonResponse(['accessToken' => $accessToken, 'user' => $this->serializeUser($user)]);
+        $response = new JsonResponse([
+            'accessToken' => $accessToken,
+            'user' => $this->serializeUser($user),
+            'password_change_required' => $this->passwordChangeRequired($user),
+        ]);
         $response->headers->setCookie($cookie);
 
         return $response;
+    }
+
+    /**
+     * gym-management-password-auth.md §4: self-service password change.
+     * `currentPassword` is required unless this is the mandatory
+     * first-change after an Owner assigned a password
+     * (requiresPasswordChange true) or the account never had one
+     * (passwordHash null, e.g. a pure OTP-only account setting its first
+     * password outside the forgot-password flow).
+     */
+    #[Route('/change-password', name: 'auth_change_password', methods: ['POST'])]
+    public function changePassword(Request $request): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticatedResponse();
+        }
+
+        $data = $this->decode($request);
+        $currentPassword = $data['currentPassword'] ?? null;
+        $newPassword = (string) ($data['newPassword'] ?? '');
+
+        if (strlen($newPassword) < self::MIN_PASSWORD_LENGTH) {
+            return new JsonResponse([
+                'error' => 'invalid_request',
+                'message' => 'newPassword must be at least ' . self::MIN_PASSWORD_LENGTH . ' characters.',
+            ], 400);
+        }
+
+        $currentPasswordRequired = $user->getPasswordHash() !== null && !$user->isRequiresPasswordChange();
+        if ($currentPasswordRequired) {
+            if (!is_string($currentPassword) || $currentPassword === '' || !$this->passwordHasher->isPasswordValid($user, $currentPassword)) {
+                return new JsonResponse([
+                    'error' => 'invalid_request',
+                    'message' => 'currentPassword is required and must be correct.',
+                ], 400);
+            }
+        }
+
+        $user->setPasswordHash($this->passwordHasher->hashPassword($user, $newPassword));
+        $user->setRequiresPasswordChange(false);
+        $this->em->flush();
+
+        return new JsonResponse(['message' => 'Password updated.']);
+    }
+
+    /** gym-management-password-auth.md §4: public, always a generic response — never confirms whether the identifier exists. */
+    #[Route('/forgot-password', name: 'auth_forgot_password', methods: ['POST'])]
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $data = $this->decode($request);
+        $identifier = trim((string) ($data['identifier'] ?? ''));
+
+        if ($identifier === '') {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'Identifier is required.'], 400);
+        }
+
+        $ipLimiter = $this->forgotPasswordIpLimiter->create($request->getClientIp() ?? 'unknown');
+        if (!$ipLimiter->consume(1)->isAccepted()) {
+            return $this->rateLimitedResponse('Too many requests. Please try again later.');
+        }
+
+        $identifierLimiter = $this->forgotPasswordIdentifierLimiter->create(hash('sha256', strtolower($identifier)));
+        if (!$identifierLimiter->consume(1)->isAccepted()) {
+            return $this->rateLimitedResponse('Too many requests. Please try again later.');
+        }
+
+        $this->passwordResetService->requestReset($identifier, $request->getClientIp());
+
+        return new JsonResponse(['message' => 'If an account exists for that identifier, a code has been sent.']);
+    }
+
+    /** gym-management-password-auth.md §4: public; generic error on any failure — never distinguishes the cause. */
+    #[Route('/reset-password', name: 'auth_reset_password', methods: ['POST'])]
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $this->decode($request);
+        $identifier = trim((string) ($data['identifier'] ?? ''));
+        $token = trim((string) ($data['token'] ?? ''));
+        $newPassword = (string) ($data['newPassword'] ?? '');
+
+        if ($identifier === '' || $token === '' || $newPassword === '') {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'identifier, token, and newPassword are required.'], 400);
+        }
+
+        if (strlen($newPassword) < self::MIN_PASSWORD_LENGTH) {
+            return new JsonResponse([
+                'error' => 'invalid_request',
+                'message' => 'newPassword must be at least ' . self::MIN_PASSWORD_LENGTH . ' characters.',
+            ], 400);
+        }
+
+        $limiter = $this->resetPasswordLimiter->create(hash('sha256', strtolower($identifier)));
+        if (!$limiter->consume(1)->isAccepted()) {
+            return $this->rateLimitedResponse('Too many attempts. Please request a new code.');
+        }
+
+        $outcome = $this->passwordResetService->redeemReset($identifier, $token, $newPassword);
+
+        if ($outcome === PasswordResetOutcome::INVALID) {
+            return new JsonResponse(['error' => 'invalid_or_expired', 'message' => 'This code is invalid or has expired.'], 400);
+        }
+
+        return new JsonResponse(['message' => 'Password has been reset. Please log in.']);
     }
 
     private function issueTokenResponse(User $user): JsonResponse
@@ -167,10 +284,25 @@ class AuthController
         $accessToken = $this->tokenIssuer->createAccessToken($user);
         $cookie = $this->tokenIssuer->issueRefreshCookie($user);
 
-        $response = new JsonResponse(['accessToken' => $accessToken, 'user' => $this->serializeUser($user)]);
+        $response = new JsonResponse([
+            'accessToken' => $accessToken,
+            'user' => $this->serializeUser($user),
+            'password_change_required' => $this->passwordChangeRequired($user),
+        ]);
         $response->headers->setCookie($cookie);
 
         return $response;
+    }
+
+    /** Irrelevant while passwordHash is null — an OTP-only account has no forced-change prompt to show. */
+    private function passwordChangeRequired(User $user): bool
+    {
+        return $user->getPasswordHash() !== null && $user->isRequiresPasswordChange();
+    }
+
+    private function unauthenticatedResponse(): JsonResponse
+    {
+        return new JsonResponse(['error' => 'unauthenticated', 'message' => 'Login required.'], 401);
     }
 
     private function serializeUser(User $user): array

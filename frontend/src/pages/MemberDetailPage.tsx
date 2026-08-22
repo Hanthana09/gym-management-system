@@ -3,11 +3,13 @@ import { useParams } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Pagination, Tabs, Ticket } from '../components/ui'
+import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/apiClient'
 import { useGymMemberIdSettings } from '../gym/useGymMemberIdSettings'
 import { useMemberDetail } from '../members/useMemberDetail'
 import { useMembers } from '../members/useMembers'
 import { MemberProfileForm, type MemberProfileFormValues } from '../members/MemberProfileForm'
+import { SetPasswordModal } from '../members/SetPasswordModal'
 import type {
   AttendanceLogDto,
   MemberAttendancePageDto,
@@ -49,7 +51,9 @@ export function MemberDetailPage() {
   const memberId = id ?? ''
   const { profile, loaded, refreshProfile, loadPtSchedule, loadAttendance, loadPayments } = useMemberDetail(memberId)
   const { updateProfile } = useMembers()
+  const { user } = useAuth()
   const [tab, setTab] = useState<TabValue>('profile')
+  const [setPasswordOpen, setSetPasswordOpen] = useState(false)
 
   return (
     <div className="h-dvh">
@@ -63,11 +67,31 @@ export function MemberDetailPage() {
             </Card>
           ) : (
             <>
-              <div className="flex items-center gap-3">
-                <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">{profile.name}</h1>
-                <Pill label={profile.status} styles={ACCOUNT_STATUS_STYLES[profile.status] ?? 'bg-gray-100 text-gray-600'} />
-                {profile.memberId ? <span className="font-mono text-xs text-ink-soft">{profile.memberId}</span> : null}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">{profile.name}</h1>
+                  <Pill label={profile.status} styles={ACCOUNT_STATUS_STYLES[profile.status] ?? 'bg-gray-100 text-gray-600'} />
+                  {profile.memberId ? <span className="font-mono text-xs text-ink-soft">{profile.memberId}</span> : null}
+                </div>
+                {/* gym-management-password-auth.md §3.1: Owner-only, mirrors PasswordManagementVoter::SET_PASSWORD. */}
+                {user?.role === 'owner' ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="shrink-0"
+                    onClick={() => setSetPasswordOpen(true)}
+                  >
+                    Set password
+                  </Button>
+                ) : null}
               </div>
+
+              <SetPasswordModal
+                open={setPasswordOpen}
+                onClose={() => setSetPasswordOpen(false)}
+                userId={profile.id}
+                userName={profile.name}
+              />
 
               <Tabs items={TAB_ITEMS} value={tab} onChange={(v) => setTab(v as TabValue)} />
 

@@ -13,3 +13,23 @@ framework:
             policy: 'sliding_window'
             limit: 5
             interval: '15 minutes'
+
+        # gym-management-password-auth.md §6: forgot-password, keyed by
+        # identifier and separately by IP — the WhatsApp 250-conversation/day
+        # cap makes unrestricted retries especially costly here.
+        forgot_password_identifier:
+            policy: 'sliding_window'
+            limit: 3
+            interval: '15 minutes'
+
+        forgot_password_ip:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '15 minutes'
+
+        # gym-management-password-auth.md §6: reset-password, keyed by
+        # identifier, to prevent token brute-forcing.
+        reset_password:
+            policy: 'sliding_window'
+            limit: 10
+            interval: '15 minutes'
