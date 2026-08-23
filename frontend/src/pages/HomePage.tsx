@@ -1,13 +1,19 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { COACH_NAV_ITEMS, MEMBER_NAV_ITEMS, OWNER_NAV_ITEMS, STAFF_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card } from '../components/ui'
 import { CheckInIcon, MembersIcon } from '../components/ui/icons'
+import { ActivityFeed, KpiCard } from '../components/dashboard'
 import { useAuth } from '../auth/AuthContext'
 import { OwnerInvitationsPanel } from '../invitations/OwnerInvitationsPanel'
 import { MyInvitationsPanel } from '../invitations/MyInvitationsPanel'
 import { MyMembershipCard } from '../membership/MyMembershipCard'
 import { NotificationPreferences } from '../notifications/NotificationPreferences'
+import { useMemberDashboard } from '../dashboard/useMemberDashboard'
+import { useOwnerDashboard } from '../dashboard/useOwnerDashboard'
+import { useBranches } from '../branches/useBranches'
+import { BranchSwitcher } from '../branches/BranchSwitcher'
 
 const NAV_ITEMS = { owner: OWNER_NAV_ITEMS, coach: COACH_NAV_ITEMS, member: MEMBER_NAV_ITEMS, staff: STAFF_NAV_ITEMS }
 
@@ -31,36 +37,22 @@ export function HomePage() {
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
           {user.role === 'owner' ? (
             <>
-              <Link to="/owner/dashboard">
-                <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-ink">Dashboard</span>
-                    <span className="text-sm text-ink-soft">Live attendance →</span>
-                  </div>
-                </Card>
-              </Link>
+              <OwnerDashboardWidgets />
               <OwnerInvitationsPanel />
-              <Link to="/owner/members">
+              <Link to="/owner/dashboard">
                 <Card className="transition-colors hover:bg-paper-dim">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-ink">Members</span>
-                    <span className="text-sm text-ink-soft">View roster →</span>
+                    <span className="text-sm font-medium text-ink">Full reports</span>
+                    <span className="text-sm text-ink-soft">Trends, forecast, export →</span>
                   </div>
                 </Card>
               </Link>
+              {/* Not in OWNER_NAV_ITEMS (sidebar nav stays unchanged, per this phase's own rule) — these two are otherwise unreachable, so they stay here rather than in the removed shortcut grid. */}
               <Link to="/owner/import">
                 <Card className="transition-colors hover:bg-paper-dim">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-ink">Bulk Import Members</span>
                     <span className="text-sm text-ink-soft">Upload CSV →</span>
-                  </div>
-                </Card>
-              </Link>
-              <Link to="/owner/plans">
-                <Card className="transition-colors hover:bg-paper-dim">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-ink">Membership Plans</span>
-                    <span className="text-sm text-ink-soft">Manage →</span>
                   </div>
                 </Card>
               </Link>
@@ -85,6 +77,7 @@ export function HomePage() {
                     </Button>
                   </Link>
                   <MyMembershipCard />
+                  <MemberDashboardWidgets />
                   <Link to="/member/invoices">
                     <Card className="transition-colors hover:bg-paper-dim">
                       <div className="flex items-center justify-between">
@@ -148,5 +141,70 @@ export function HomePage() {
         </div>
       </NavShell>
     </div>
+  )
+}
+
+/**
+ * gym-management-dashboard-redesign.md Phase 4: Owner's at-a-glance KPIs
+ * right on the home view — the same numbers /owner/dashboard's Reports
+ * page shows, surfaced here too so an Owner doesn't have to click
+ * through just to see today's basics. `allowAll` matches
+ * OwnerDashboardPage's own reports-default-to-gym-wide-rollup rule
+ * (DESIGN-SYSTEM.md §4.2).
+ */
+function OwnerDashboardWidgets() {
+  const { branches } = useBranches()
+  const [branchId, setBranchId] = useState<string | null>(null)
+  const { summary, loaded } = useOwnerDashboard(branchId)
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-end">
+        <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
+      </div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <KpiCard label="Check-ins today" value={!loaded || !summary ? '—' : summary.todayCheckins} />
+        <KpiCard label="Revenue today" value={!loaded || !summary ? '—' : `$${summary.todayRevenue}`} />
+        <KpiCard label="Active members" value={!loaded || !summary ? '—' : summary.activeMembersCount} />
+      </div>
+    </Card>
+  )
+}
+
+/**
+ * gym-management-dashboard-redesign.md Phase 4: Member's next PT session
+ * and recent attendance, each row tagged with the branch it happened at
+ * — a member training at two branches can tell them apart at a glance.
+ * No BranchSelector here (Member stays hub-wide by design); the streak
+ * itself is deliberately not shown here to keep this section short —
+ * the attendance history page is the place for a fuller view.
+ */
+function MemberDashboardWidgets() {
+  const { summary, loaded } = useMemberDashboard()
+
+  if (!loaded || !summary) return null
+
+  return (
+    <Card>
+      {summary.nextSession ? (
+        <div className="mb-3 flex items-center justify-between gap-3 border-b border-line pb-3">
+          <div>
+            <p className="text-sm font-medium text-ink">Next session</p>
+            <p className="text-sm text-ink-soft">
+              {new Date(summary.nextSession.scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </p>
+          </div>
+          <span className="rounded-full bg-paper-dim px-2 py-0.5 font-mono text-xs tracking-wide text-ink-soft uppercase">
+            {summary.nextSession.branch.name}
+          </span>
+        </div>
+      ) : null}
+
+      <p className="mb-2 text-sm font-medium text-ink">Recent attendance</p>
+      <ActivityFeed
+        items={summary.recentAttendance.map((a) => ({ id: a.id, label: 'Checked in', timestamp: a.checkInAt, tag: a.branch.name }))}
+        emptyMessage="No check-ins yet."
+      />
+    </Card>
   )
 }

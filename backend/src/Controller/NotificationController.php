@@ -2,55 +2,48 @@
 
 namespace App\Controller;
 
-use App\Entity\Announcement;
 use App\Entity\Notification;
 use App\Entity\User;
-use App\Enum\Audience;
-use App\Enum\UserRole;
-use App\Gym\GymProvisioningService;
-use App\Notification\AnnouncementService;
 use App\Notification\NotificationService;
-use App\Repository\BranchRepository;
-use App\Repository\GymRepository;
 use App\Repository\NotificationRepository;
-use App\Security\Voter\AnnouncementVoter;
 use App\Security\Voter\NotificationVoter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 
-#[Route('/api')]
+/**
+ * gym-management-dashboard-redesign.md Phase 0: the final, unambiguous
+ * notification path scheme, replacing the old `/api/notifications` +
+ * the API Platform resource's double-prefixed (and therefore dead)
+ * `/api/api/v1/notifications`:
+ *   - `GET /api/v1/notifications` — list, API Platform
+ *     (Entity\Notification's own #[ApiResource], now correctly single-
+ *     prefixed after config/routes/api_platform.yaml's redundant
+ *     `prefix: /api` was removed).
+ *   - `PATCH /api/v1/notifications/{id}` — mark one read, hand-written.
+ *     Not API Platform: `read` only has a one-way `markRead()` domain
+ *     method, no `setRead()` — same reasoning already documented on
+ *     Notification.php/Invoice.php/PtSession's status Patch.
+ *   - `POST /api/v1/notifications/mark-all-read` — hand-written (bulk
+ *     action, nothing for API Platform to express here at all).
+ *   - `GET /api/v1/notifications/unread-count` — hand-written,
+ *     lightweight (used by the four dashboard DTOs server-side, and
+ *     available standalone).
+ *
+ * Announcement composition (`POST /api/announcements`) moved out to its
+ * own AnnouncementController — a different concern that used to just
+ * share a file, not this path prefix.
+ */
+#[Route('/api/v1/notifications')]
 class NotificationController extends AbstractController
 {
     public function __construct(
         private readonly NotificationService $notifications,
-        private readonly AnnouncementService $announcements,
         private readonly NotificationRepository $notificationRepository,
-        private readonly GymProvisioningService $gymProvisioning,
-        private readonly GymRepository $gyms,
-        private readonly BranchRepository $branches,
     ) {
     }
 
-    #[Route('/notifications', name: 'notifications_list', methods: ['GET'])]
-    public function list(): JsonResponse
-    {
-        $user = $this->getUser();
-        if (!$user instanceof User) {
-            return $this->unauthenticated();
-        }
-
-        $notifications = $this->notifications->listForUser($user);
-
-        return new JsonResponse([
-            'notifications' => array_map(fn (Notification $n) => $this->serialize($n), $notifications),
-            'unreadCount' => count(array_filter($notifications, fn (Notification $n) => !$n->isRead())),
-        ]);
-    }
-
-    #[Route('/notifications/{id}/read', name: 'notifications_read', methods: ['PATCH'])]
+    #[Route('/{id}', name: 'notifications_mark_read', methods: ['PATCH'])]
     public function markRead(string $id): JsonResponse
     {
         $user = $this->getUser();
@@ -72,81 +65,40 @@ class NotificationController extends AbstractController
         return new JsonResponse($this->serialize($notification));
     }
 
-    /**
-     * functional requirements §6.2/§6.3: Owner posts gym-wide, Coach posts
-     * to own clients only — the frontend never offers a Coach the
-     * gym-wide option, but AnnouncementVoter (copied verbatim) enforces it
-     * here regardless (architecture doc §7: "every non-Owner endpoint
-     * enforces row-level scoping in the service layer, not just the
-     * controller guard").
-     */
-    #[Route('/announcements', name: 'announcements_create', methods: ['POST'])]
-    public function createAnnouncement(Request $request): JsonResponse
+    #[Route('/mark-all-read', name: 'notifications_mark_all_read', methods: ['POST'])]
+    public function markAllRead(): JsonResponse
     {
         $user = $this->getUser();
         if (!$user instanceof User) {
             return $this->unauthenticated();
         }
 
-        $data = $this->decode($request);
-        $body = trim((string) ($data['body'] ?? ''));
-        $audience = Audience::tryFrom((string) ($data['audience'] ?? ''));
+        $this->notifications->markAllReadForUser($user);
 
-        if ($body === '' || $audience === null) {
-            return new JsonResponse([
-                'error' => 'invalid_request',
-                'message' => 'body and a valid audience (gym_wide or own_clients) are required.',
-            ], 400);
+        return new JsonResponse(['message' => 'All notifications marked read.']);
+    }
+
+    /**
+     * `priority` is required here: API Platform auto-adds an implicit
+     * item Get operation for Notification (`/api/v1/notifications/{id}
+     * .{_format}`, GET) even though only GetCollection is declared on
+     * the entity — without a higher priority, that wildcard route is
+     * matched first and swallows this literal path (`unread-count`
+     * resolved as `{id}`), 404ing via API Platform's NotExposedAction
+     * instead of ever reaching this controller. Confirmed empirically
+     * via a live request, not just route inspection. `mark-all-read`
+     * (POST) needs no such fix — API Platform's implicit item operation
+     * is GET-only.
+     */
+    #[Route('/unread-count', name: 'notifications_unread_count', methods: ['GET'], priority: 10)]
+    public function unreadCount(): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
         }
 
-        // Gym resolution here is just object construction for the Voter
-        // candidate below, not itself a security decision — a Member (or
-        // any other non-Owner) always fails AnnouncementVoter regardless
-        // of which gym object this ends up being, so it's safe to fall
-        // back to "the only gym" rather than 404 before the Voter even
-        // runs (which would leak "no announcement rights" as a 404
-        // instead of the correct 403).
-        $gym = $user->getRole() === UserRole::OWNER
-            ? $this->gymProvisioning->ensureGymForOwner($user)
-            : $this->gyms->findTheOnlyGym();
-        if ($gym === null) {
-            return $this->notFound('No gym found for this account.');
-        }
-
-        // roadmap Phase 16 / functional requirements §14: an explicit
-        // branchId targets one branch; omitting it means gym-wide — unlike
-        // every other Phase 16 retrofit, there's no "default to primary"
-        // here, since null vs. a branch id are both genuine, different
-        // choices an Owner can make (functional requirements §14.5's same
-        // "all branches" vs. "one branch" distinction for reports).
-        $branchId = isset($data['branchId']) ? (string) $data['branchId'] : null;
-        $branch = null;
-        if ($branchId !== null && $branchId !== '') {
-            $branch = $this->branches->find($branchId);
-            if ($branch === null || $branch->getGym() !== $gym) {
-                return new JsonResponse(['error' => 'invalid_request', 'message' => 'branchId does not belong to this gym.'], 400);
-            }
-        }
-
-        // architecture doc §9.1's AnnouncementVoter::CREATE expects an
-        // actual Announcement subject; this candidate exercises the real
-        // check (Owner always passes for gym_wide, Coach only for
-        // own_clients, Member always fails).
-        $candidate = new Announcement($gym, $user, $body, $audience, $branch);
-        if (!$this->isGranted(AnnouncementVoter::CREATE, $candidate)) {
-            return $this->forbidden();
-        }
-
-        $result = $this->announcements->publish($candidate);
-
-        return new JsonResponse([
-            'id' => (string) $result['announcement']->getId(),
-            'body' => $result['announcement']->getBody(),
-            'audience' => $result['announcement']->getAudience()->value,
-            'branchId' => $result['announcement']->getBranch() !== null ? (string) $result['announcement']->getBranch()->getId() : null,
-            'createdAt' => $result['announcement']->getCreatedAt()->format(\DateTimeInterface::ATOM),
-            'recipientCount' => $result['recipientCount'],
-        ], 201);
+        return new JsonResponse(['unreadCount' => $this->notificationRepository->countUnreadForUser($user)]);
     }
 
     private function serialize(Notification $notification): array
@@ -175,14 +127,5 @@ class NotificationController extends AbstractController
     private function notFound(string $message): JsonResponse
     {
         return new JsonResponse(['error' => 'not_found', 'message' => $message], 404);
-    }
-
-    private function decode(Request $request): array
-    {
-        try {
-            return $request->toArray();
-        } catch (JsonException) {
-            return [];
-        }
     }
 }

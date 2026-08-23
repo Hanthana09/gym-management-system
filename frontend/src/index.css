@@ -61,3 +61,22 @@ body {
   background-color: var(--color-paper);
   color: var(--color-ink);
 }
+
+/*
+ * Light/dark mode: overriding these custom properties under `.dark` is
+ * enough to re-theme the whole app — every `bg-paper`/`text-ink`/etc.
+ * utility Tailwind v4 generates from the `@theme` block above resolves
+ * through `var(--color-*)`, not a literal hex value, so no component
+ * needs its own `dark:` variant. `hivis` and the `owner`/`coach`/
+ * `member` role colors are deliberately NOT redefined here — DESIGN-
+ * SYSTEM.md §4.1 already treats those as a fixed identity, unrelated to
+ * theming, and they read fine against a dark background as-is.
+ */
+:root.dark {
+  --color-paper: #14181a;
+  --color-paper-dim: #1e2422;
+  --color-card: #1a201f;
+  --color-ink: #ECEDE6;
+  --color-ink-soft: #9BA39C;
+  --color-line: #333b38;
+}

@@ -73,11 +73,12 @@ final class ExerciseControllerTest extends WebTestCase
 
     private function get(string $uri, User $actingAs): array
     {
-        // API Platform's own routing prepends /api on top of this entity's
-        // routePrefix: '/api/v1' (same double-prefix already observed on
-        // every other #[ApiResource] Get/GetCollection route in this
-        // codebase — confirmed via `debug:router`).
-        $this->client->request('GET', '/api/api/v1' . $uri, server: $this->authHeaders($actingAs));
+        // gym-management-dashboard-redesign.md Phase 0: the `/api/api/`
+        // double prefix (config/routes/api_platform.yaml's redundant
+        // `prefix: /api` stacking on top of every #[ApiResource]'s own
+        // `routePrefix: '/api/v1'`) is now fixed — single-prefixed, like
+        // every other route in this app.
+        $this->client->request('GET', '/api/v1' . $uri, server: $this->authHeaders($actingAs));
         $response = $this->client->getResponse();
 
         return [

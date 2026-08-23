@@ -17,11 +17,17 @@ export function useNotifications() {
   const [loaded, setLoaded] = useState(false)
 
   const refresh = useCallback(async () => {
-    const data = await authFetch<{ notifications: NotificationDto[]; unreadCount: number }>('/notifications', {
+    // gym-management-dashboard-redesign.md Phase 0: the canonical list is
+    // now API Platform's GetCollection at /v1/notifications — jsonld is
+    // its default format (kept unchanged for Exercise's own consumption
+    // elsewhere), so this explicitly asks for the flat-array format
+    // instead of unwrapping a {member, totalItems} envelope.
+    const data = await authFetch<NotificationDto[]>('/v1/notifications', {
       method: 'GET',
+      headers: { Accept: 'application/json' },
     })
-    setNotifications(data.notifications)
-    setUnreadCount(data.unreadCount)
+    setNotifications(data)
+    setUnreadCount(data.filter((n) => !n.read).length)
     setLoaded(true)
   }, [authFetch])
 
@@ -44,12 +50,18 @@ export function useNotifications() {
 
   const markRead = useCallback(
     async (id: string) => {
-      const updated = await authFetch<NotificationDto>(`/notifications/${id}/read`, { method: 'PATCH' })
+      const updated = await authFetch<NotificationDto>(`/v1/notifications/${id}`, { method: 'PATCH' })
       setNotifications((prev) => prev.map((n) => (n.id === id ? updated : n)))
       setUnreadCount((prev) => Math.max(0, prev - 1))
     },
     [authFetch],
   )
 
-  return { notifications, unreadCount, loaded, markRead }
+  const markAllRead = useCallback(async () => {
+    await authFetch('/v1/notifications/mark-all-read', { method: 'POST' })
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    setUnreadCount(0)
+  }, [authFetch])
+
+  return { notifications, unreadCount, loaded, markRead, markAllRead }
 }

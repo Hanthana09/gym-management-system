@@ -63,6 +63,12 @@ final class NotificationEventIntegrationTest extends WebTestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTPS' => 'on',
                 'HTTP_AUTHORIZATION' => 'Bearer ' . $this->accessTokenFor($actingAs),
+                // notificationsFor() hits API Platform's GetCollection at
+                // /v1/notifications — jsonld stays the default format
+                // (Exercise's own consumption depends on it elsewhere),
+                // so this explicitly asks for the flat-array shape.
+                // Harmless on every other hand-written route in this file.
+                'HTTP_ACCEPT' => 'application/json',
             ],
             content: $method === 'GET' ? null : json_encode($data, \JSON_THROW_ON_ERROR),
         );
@@ -77,7 +83,7 @@ final class NotificationEventIntegrationTest extends WebTestCase
 
     private function notificationsFor(User $user): array
     {
-        return $this->request('GET', '/notifications', $user)['body']['notifications'];
+        return $this->request('GET', '/v1/notifications', $user)['body'];
     }
 
     // ---- Invitation events (architecture doc §6.7) ---------------------

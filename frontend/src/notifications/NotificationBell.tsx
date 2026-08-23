@@ -1,10 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Button, Modal } from '../components/ui'
 import { BellIcon } from '../components/ui/icons'
 import { cn } from '../lib/cn'
 import { ApiError } from '../lib/apiClient'
 import { useNotifications } from './useNotifications'
-import { useAnnouncements } from './useAnnouncements'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher } from '../branches/BranchSwitcher'
 import type { AnnouncementAudience, NotificationDto, SourceRole } from './types'
@@ -30,10 +29,19 @@ const SOURCE_ROLE_TAG: Record<SourceRole, string> = {
  * use case (distinct from Phase 6's "reserved for check-in" guidance,
  * which was about CTA buttons specifically) — the small count dot is the
  * only hivis in this component.
+ *
+ * gym-management-dashboard-redesign.md Phase 2: role-agnostic — takes
+ * `children` for whatever extra content the caller wants above the
+ * notification list (NavShell passes an AnnouncementComposer for Owner/
+ * Coach), rather than knowing about roles itself. Previously took a
+ * `role` prop and branched on it internally.
+ *
+ * No `ml-auto` on the button itself — NavShell wraps this alongside the
+ * theme toggle in one right-aligned group, so the margin lives on that
+ * wrapper instead.
  */
-export function NotificationBell({ role }: { role: 'owner' | 'coach' | 'member' | 'staff' }) {
-  const { notifications, unreadCount, loaded, markRead } = useNotifications()
-  const { publish } = useAnnouncements()
+export function NotificationBell({ children }: { children?: ReactNode }) {
+  const { notifications, unreadCount, loaded, markRead, markAllRead } = useNotifications()
   const [open, setOpen] = useState(false)
 
   return (
@@ -42,7 +50,7 @@ export function NotificationBell({ role }: { role: 'owner' | 'coach' | 'member' 
         type="button"
         aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
         onClick={() => setOpen(true)}
-        className="relative ml-auto flex min-h-touch min-w-touch items-center justify-center rounded-md text-ink hover:bg-paper-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
+        className="relative flex min-h-touch min-w-touch items-center justify-center rounded-md text-ink hover:bg-paper-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
       >
         <BellIcon />
         {unreadCount > 0 ? (
@@ -53,7 +61,19 @@ export function NotificationBell({ role }: { role: 'owner' | 'coach' | 'member' 
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Notifications">
-        {role === 'owner' || role === 'coach' ? <AnnouncementComposer role={role} onSent={publish} /> : null}
+        {children}
+
+        {unreadCount > 0 ? (
+          <div className="mb-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void markAllRead()}
+              className="text-xs font-medium text-ink-soft underline hover:text-ink"
+            >
+              Mark all read
+            </button>
+          </div>
+        ) : null}
 
         {!loaded ? (
           <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
@@ -123,7 +143,8 @@ interface AnnouncementComposerProps {
  * or "all branches" (default) — Coach's own_clients audience is unaffected,
  * so it gets no branch option at all.
  */
-function AnnouncementComposer({ role, onSent }: AnnouncementComposerProps) {
+/** Exported so NavShell can pass it as NotificationBell's `children` for Owner/Coach — see that component's own docblock. */
+export function AnnouncementComposer({ role, onSent }: AnnouncementComposerProps) {
   const { branches } = useBranches()
   const [body, setBody] = useState('')
   const [branchId, setBranchId] = useState<string | null>(null)

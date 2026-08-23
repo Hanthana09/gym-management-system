@@ -12,6 +12,17 @@
       href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Applied before React mounts so the page never flashes the wrong
+      // theme on load. Kept in sync with src/theme/useTheme.ts's own
+      // storage key/logic — a stored choice wins, otherwise the OS
+      // preference decides.
+      (function () {
+        var stored = localStorage.getItem('theme')
+        var isDark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (isDark) document.documentElement.classList.add('dark')
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

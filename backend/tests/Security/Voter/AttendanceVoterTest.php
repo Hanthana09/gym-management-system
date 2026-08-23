@@ -266,4 +266,39 @@ final class AttendanceVoterTest extends TestCase
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
+
+    /**
+     * gym-management-dashboard-redesign.md Phase 1 stop condition: Staff
+     * assigned to 2+ branches must be allowed at every one of them, and
+     * still denied at a third — no prior test in this file assigned more
+     * than one branch to the same Staff user.
+     */
+    public function test_staff_assigned_to_two_branches_can_view_attendance_at_both_but_not_a_third(): void
+    {
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $branchA = new Branch($gym, 'Branch A', '1 Main St', isPrimary: true);
+        $branchB = new Branch($gym, 'Branch B', '2 Side St');
+        $branchC = new Branch($gym, 'Branch C', '3 Third St');
+        $staff = $this->user(UserRole::STAFF);
+        new BranchAssignment($staff, $branchA);
+        new BranchAssignment($staff, $branchB);
+
+        $memberAtA = new MemberProfile($this->user(UserRole::MEMBER));
+        $memberAtB = new MemberProfile($this->user(UserRole::MEMBER));
+        $memberAtC = new MemberProfile($this->user(UserRole::MEMBER));
+
+        self::assertSame(
+            VoterInterface::ACCESS_GRANTED,
+            $this->voter->vote($this->tokenFor($staff), $this->logFor($memberAtA, $branchA), [AttendanceVoter::VIEW]),
+        );
+        self::assertSame(
+            VoterInterface::ACCESS_GRANTED,
+            $this->voter->vote($this->tokenFor($staff), $this->logFor($memberAtB, $branchB), [AttendanceVoter::VIEW]),
+        );
+        self::assertSame(
+            VoterInterface::ACCESS_DENIED,
+            $this->voter->vote($this->tokenFor($staff), $this->logFor($memberAtC, $branchC), [AttendanceVoter::VIEW]),
+        );
+    }
 }

@@ -130,6 +130,40 @@ final class ExpenseVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
+    /**
+     * gym-management-dashboard-redesign.md Phase 1 stop condition: "a
+     * coach or staff user can be assigned to 2+ branches... and existing
+     * branch-scoped authorization correctly allows/denies based on the
+     * full set." AppVoter::hasAssignedBranch() already iterates the
+     * whole BranchAssignment collection (not a single value), but no
+     * test previously exercised a user with more than one assignment —
+     * every prior case here used exactly one.
+     */
+    public function test_staff_assigned_to_two_branches_can_act_on_both_but_not_a_third(): void
+    {
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '123 Main St', $owner);
+        $branchA = new Branch($gym, 'Branch A', '1 Main St', isPrimary: true);
+        $branchB = new Branch($gym, 'Branch B', '2 Side St');
+        $branchC = new Branch($gym, 'Branch C', '3 Third St');
+        $staff = $this->user(UserRole::STAFF);
+        new BranchAssignment($staff, $branchA);
+        new BranchAssignment($staff, $branchB);
+
+        self::assertSame(
+            VoterInterface::ACCESS_GRANTED,
+            $this->voter->vote($this->tokenFor($staff), $this->expenseFor($branchA), [ExpenseVoter::CREATE]),
+        );
+        self::assertSame(
+            VoterInterface::ACCESS_GRANTED,
+            $this->voter->vote($this->tokenFor($staff), $this->expenseFor($branchB), [ExpenseVoter::VIEW]),
+        );
+        self::assertSame(
+            VoterInterface::ACCESS_DENIED,
+            $this->voter->vote($this->tokenFor($staff), $this->expenseFor($branchC), [ExpenseVoter::VIEW]),
+        );
+    }
+
     /** functional requirements §15.1: "Staff... try to edit or delete an existing expense (including one I created)... permission error." */
     public function test_given_staff_tries_to_edit_or_delete_an_expense_they_created_then_403(): void
     {

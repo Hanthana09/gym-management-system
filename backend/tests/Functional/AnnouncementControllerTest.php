@@ -95,6 +95,11 @@ final class AnnouncementControllerTest extends WebTestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTPS' => 'on',
                 'HTTP_AUTHORIZATION' => 'Bearer ' . $this->accessTokenFor($actingAs),
+                // notificationsFor() hits API Platform's GetCollection at
+                // /v1/notifications — jsonld stays the default format, so
+                // this explicitly asks for the flat-array shape. Harmless
+                // on every other hand-written route in this file.
+                'HTTP_ACCEPT' => 'application/json',
             ],
             content: $method === 'GET' ? null : json_encode($data, \JSON_THROW_ON_ERROR),
         );
@@ -109,7 +114,7 @@ final class AnnouncementControllerTest extends WebTestCase
 
     private function notificationsFor(User $user): array
     {
-        return $this->request('GET', '/notifications', $user)['body']['notifications'];
+        return $this->request('GET', '/v1/notifications', $user)['body'];
     }
 
     // ---- §6.2 Owner announcements -------------------------------------

@@ -42,4 +42,18 @@ class NotificationRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleScalarResult();
     }
+
+    /** gym-management-dashboard-redesign.md Phase 0: POST /api/v1/notifications/mark-all-read. */
+    public function markAllReadForUser(User $user): void
+    {
+        $this->createQueryBuilder('n')
+            ->update()
+            ->set('n.read', ':true')
+            ->andWhere('n.user = :user')
+            ->andWhere('n.read = false')
+            ->setParameter('true', true)
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->execute();
+    }
 }

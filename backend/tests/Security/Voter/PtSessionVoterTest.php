@@ -131,6 +131,33 @@ final class PtSessionVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
+    /**
+     * gym-management-dashboard-redesign.md Phase 1 stop condition: a
+     * Coach assigned to 2+ branches must be able to RESPOND at every one
+     * of them, and still be denied at a third — no prior test in this
+     * file assigned more than one branch to the same Coach.
+     */
+    public function test_coach_assigned_to_two_branches_can_respond_at_both_but_not_a_third(): void
+    {
+        $coachUser = $this->user(UserRole::COACH);
+        $owner = $this->user(UserRole::OWNER);
+        $gym = new Gym('Test Gym', '1 Main St', $owner);
+        $branchA = new Branch($gym, 'Branch A', '1 Main St', isPrimary: true);
+        $branchB = new Branch($gym, 'Branch B', '2 Side St');
+        $branchC = new Branch($gym, 'Branch C', '3 Third St');
+        new BranchAssignment($coachUser, $branchA);
+        new BranchAssignment($coachUser, $branchB);
+        $coachProfile = new CoachProfile($coachUser);
+
+        $sessionAtA = new PtSession($coachProfile, new MemberProfile($this->user(UserRole::MEMBER)), $branchA, new \DateTimeImmutable('+1 day'), 60);
+        $sessionAtB = new PtSession($coachProfile, new MemberProfile($this->user(UserRole::MEMBER)), $branchB, new \DateTimeImmutable('+1 day'), 60);
+        $sessionAtC = new PtSession($coachProfile, new MemberProfile($this->user(UserRole::MEMBER)), $branchC, new \DateTimeImmutable('+1 day'), 60);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $this->voter->vote($this->tokenFor($coachUser), $sessionAtA, [PtSessionVoter::RESPOND]));
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $this->voter->vote($this->tokenFor($coachUser), $sessionAtB, [PtSessionVoter::RESPOND]));
+        self::assertSame(VoterInterface::ACCESS_DENIED, $this->voter->vote($this->tokenFor($coachUser), $sessionAtC, [PtSessionVoter::RESPOND]));
+    }
+
     // ---- VIEW (Owner: any; Coach/Member: own) ------------------------------
 
     public function test_owner_can_view_any_session(): void

@@ -72,6 +72,11 @@ final class MilestoneTest extends WebTestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTPS' => 'on',
                 'HTTP_AUTHORIZATION' => 'Bearer ' . $this->accessTokenFor($actingAs),
+                // The /v1/notifications call above hits API Platform's
+                // GetCollection — jsonld stays the default format, so this
+                // explicitly asks for the flat-array shape. Harmless on
+                // every other hand-written route in this file.
+                'HTTP_ACCEPT' => 'application/json',
             ],
             content: $method === 'GET' ? null : json_encode($data, \JSON_THROW_ON_ERROR),
         );
@@ -212,12 +217,12 @@ final class MilestoneTest extends WebTestCase
         self::assertSame('checkin_streak', $dispatched[0]->getMilestoneType());
         self::assertSame(3, $dispatched[0]->getValue());
 
-        $notifications = $this->request('GET', '/notifications', $memberUser);
-        self::assertCount(1, $notifications['body']['notifications']);
-        self::assertSame('Milestone reached!', $notifications['body']['notifications'][0]['title']);
-        self::assertSame('system', $notifications['body']['notifications'][0]['type']);
-        self::assertNull($notifications['body']['notifications'][0]['sourceRole']);
-        self::assertStringContainsString('3-day', $notifications['body']['notifications'][0]['body']);
+        $notifications = $this->request('GET', '/v1/notifications', $memberUser);
+        self::assertCount(1, $notifications['body']);
+        self::assertSame('Milestone reached!', $notifications['body'][0]['title']);
+        self::assertSame('system', $notifications['body'][0]['type']);
+        self::assertNull($notifications['body'][0]['sourceRole']);
+        self::assertStringContainsString('3-day', $notifications['body'][0]['body']);
     }
 
     public function test_a_streak_day_that_is_not_a_threshold_does_not_dispatch_a_milestone(): void
@@ -240,7 +245,7 @@ final class MilestoneTest extends WebTestCase
 
         self::assertCount(0, $dispatched);
 
-        $notifications = $this->request('GET', '/notifications', $memberUser);
-        self::assertCount(0, $notifications['body']['notifications']);
+        $notifications = $this->request('GET', '/v1/notifications', $memberUser);
+        self::assertCount(0, $notifications['body']);
     }
 }

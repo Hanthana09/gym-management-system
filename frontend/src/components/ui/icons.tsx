@@ -205,3 +205,22 @@ export function WorkoutIcon(props: SVGProps<SVGSVGElement>) {
     </IconBase>
   )
 }
+
+/** Light/dark mode toggle — shown when the current theme is light (clicking switches to dark). */
+export function SunIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.75v2.5M12 18.75v2.5M4.22 4.22l1.77 1.77M18.01 18.01l1.77 1.77M2.75 12h2.5M18.75 12h2.5M4.22 19.78l1.77-1.77M18.01 5.99l1.77-1.77" />
+    </IconBase>
+  )
+}
+
+/** Light/dark mode toggle — shown when the current theme is dark (clicking switches to light). */
+export function MoonIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M20.25 14.5A8.25 8.25 0 1 1 9.5 3.75a6.5 6.5 0 0 0 10.75 10.75z" />
+    </IconBase>
+  )
+}

@@ -14,12 +14,22 @@ interface BranchSwitcherProps {
  * DESIGN-SYSTEM.md §4.2: a shared primitive, not a per-screen build —
  * used anywhere branch context matters (reports filter, Owner's
  * front-desk check-in, announcement composer's branch option, Coach/
- * Staff's own branch-scoped views).
+ * Staff's own branch-scoped views). This is
+ * gym-management-dashboard-redesign.md Phase 2's `BranchSelector` —
+ * generalized in place rather than duplicated under a new name, since
+ * it was already role-agnostic and shared across every one of the call
+ * sites that spec describes (Owner: all branches; Coach/Staff: pass
+ * only their assigned branches; hidden if ≤1 — all already true here).
  *
  * Single-branch rule (functional requirements §14.1): renders nothing at
  * all when there's zero or one branch — not a disabled dropdown with one
  * option, genuinely absent. This check lives here, once, rather than in
  * every consumer, so no call site can forget it.
+ *
+ * Mobile-first (Phase 2): full-width below `md:` so it's a real,
+ * thumb-friendly dropdown on phone widths, not a squeezed inline pill;
+ * reverts to the original inline pill from `md:` up, unchanged from
+ * before this phase.
  */
 export function BranchSwitcher({ branches, value, onChange, allowAll = false, className }: BranchSwitcherProps) {
   if (branches.length <= 1) return null
@@ -30,7 +40,7 @@ export function BranchSwitcher({ branches, value, onChange, allowAll = false, cl
       value={value ?? '__all__'}
       onChange={(e) => onChange(e.target.value === '__all__' ? null : e.target.value)}
       className={
-        'min-h-touch rounded-full border border-line bg-card px-3 font-mono text-xs tracking-wide text-ink uppercase ' +
+        'min-h-touch w-full rounded-full border border-line bg-card px-3 font-mono text-xs tracking-wide text-ink uppercase md:w-auto ' +
         'focus:outline-none focus:ring-2 focus:ring-ink focus:ring-offset-1 ' +
         (className ?? '')
       }

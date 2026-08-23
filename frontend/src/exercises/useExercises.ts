@@ -29,12 +29,13 @@ export function useExercises(muscle: string, equipment: string, category: string
     if (category) params.set('category', category)
 
     // Exercise uses a real #[ApiResource] (not a hand-written controller,
-    // unlike every other endpoint in this app) — API Platform's own
-    // routing prepends /api on top of the entity's own routePrefix:
-    // '/api/v1', so the full backend path is /api/api/v1/exercises;
-    // authFetch already prepends API_URL ("/api"), so this path needs the
-    // remaining /api/v1 segment itself.
-    const data = await authFetch<JsonLdCollection<ExerciseListItemDto>>(`/api/v1/exercises?${params.toString()}`, { method: 'GET' })
+    // unlike every other endpoint in this app). gym-management-dashboard-
+    // redesign.md Phase 0 fixed the project's `/api/api/` double-prefix
+    // bug (config/routes/api_platform.yaml's redundant import-level
+    // `prefix: /api` stacking on top of the entity's own routePrefix:
+    // '/api/v1') — authFetch already prepends API_URL ("/api"), so this
+    // path only needs the remaining /v1 segment now.
+    const data = await authFetch<JsonLdCollection<ExerciseListItemDto>>(`/v1/exercises?${params.toString()}`, { method: 'GET' })
     setExercises(data.member)
     setTotalItems(data.totalItems)
     setLoaded(true)

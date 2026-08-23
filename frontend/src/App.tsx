@@ -21,6 +21,7 @@ import { MemberSessionsPage } from './pages/MemberSessionsPage'
 import { CoachSchedulePage } from './pages/CoachSchedulePage'
 import { MemberTrackingPage } from './pages/MemberTrackingPage'
 import { ComingSoonPage } from './pages/ComingSoonPage'
+import { CoachDashboardPage } from './pages/CoachDashboardPage'
 import { DevComponentsPage } from './pages/DevComponentsPage'
 import { StaffDashboardPage } from './pages/StaffDashboardPage'
 import { OwnerSettingsPage } from './pages/OwnerSettingsPage'
@@ -226,7 +227,7 @@ function App() {
         path="/coach/dashboard"
         element={
           <RequireAuth>
-            <ComingSoonPage title="Dashboard" activeHref="/coach/dashboard" role="coach" />
+            <CoachDashboardPage />
           </RequireAuth>
         }
       />

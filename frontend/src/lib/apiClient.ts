@@ -1,14 +1,19 @@
 export const API_URL = import.meta.env.VITE_API_URL as string
 
-// Mercure hub is mounted on the same origin as the API (proxied through
-// the dev server too — see vite.config.ts) — no separate env var needed.
-// API_URL is a relative path (e.g. "/api") so the browser's own fetch()
-// calls resolve it against the current page automatically, but every
-// Mercure subscriber does `new URL(MERCURE_URL)` to append a topic param,
-// and the URL constructor throws on a relative string with no base.
-// Resolving against location.origin here, once, keeps every one of those
-// call sites working unchanged.
-export const MERCURE_URL = new URL(`${API_URL}/.well-known/mercure`, window.location.origin).toString()
+// Mercure hub is mounted at the origin root, NOT under API_URL's '/api'
+// prefix — Caddy serves it at exactly '/.well-known/mercure' (see
+// backend/frankenphp/Caddyfile's `mercure { ... }` block and
+// MERCURE_PUBLIC_URL's own unprefixed default in compose.yaml), the same
+// way '/uploads' and '/media' are served straight off disk rather than
+// through the API. Proxied through the dev server too — see
+// vite.config.ts's dedicated '/.well-known' rule (a naive
+// `${API_URL}/.well-known/mercure` here 404s: it asks the backend for
+// '/api/.well-known/mercure', a path that doesn't exist).
+// Every Mercure subscriber does `new URL(MERCURE_URL)` to append a topic
+// param, and the URL constructor throws on a relative string with no
+// base — resolving against location.origin here, once, keeps every one
+// of those call sites working unchanged.
+export const MERCURE_URL = new URL('/.well-known/mercure', window.location.origin).toString()
 
 export class ApiError extends Error {
   status: number
@@ -30,6 +35,15 @@ interface RequestOptions {
   method?: string
   body?: unknown
   accessToken?: string | null
+  /**
+   * Per-call header overrides — e.g. `Accept: application/json` for the
+   * one API Platform resource this app calls directly (dashboard
+   * redesign's notification list), to get a flat array instead of the
+   * jsonld/hydra envelope, without changing the default format every
+   * other caller (including Exercise's own API Platform consumption)
+   * relies on.
+   */
+  headers?: Record<string, string>
 }
 
 /**
@@ -44,6 +58,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     headers: {
       'Content-Type': 'application/json',
       ...(options.accessToken ? { Authorization: `Bearer ${options.accessToken}` } : {}),
+      ...options.headers,
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })

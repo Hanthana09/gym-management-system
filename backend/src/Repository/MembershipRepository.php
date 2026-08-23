@@ -69,6 +69,29 @@ class MembershipRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    /** gym-management-dashboard-redesign.md Phase 3: Staff dashboard's "expiring memberships" widget — a running window, not one exact day. */
+    public function findActiveExpiringWithinDays(int $days, ?Branch $branch = null): array
+    {
+        // Eager-loads member + member.user: the Staff dashboard widget maps
+        // every row to memberName/memberId, which would otherwise lazy-load
+        // one query per row (N+1) — gym-management-dashboard-redesign.md
+        // Phase 5's explicit "no N+1 queries" check.
+        return $this->withBranch($this->createQueryBuilder('m'), $branch)
+            ->innerJoin('m.member', 'mp')
+            ->addSelect('mp')
+            ->innerJoin('mp.user', 'u')
+            ->addSelect('u')
+            ->andWhere('m.status = :active')
+            ->andWhere('m.endDate >= :today')
+            ->andWhere('m.endDate <= :target')
+            ->setParameter('active', MembershipStatus::ACTIVE)
+            ->setParameter('today', new \DateTimeImmutable('today'))
+            ->setParameter('target', new \DateTimeImmutable("+{$days} days"))
+            ->orderBy('m.endDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
     /** Active memberships whose end date has already passed — due to transition to expired. */
     public function findActivePastEndDate(): array
     {

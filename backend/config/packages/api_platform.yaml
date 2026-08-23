@@ -4,6 +4,16 @@ api_platform:
     formats:
         jsonld:
             - application/ld+json
+        # Available on request (Accept: application/json) alongside the
+        # default jsonld — a flat array/object, no hydra envelope.
+        # Deliberately NOT listed first: jsonld stays the default so
+        # frontend/exercises' existing {member, totalItems} consumption
+        # (the one other real API Platform integration in this app) is
+        # completely unaffected; only a caller that explicitly asks for
+        # `application/json` (gym-management-dashboard-redesign.md
+        # Phase 0's notification list) gets the flat shape.
+        json:
+            - application/json
         jsonapi:
             - application/vnd.api+json
         hal:

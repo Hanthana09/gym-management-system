@@ -50,6 +50,16 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // The Mercure hub (live notification/attendance/session updates,
+        // consumed via EventSource) is mounted by Caddy at the origin
+        // root, not under '/api' — see src/lib/apiClient.ts's MERCURE_URL
+        // for the fuller explanation. Without this rule, the dev server
+        // has no proxy match for '/.well-known/*' at all and 404s it.
+        '/.well-known': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
     },
   }

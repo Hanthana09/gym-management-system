@@ -16,8 +16,9 @@ export function useExerciseDetail(id: string | null) {
     }
     let cancelled = false
     setLoaded(false)
-    // See useExercises.ts for why the path repeats /api/v1.
-    authFetch<ExerciseDetailDto>(`/api/v1/exercises/${id}`, { method: 'GET' }).then((data) => {
+    // See useExercises.ts — the /api/api/ double-prefix bug is fixed, so
+    // authFetch's own "/api" prefix only needs /v1 appended here now.
+    authFetch<ExerciseDetailDto>(`/v1/exercises/${id}`, { method: 'GET' }).then((data) => {
       if (cancelled) return
       setExercise(data)
       setLoaded(true)

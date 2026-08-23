@@ -1,4 +1,12 @@
 api_platform:
     resource: .
     type: api_platform
-    prefix: /api
+    # No `prefix` here: config/packages/api_platform.yaml's own
+    # `defaults.route_prefix: api` (or a resource's own `routePrefix`,
+    # e.g. Notification's '/api/v1') already puts the full intended path
+    # on every generated route internally. Adding a SECOND prefix here,
+    # at the routing-import level, was stacking on top of that already-
+    # correct path — e.g. Notification's '/api/v1/notifications' became
+    # '/api' + '/api/v1/notifications' = '/api/api/v1/notifications'.
+    # This is the project's known "/api/api/" double-prefix pitfall
+    # (gym-management-dashboard-redesign.md Phase 0).

@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { cn } from '../lib/cn'
 import { LogoutIcon, MenuIcon, XIcon } from './ui/icons'
-import { NotificationBell } from '../notifications/NotificationBell'
+import { ThemeToggle } from './ui/ThemeToggle'
+import { NotificationBell, AnnouncementComposer } from '../notifications/NotificationBell'
+import { useAnnouncements } from '../notifications/useAnnouncements'
 import { useGymBranding } from '../gym/useGymBranding'
 import { CheckInTimer } from '../attendance/CheckInTimer'
 
@@ -33,6 +35,7 @@ interface NavShellProps {
 export function NavShell({ role, title, navItems, activeHref, children }: NavShellProps) {
   const { logout } = useAuth()
   const { branding } = useGymBranding()
+  const { publish } = useAnnouncements()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isMember = role === 'member'
   // Owner Settings: "Gym name" field. Falls back to the caller's `title`
@@ -162,7 +165,12 @@ export function NavShell({ role, title, navItems, activeHref, children }: NavShe
             <img src={branding.logoUrl} alt={gymName} className="h-8 w-8 shrink-0 rounded object-contain" />
           ) : null}
           {isMember ? <CheckInTimer /> : null}
-          <NotificationBell role={role} />
+          <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle />
+            <NotificationBell>
+              {role === 'owner' || role === 'coach' ? <AnnouncementComposer role={role} onSent={publish} /> : null}
+            </NotificationBell>
+          </div>
         </header>
 
         {/* overflow-x-hidden: a hard backstop, clipping anything that still slips past the min-w-0 fix above. */}

@@ -16,9 +16,9 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * architecture doc §6.6: the single write path every other module's event
  * subscriber (and AnnouncementService) goes through to fan out a
  * notification — in-app row created synchronously (so it's immediately
- * visible via GET /notifications and the live badge), email dispatched
- * asynchronously via Messenger so a slow provider never blocks the
- * request that triggered it.
+ * visible via GET /api/v1/notifications and the live badge), email
+ * dispatched asynchronously via Messenger so a slow provider never
+ * blocks the request that triggered it.
  */
 class NotificationService
 {
@@ -54,9 +54,9 @@ class NotificationService
         $this->em->flush();
     }
 
-    /** @return Notification[] */
-    public function listForUser(User $user): array
+    /** gym-management-dashboard-redesign.md Phase 0: POST /api/v1/notifications/mark-all-read. */
+    public function markAllReadForUser(User $user): void
     {
-        return $this->notifications->findForUser($user);
+        $this->notifications->markAllReadForUser($user);
     }
 }

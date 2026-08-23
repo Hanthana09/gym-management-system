@@ -62,9 +62,14 @@ class AttendanceLogRepository extends ServiceEntityRepository
     }
 
     /** @return AttendanceLog[] */
+    /** Eager-loads member + member.user: both existing callers (OwnerDashboardPage's Attendance tab) and the new Staff dashboard's recent-activity widget serialize memberName per row (N+1 otherwise). */
     public function findByDateRange(\DateTimeImmutable $from, \DateTimeImmutable $to, ?Branch $branch = null): array
     {
         return $this->withBranch($this->createQueryBuilder('a'), $branch)
+            ->innerJoin('a.member', 'm')
+            ->addSelect('m')
+            ->innerJoin('m.user', 'u')
+            ->addSelect('u')
             ->andWhere('a.checkIn >= :from')
             ->andWhere('a.checkIn < :to')
             ->setParameter('from', $from)
@@ -97,9 +102,12 @@ class AttendanceLogRepository extends ServiceEntityRepository
      *
      * @return AttendanceLog[]
      */
+    /** Eager-loads branch: every caller serializes it per row (Owner's Attendance tab, the Member dashboard's recent-attendance widget), which would otherwise lazy-load per row (N+1). */
     public function findPaginatedForMember(MemberProfile $member, int $page, int $perPage): array
     {
         return $this->createQueryBuilder('a')
+            ->innerJoin('a.branch', 'b')
+            ->addSelect('b')
             ->andWhere('a.member = :member')
             ->setParameter('member', $member)
             ->orderBy('a.checkIn', 'DESC')

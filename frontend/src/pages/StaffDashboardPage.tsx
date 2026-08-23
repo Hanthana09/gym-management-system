@@ -3,12 +3,14 @@ import { NavShell } from '../components/NavShell'
 import { STAFF_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Input, Pagination } from '../components/ui'
 import { CheckInIcon } from '../components/ui/icons'
+import { KpiCard, AlertCard, ActivityFeed } from '../components/dashboard'
 import { useAuth } from '../auth/AuthContext'
 import { ApiError } from '../lib/apiClient'
 import { usePagination } from '../lib/usePagination'
 import { useMembers } from '../members/useMembers'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
+import { useStaffDashboard } from '../dashboard/useStaffDashboard'
 import type { MemberAccountStatus, MemberListItemDto } from '../members/types'
 
 const PAGE_SIZE = 20
@@ -77,6 +79,7 @@ export function StaffDashboardPage() {
     [branches, user?.id],
   )
   const activeBranchId = selectedBranchId ?? defaultBranchId(myBranches)
+  const { summary, loaded: dashboardLoaded, error: dashboardError } = useStaffDashboard(activeBranchId)
 
   const visibleMembers = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -127,6 +130,42 @@ export function StaffDashboardPage() {
             {/* Absent entirely when Staff is assigned to only one branch (DESIGN-SYSTEM.md §4.2). */}
             <BranchSwitcher branches={myBranches} value={activeBranchId} onChange={setSelectedBranchId} />
           </div>
+
+          {/* gym-management-dashboard-redesign.md Phase 4: check-ins/expiring-memberships/activity widgets, scoped to whichever branch is selected above — re-fetch on branch change via useStaffDashboard's own dependency on activeBranchId. */}
+          {dashboardError ? (
+            <AlertCard tone="danger" title="Couldn't load dashboard">
+              {dashboardError}
+            </AlertCard>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <KpiCard label="Check-ins today" value={!dashboardLoaded || !summary ? '—' : summary.todayCheckins} />
+                <KpiCard label="Expiring soon" value={!dashboardLoaded || !summary ? '—' : summary.expiringMembershipsCount} hint="Next 7 days" />
+              </div>
+
+              {dashboardLoaded && summary && summary.expiringMembershipsCount > 0 ? (
+                <AlertCard tone="warning" title={`${summary.expiringMembershipsCount} membership${summary.expiringMembershipsCount === 1 ? '' : 's'} expiring soon`}>
+                  <ul className="list-inside list-disc">
+                    {summary.expiringMemberships.map((m) => (
+                      <li key={m.memberId}>
+                        {m.memberName} — {new Date(m.endDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      </li>
+                    ))}
+                  </ul>
+                </AlertCard>
+              ) : null}
+
+              {dashboardLoaded && summary ? (
+                <Card>
+                  <h2 className="mb-3 text-base font-semibold text-ink">Today's check-ins</h2>
+                  <ActivityFeed
+                    items={summary.recentActivity.map((a) => ({ id: a.id, label: a.memberName, timestamp: a.checkInAt }))}
+                    emptyMessage="No check-ins yet today."
+                  />
+                </Card>
+              ) : null}
+            </>
+          )}
 
           <Input
             label="Search"

@@ -49,7 +49,7 @@ interface AuthContextValue {
   changePassword: (input: { currentPassword?: string; newPassword: string }) => Promise<void>
   logout: () => void
   /** For future protected calls: attaches the access token and silently refreshes once on a 401. */
-  authFetch: <T>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>
+  authFetch: <T>(path: string, options?: { method?: string; body?: unknown; headers?: Record<string, string> }) => Promise<T>
   /** Same auth/refresh handling as authFetch, for endpoints that return a file (roadmap Phase 11's report export) instead of JSON. */
   authFetchBlob: (path: string) => Promise<{ blob: Blob; filename: string }>
   /** Same auth/refresh handling as authFetch, for endpoints that take a file (roadmap Phase 15.2's logo upload, Phase 17's expense receipt upload) instead of a JSON body. `method` defaults to 'PATCH' (branding's shape); Phase 17's receipt-on-create passes 'POST'. */
@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession])
 
   const authFetch = useCallback(
-    async <T,>(path: string, options?: { method?: string; body?: unknown }): Promise<T> => {
+    async <T,>(path: string, options?: { method?: string; body?: unknown; headers?: Record<string, string> }): Promise<T> => {
       try {
         return await apiRequest<T>(path, { ...options, accessToken: accessTokenRef.current })
       } catch (error) {
