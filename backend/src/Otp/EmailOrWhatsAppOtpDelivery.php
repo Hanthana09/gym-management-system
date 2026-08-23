@@ -47,7 +47,7 @@ class EmailOrWhatsAppOtpDelivery implements OtpDeliveryInterface
         if (filter_var($destination, FILTER_VALIDATE_EMAIL)) {
             $email = (new Email())
                 ->to($destination)
-                ->from('no-reply@gym-management.local')
+                ->from('no-reply@setly.fit')
                 ->subject('Your sign-in code')
                 ->text("Your sign-in code is {$code}. It expires in 5 minutes.");
 

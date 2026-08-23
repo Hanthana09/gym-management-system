@@ -37,7 +37,7 @@ class PasswordResetCodeSender
         if (filter_var($destination, FILTER_VALIDATE_EMAIL)) {
             $email = (new Email())
                 ->to($destination)
-                ->from('no-reply@gym-management.local')
+                ->from('no-reply@setly.fit')
                 ->subject('Your password reset code')
                 ->text("Your password reset code is {$rawToken}. It expires in 15 minutes. If you didn't request this, you can ignore this message.");
 

@@ -42,7 +42,7 @@ class SendNotificationEmailMessageHandler
 
         $this->mailer->send((new Email())
             ->to($email)
-            ->from('no-reply@gym-management.local')
+            ->from('no-reply@setly.fit')
             ->subject($notification->getTitle())
             ->text($notification->getBody()));
     }

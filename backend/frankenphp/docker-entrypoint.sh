@@ -61,6 +61,16 @@ if [ "$1" = 'frankenphp' ] || [ "$1" = 'php' ] || [ "$1" = 'bin/console' ]; then
 		if [ "$(find ./migrations -iname '*.php' -print -quit)" ]; then
 			php bin/console doctrine:migrations:migrate --no-interaction --all-or-nothing
 		fi
+
+		# The `async` transport (config/packages/messenger.yaml) is Doctrine-
+		# backed and needs its own `messenger_messages` table — unlike the
+		# schema above, migrations don't cover this (it's Messenger's own
+		# infrastructure, not an entity). Without this, dispatching to it
+		# 500s with "relation messenger_messages does not exist" the first
+		# time anything (notification email/WhatsApp, password reset code)
+		# actually tries to queue a message. Idempotent — safe to run on
+		# every start, same as the migration command above.
+		php bin/console messenger:setup-transports --no-interaction
 	fi
 
 	echo 'PHP app ready!'
