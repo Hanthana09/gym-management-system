@@ -2,14 +2,18 @@
 
 namespace App\Controller;
 
+use App\Billing\CheckInEligibilityChecker;
 use App\Branch\BranchResolver;
+use App\Entity\Invoice;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
 use App\Entity\User;
+use App\Enum\MembershipStatus;
 use App\Gym\GymProvisioningService;
 use App\Membership\MembershipConflictException;
 use App\Membership\MembershipPlanHasOngoingMembershipsException;
 use App\Membership\MembershipService;
+use App\Repository\InvoiceRepository;
 use App\Repository\MemberProfileRepository;
 use App\Repository\MembershipPlanRepository;
 use App\Repository\MembershipRepository;
@@ -30,6 +34,8 @@ class MembershipController extends AbstractController
         private readonly MemberProfileRepository $memberProfiles,
         private readonly GymProvisioningService $gymProvisioning,
         private readonly BranchResolver $branches,
+        private readonly InvoiceRepository $invoiceRepository,
+        private readonly CheckInEligibilityChecker $eligibility,
     ) {
     }
 
@@ -240,6 +246,121 @@ class MembershipController extends AbstractController
         return new JsonResponse($this->serializeMembership($membership));
     }
 
+    // ---- Owner/Staff billing actions (gym-management-billing-v1.md §5.4/§6) ----
+
+    #[Route('/memberships/{id}/suspend', name: 'memberships_suspend', methods: ['PATCH'])]
+    public function suspend(string $id): JsonResponse
+    {
+        return $this->respondBilling($id, fn (Membership $m) => $this->memberships->suspend($m));
+    }
+
+    #[Route('/memberships/{id}/reactivate', name: 'memberships_reactivate', methods: ['PATCH'])]
+    public function reactivate(string $id): JsonResponse
+    {
+        return $this->respondBilling($id, fn (Membership $m) => $this->memberships->reactivate($m));
+    }
+
+    /** @param callable(Membership): void $action */
+    private function respondBilling(string $id, callable $action): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $membership = $this->membershipRepository->find($id);
+        if ($membership === null) {
+            return $this->notFound('Membership not found.');
+        }
+        if (!$this->isGranted(MembershipVoter::BILLING_MANAGE, $membership)) {
+            return $this->forbidden();
+        }
+
+        try {
+            $action($membership);
+        } catch (MembershipConflictException $exception) {
+            return new JsonResponse(['error' => $exception->reason, 'message' => $exception->getMessage()], 409);
+        }
+
+        return new JsonResponse($this->serializeMembership($membership));
+    }
+
+    /** gym-management-billing-v1.md §6 — Owner, Staff (own branch), Coach (own clients), Member (self). */
+    #[Route('/members/{id}/billing-status', name: 'members_billing_status', methods: ['GET'])]
+    public function billingStatus(string $id): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $member = $this->memberProfiles->find($id);
+        if ($member === null) {
+            return $this->notFound('Member not found.');
+        }
+
+        $membership = $this->memberships->getMembershipForMember($member);
+        if ($membership === null) {
+            return new JsonResponse([
+                'subscriptionStatus' => null,
+                'eligibleForCheckIn' => false,
+                'blockReason' => 'no_membership',
+                'outstandingInvoices' => [],
+            ]);
+        }
+
+        if (!$this->isGranted(MembershipVoter::BILLING_VIEW, $membership)) {
+            return $this->forbidden();
+        }
+
+        [$eligible, $blockReason] = $this->resolveBillingEligibility($membership);
+
+        $outstandingInvoices = array_map(
+            fn (Invoice $invoice) => [
+                'id' => (string) $invoice->getId(),
+                'periodStart' => $invoice->getPeriodStart()?->format('Y-m-d'),
+                'dueDate' => $invoice->getDueDate()?->format('Y-m-d'),
+                'amount' => $invoice->getAmount(),
+                'status' => $invoice->getStatus()->value,
+            ],
+            $this->invoiceRepository->findOutstandingForMembership($membership),
+        );
+
+        return new JsonResponse([
+            'subscriptionStatus' => $membership->getStatus()->value,
+            'eligibleForCheckIn' => $eligible,
+            'blockReason' => $blockReason,
+            'outstandingInvoices' => $outstandingInvoices,
+        ]);
+    }
+
+    /**
+     * Mirrors AttendanceService::checkIn()'s rule-1-then-rule-2/3 order
+     * (gym-management-billing-v1.md §5.5) as a read-only check — no
+     * side-effecting attendance log or event dispatch here, just the
+     * eligibility answer for the badge/dashboard.
+     *
+     * @return array{0: bool, 1: ?string}
+     */
+    private function resolveBillingEligibility(Membership $membership): array
+    {
+        $reason = match ($membership->getStatus()) {
+            MembershipStatus::EXPIRED => 'membership_expired',
+            MembershipStatus::PAUSED => 'membership_paused',
+            MembershipStatus::CANCELLED => 'membership_cancelled',
+            MembershipStatus::SUSPENDED => 'subscription_inactive',
+            MembershipStatus::ACTIVE => null,
+        };
+
+        if ($reason !== null) {
+            return [false, $reason];
+        }
+
+        $billingReason = $this->eligibility->check($membership);
+
+        return $billingReason === null ? [true, null] : [false, $billingReason->value];
+    }
+
     private function currentMemberProfile(): \App\Entity\MemberProfile|JsonResponse
     {
         $user = $this->getUser();
@@ -301,6 +422,8 @@ class MembershipController extends AbstractController
             'status' => $membership->getStatus()->value,
             'autoRenew' => $membership->isAutoRenew(),
             'daysUntilExpiry' => $membership->daysUntilExpiry(),
+            'billingAnchorDay' => $membership->getBillingAnchorDay(),
+            'nextBillingDate' => $membership->getNextBillingDate()?->format('Y-m-d'),
         ];
     }
 

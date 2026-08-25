@@ -2,6 +2,7 @@
 
 namespace App\Attendance;
 
+use App\Billing\CheckInEligibilityChecker;
 use App\Entity\AttendanceLog;
 use App\Entity\Branch;
 use App\Entity\MemberProfile;
@@ -20,7 +21,10 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  * ATTENDANCE_LOG, emit attendance.checked_in. Also closes the Phase 4
  * deferral: check-in is blocked (with a specific reason, functional
  * requirements §4.1) when the account is suspended or the membership
- * isn't active.
+ * isn't active. gym-management-billing-v1.md §5.5 adds billing-based
+ * gating (CheckInEligibilityChecker) once the membership is confirmed
+ * ACTIVE — this is the single call site both check-in controller actions
+ * (self + front-desk) funnel through, so both are covered by one change.
  */
 class AttendanceService
 {
@@ -29,6 +33,7 @@ class AttendanceService
         private readonly AttendanceLogRepository $attendanceLogs,
         private readonly EntityManagerInterface $em,
         private readonly EventDispatcherInterface $dispatcher,
+        private readonly CheckInEligibilityChecker $eligibility,
     ) {
     }
 
@@ -65,11 +70,17 @@ class AttendanceService
             MembershipStatus::EXPIRED => CheckInBlockedReason::MEMBERSHIP_EXPIRED,
             MembershipStatus::PAUSED => CheckInBlockedReason::MEMBERSHIP_PAUSED,
             MembershipStatus::CANCELLED => CheckInBlockedReason::MEMBERSHIP_CANCELLED,
+            MembershipStatus::SUSPENDED => CheckInBlockedReason::SUBSCRIPTION_INACTIVE,
             MembershipStatus::ACTIVE => null,
         };
 
         if ($blockedReason !== null) {
             throw $this->blocked($blockedReason);
+        }
+
+        $billingBlockedReason = $this->eligibility->check($membership);
+        if ($billingBlockedReason !== null) {
+            throw $this->blocked($billingBlockedReason);
         }
 
         $log = new AttendanceLog($member, $branch, new \DateTimeImmutable(), $method);
@@ -111,6 +122,9 @@ class AttendanceService
             CheckInBlockedReason::MEMBERSHIP_EXPIRED => 'Your membership has expired. Please renew to check in.',
             CheckInBlockedReason::MEMBERSHIP_PAUSED => 'Your membership is paused. Resume it to check in.',
             CheckInBlockedReason::MEMBERSHIP_CANCELLED => 'Your membership has been cancelled. Please contact the gym.',
+            CheckInBlockedReason::SUBSCRIPTION_INACTIVE => 'Your membership has been suspended. Please contact the gym.',
+            CheckInBlockedReason::ABSENT_INVOICE => 'You have a missed payment on file. Please contact the gym to settle it.',
+            CheckInBlockedReason::OVERDUE => 'Your payment is overdue. Please settle it to check in.',
         });
     }
 }

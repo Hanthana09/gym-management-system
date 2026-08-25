@@ -55,6 +55,8 @@ use Symfony\Component\Uid\Uuid;
     ],
 )]
 #[ORM\Entity(repositoryClass: InvoiceRepository::class)]
+#[ORM\Table(name: 'invoice')]
+#[ORM\UniqueConstraint(name: 'invoice_membership_period_start_unique', columns: ['membership_id', 'period_start'])]
 class Invoice
 {
     #[ORM\Id]
@@ -92,13 +94,53 @@ class Invoice
     #[Groups(['invoice:me:read'])]
     private ?\DateTimeImmutable $paidAt = null;
 
-    public function __construct(Membership $membership, string $amount)
-    {
+    /**
+     * Added by gym-management-billing-v1.md §3.2 for the recurring
+     * billing engine. All four stay null for the existing one-time
+     * enrollment-invoice flow (no period concept there) — populated only
+     * when the owning Membership has recurring billing enabled
+     * (billingAnchorDay/nextBillingDate set). periodStart carries the
+     * unique constraint (with membership_id) that makes invoice
+     * generation idempotent; Postgres treats NULL as distinct, so
+     * existing one-time invoices never collide with each other or with
+     * recurring ones.
+     */
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[Groups(['invoice:me:read'])]
+    private ?\DateTimeImmutable $periodStart = null;
+
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[Groups(['invoice:me:read'])]
+    private ?\DateTimeImmutable $periodEnd = null;
+
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[Groups(['invoice:me:read'])]
+    private ?\DateTimeImmutable $dueDate = null;
+
+    #[ORM\Column(nullable: true)]
+    #[Groups(['invoice:me:read'])]
+    private ?\DateTimeImmutable $markedAbsentAt = null;
+
+    /** Null when the ABSENT transition was system-triggered (InvoiceGenerationService) — the only way it happens, per §4.1: it's never a user action. */
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'marked_absent_by', nullable: true)]
+    private ?User $markedAbsentBy = null;
+
+    public function __construct(
+        Membership $membership,
+        string $amount,
+        ?\DateTimeImmutable $periodStart = null,
+        ?\DateTimeImmutable $periodEnd = null,
+        ?\DateTimeImmutable $dueDate = null,
+    ) {
         $this->id = Uuid::v7();
         $this->membership = $membership;
         $this->amount = $amount;
         $this->status = InvoiceStatus::PENDING;
         $this->issuedAt = new \DateTimeImmutable();
+        $this->periodStart = $periodStart;
+        $this->periodEnd = $periodEnd;
+        $this->dueDate = $dueDate;
     }
 
     public function getId(): Uuid
@@ -141,6 +183,31 @@ class Invoice
         return $this->paidAt;
     }
 
+    public function getPeriodStart(): ?\DateTimeImmutable
+    {
+        return $this->periodStart;
+    }
+
+    public function getPeriodEnd(): ?\DateTimeImmutable
+    {
+        return $this->periodEnd;
+    }
+
+    public function getDueDate(): ?\DateTimeImmutable
+    {
+        return $this->dueDate;
+    }
+
+    public function getMarkedAbsentAt(): ?\DateTimeImmutable
+    {
+        return $this->markedAbsentAt;
+    }
+
+    public function getMarkedAbsentBy(): ?User
+    {
+        return $this->markedAbsentBy;
+    }
+
     /**
      * Unconditional — precondition checks (e.g. "must currently be
      * pending") live in BillingService, same split already established
@@ -153,5 +220,18 @@ class Invoice
         $this->paymentMethod = $method;
         $this->recordedBy = $recordedBy;
         $this->paidAt = new \DateTimeImmutable();
+    }
+
+    /**
+     * gym-management-billing-v1.md §4.1: exactly-once, system-triggered
+     * transition tied to the next cycle's generation event. There is no
+     * ABSENT → PENDING transition, ever — and no reopening step here or
+     * anywhere else in this class.
+     */
+    public function markAbsent(): void
+    {
+        $this->status = InvoiceStatus::ABSENT;
+        $this->markedAbsentAt = new \DateTimeImmutable();
+        $this->markedAbsentBy = null;
     }
 }

@@ -25,6 +25,9 @@ framework:
             # Backs AnalyticsScheduleProvider's #[AsSchedule('analytics')]
             # (architecture doc §6.8) — consumed by `messenger:consume scheduler_analytics`.
             scheduler_analytics: 'schedule://analytics'
+            # Backs BillingScheduleProvider's #[AsSchedule('billing')]
+            # (gym-management-billing-v1.md §5.1) — consumed by `messenger:consume scheduler_billing`.
+            scheduler_billing: 'schedule://billing'
 
         routing:
             # Route your messages to the transports
@@ -33,6 +36,7 @@ framework:
             'App\PasswordReset\SendPasswordResetCodeMessage': async
             'App\Membership\RunMembershipExpiryScanMessage': scheduler_membership
             'App\Reporting\RunDailyMetricAggregationMessage': scheduler_analytics
+            'App\Billing\RunBillingGenerationMessage': scheduler_billing
 
 when@test:
     framework:

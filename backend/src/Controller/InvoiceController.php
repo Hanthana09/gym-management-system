@@ -4,12 +4,16 @@ namespace App\Controller;
 
 use App\Billing\BillingService;
 use App\Billing\InvoiceConflictException;
+use App\Billing\PaymentAmountMismatchException;
 use App\Entity\Invoice;
+use App\Entity\Payment;
 use App\Entity\User;
 use App\Enum\PaymentMethod;
 use App\Enum\UserRole;
+use App\Repository\BranchRepository;
 use App\Repository\InvoiceRepository;
 use App\Repository\MemberProfileRepository;
+use App\Security\Voter\InvoicePaymentVoter;
 use App\Security\Voter\InvoiceVoter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
@@ -28,10 +32,14 @@ class InvoiceController extends AbstractController
 {
     private const OWNER_SELECTABLE_METHODS = [PaymentMethod::CASH, PaymentMethod::BANK_TRANSFER];
 
+    /** gym-management-billing-v1.md §3.3 — the recurring payment endpoint's selectable methods (cash/card/bank_transfer). */
+    private const RECURRING_PAYMENT_METHODS = [PaymentMethod::CASH, PaymentMethod::CARD, PaymentMethod::BANK_TRANSFER];
+
     public function __construct(
         private readonly BillingService $billing,
         private readonly InvoiceRepository $invoiceRepository,
         private readonly MemberProfileRepository $memberProfiles,
+        private readonly BranchRepository $branchRepository,
     ) {
     }
 
@@ -109,6 +117,121 @@ class InvoiceController extends AbstractController
         }
 
         return new JsonResponse($this->serialize($invoice, includeMember: true));
+    }
+
+    /** gym-management-billing-v1.md §5.2 — the recurring-billing payment endpoint. */
+    #[Route('/invoices/{id}/payments', name: 'invoices_record_payment', methods: ['POST'])]
+    public function recordPayment(string $id, Request $request): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $invoice = $this->invoiceRepository->find($id);
+        if ($invoice === null) {
+            return $this->notFound('Invoice not found.');
+        }
+
+        if (!$this->isGranted(InvoicePaymentVoter::RECORD_PAYMENT, $invoice)) {
+            return $this->forbidden();
+        }
+
+        $data = $this->decode($request);
+
+        $resetBillingCycle = (bool) ($data['resetBillingCycle'] ?? false);
+        // §5.3: fail the whole request, never silently coerce to false.
+        if ($resetBillingCycle && !$this->isGranted(InvoicePaymentVoter::RESET_BILLING_CYCLE, $invoice)) {
+            return $this->forbidden();
+        }
+
+        if (!isset($data['amount']) || !is_numeric((string) $data['amount'])) {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'amount is required and must be numeric.'], 400);
+        }
+        $amount = number_format((float) $data['amount'], 2, '.', '');
+
+        $method = PaymentMethod::tryFrom((string) ($data['method'] ?? ''));
+        if ($method === null || !in_array($method, self::RECURRING_PAYMENT_METHODS, true)) {
+            return new JsonResponse([
+                'error' => 'invalid_request',
+                'message' => 'method must be one of: ' . implode(', ', array_map(fn (PaymentMethod $m) => $m->value, self::RECURRING_PAYMENT_METHODS)),
+            ], 400);
+        }
+
+        $note = isset($data['note']) && $data['note'] !== '' ? (string) $data['note'] : null;
+
+        try {
+            $payment = $this->billing->recordRecurringPayment($invoice, $user, $amount, $method, $resetBillingCycle, $note);
+        } catch (InvoiceConflictException $exception) {
+            return new JsonResponse(['error' => $exception->reason, 'message' => $exception->getMessage()], 409);
+        } catch (PaymentAmountMismatchException $exception) {
+            return new JsonResponse(['error' => 'amount_mismatch', 'message' => $exception->getMessage()], 422);
+        }
+
+        return new JsonResponse($this->serializePayment($payment, $invoice), 201);
+    }
+
+    /** gym-management-billing-v1.md §6 — the dashboard "needs attention" widget's data source. */
+    #[Route('/branches/{id}/invoices', name: 'branches_invoices_needing_attention', methods: ['GET'])]
+    public function branchInvoicesNeedingAttention(string $id): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+        if (!in_array($user->getRole(), [UserRole::OWNER, UserRole::STAFF], true)) {
+            return $this->forbidden();
+        }
+
+        $branch = $this->branchRepository->find($id);
+        if ($branch === null) {
+            return $this->notFound('Branch not found.');
+        }
+
+        if ($user->getRole() === UserRole::STAFF && !$user->getBranchAssignments()->exists(
+            fn ($key, $assignment) => $assignment->getBranch() === $branch,
+        )) {
+            return $this->forbidden();
+        }
+
+        $invoices = array_map(
+            fn (Invoice $invoice) => $this->serializeAttentionRow($invoice),
+            $this->invoiceRepository->findNeedingAttentionForBranch($branch, new \DateTimeImmutable('today')),
+        );
+
+        return new JsonResponse(['invoices' => $invoices]);
+    }
+
+    private function serializePayment(Payment $payment, Invoice $invoice): array
+    {
+        return [
+            'id' => (string) $payment->getId(),
+            'invoiceId' => (string) $invoice->getId(),
+            'amount' => $payment->getAmount(),
+            'method' => $payment->getMethod()->value,
+            'resetBillingCycle' => $payment->isResetBillingCycle(),
+            'note' => $payment->getNote(),
+            'paidAt' => $payment->getPaidAt()->format(\DateTimeInterface::ATOM),
+            'invoice' => $this->serialize($invoice, includeMember: true),
+        ];
+    }
+
+    private function serializeAttentionRow(Invoice $invoice): array
+    {
+        $membership = $invoice->getMembership();
+        $memberUser = $membership->getMember()->getUser();
+
+        return [
+            'id' => (string) $invoice->getId(),
+            'status' => $invoice->getStatus()->value,
+            'amount' => $invoice->getAmount(),
+            'periodStart' => $invoice->getPeriodStart()?->format('Y-m-d'),
+            'dueDate' => $invoice->getDueDate()?->format('Y-m-d'),
+            'member' => [
+                'id' => (string) $memberUser->getId(),
+                'name' => $memberUser->getName(),
+            ],
+        ];
     }
 
     private function serialize(Invoice $invoice, bool $includeMember): array

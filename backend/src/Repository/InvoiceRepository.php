@@ -5,6 +5,7 @@ namespace App\Repository;
 use App\Entity\Branch;
 use App\Entity\Invoice;
 use App\Entity\MemberProfile;
+use App\Entity\Membership;
 use App\Enum\InvoiceStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -126,5 +127,111 @@ class InvoiceRepository extends ServiceEntityRepository
             ->getSingleScalarResult();
 
         return $result !== null ? new \DateTimeImmutable($result) : null;
+    }
+
+    /** InvoiceGenerationService's idempotency check — a real DB round trip beats relying on catching the unique-constraint violation. */
+    public function findOneForMembershipAndPeriodStart(Membership $membership, \DateTimeImmutable $periodStart): ?Invoice
+    {
+        return $this->createQueryBuilder('i')
+            ->andWhere('i.membership = :membership')
+            ->andWhere('i.periodStart = :periodStart')
+            ->setParameter('membership', $membership)
+            ->setParameter('periodStart', $periodStart)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /** The recurring invoice most recently generated for this membership (highest periodStart) — InvoiceGenerationService checks whether it's still PENDING before marking it ABSENT. */
+    public function findMostRecentRecurringForMembership(Membership $membership): ?Invoice
+    {
+        return $this->createQueryBuilder('i')
+            ->andWhere('i.membership = :membership')
+            ->andWhere('i.periodStart IS NOT NULL')
+            ->setParameter('membership', $membership)
+            ->orderBy('i.periodStart', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /** CheckInEligibilityChecker rule 2 (gym-management-billing-v1.md §5.5) — recurring invoices only, periodStart IS NOT NULL excludes the legacy one-time flow entirely. */
+    public function hasAbsentInvoice(Membership $membership): bool
+    {
+        return $this->createQueryBuilder('i')
+            ->select('COUNT(i.id)')
+            ->andWhere('i.membership = :membership')
+            ->andWhere('i.periodStart IS NOT NULL')
+            ->andWhere('i.status = :absent')
+            ->setParameter('membership', $membership)
+            ->setParameter('absent', InvoiceStatus::ABSENT)
+            ->getQuery()
+            ->getSingleScalarResult() > 0;
+    }
+
+    /**
+     * CheckInEligibilityChecker rule 3 — evaluated live against dueDate,
+     * never dependent on the generation command having run yet (§5.5's
+     * explicit note: still PENDING in the DB the day after dueDate, but
+     * already blocking).
+     */
+    public function hasOverduePendingInvoice(Membership $membership, \DateTimeImmutable $today): bool
+    {
+        return $this->createQueryBuilder('i')
+            ->select('COUNT(i.id)')
+            ->andWhere('i.membership = :membership')
+            ->andWhere('i.periodStart IS NOT NULL')
+            ->andWhere('i.status = :pending')
+            ->andWhere('i.dueDate < :today')
+            ->setParameter('membership', $membership)
+            ->setParameter('pending', InvoiceStatus::PENDING)
+            ->setParameter('today', $today)
+            ->getQuery()
+            ->getSingleScalarResult() > 0;
+    }
+
+    /** GET /members/{id}/billing-status's outstandingInvoices — ABSENT or PENDING, recurring invoices only, oldest due first. */
+    public function findOutstandingForMembership(Membership $membership): array
+    {
+        return $this->createQueryBuilder('i')
+            ->andWhere('i.membership = :membership')
+            ->andWhere('i.periodStart IS NOT NULL')
+            ->andWhere('i.status IN (:statuses)')
+            ->setParameter('membership', $membership)
+            ->setParameter('statuses', [InvoiceStatus::ABSENT, InvoiceStatus::PENDING])
+            ->orderBy('i.dueDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * GET /branches/{id}/invoices?status=absent,overdue — the dashboard
+     * "needs attention" widget's data source. `overdue` isn't a stored
+     * status (gym-management-billing-v1.md §5.5's note: a PENDING invoice
+     * past its dueDate is "overdue" only conceptually until the next
+     * generation run formalizes it as ABSENT), so this ORs the two
+     * conditions rather than filtering on a single status value.
+     *
+     * @return Invoice[]
+     */
+    public function findNeedingAttentionForBranch(Branch $branch, \DateTimeImmutable $today): array
+    {
+        return $this->createQueryBuilder('i')
+            ->innerJoin('i.membership', 'm')
+            ->addSelect('m')
+            ->innerJoin('m.member', 'mp')
+            ->addSelect('mp')
+            ->innerJoin('mp.user', 'u')
+            ->addSelect('u')
+            ->innerJoin('m.plan', 'p')
+            ->andWhere('p.branch = :branch')
+            ->andWhere('i.periodStart IS NOT NULL')
+            ->andWhere('i.status = :absent OR (i.status = :pending AND i.dueDate < :today)')
+            ->setParameter('branch', $branch)
+            ->setParameter('absent', InvoiceStatus::ABSENT)
+            ->setParameter('pending', InvoiceStatus::PENDING)
+            ->setParameter('today', $today)
+            ->orderBy('i.dueDate', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 }

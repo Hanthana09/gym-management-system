@@ -11,6 +11,11 @@ namespace App\Enum;
  * mark-paid request (which stays limited to cash/bank_transfer per
  * functional requirements §8.1 — `gateway` is reserved for the deferred
  * gateway integration, architecture doc §6.9).
+ *
+ * `card` is added by gym-management-billing-v1.md §3.3 for the recurring
+ * payment-recording endpoint (cash/card/bank_transfer are the Owner/Staff-
+ * selectable methods there — see InvoiceController::OWNER_SELECTABLE_
+ * RECURRING_METHODS).
  */
 enum PaymentMethod: string
 {
@@ -18,4 +23,5 @@ enum PaymentMethod: string
     case BANK_TRANSFER = 'bank_transfer';
     case GATEWAY = 'gateway';
     case REFERRAL_CREDIT = 'referral_credit';
+    case CARD = 'card';
 }

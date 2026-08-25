@@ -97,11 +97,3 @@ export interface MemberAttendancePageDto {
   perPage: number
   total: number
 }
-
-/** Payments tab — always this stub shape until Phase 10 ships real billing. `available: false` renders an explicit empty-state, never an empty list pretending to be real data. */
-export interface MemberPaymentsStubDto {
-  available: false
-  reason: 'not_yet_available'
-  message: string
-  payments: never[]
-}

@@ -2,6 +2,7 @@
 
 namespace App\Membership;
 
+use App\Billing\BillingCycleCalculator;
 use App\Entity\Branch;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
@@ -89,6 +90,13 @@ class MembershipService
         $endDate = $startDate->modify('+' . $plan->getDurationDays() . ' days');
 
         $membership = new Membership($member, $plan, $startDate, $endDate, $autoRenew);
+
+        // gym-management-billing-v1.md: every new enrollment opts into the
+        // recurring billing engine going forward — see this phase's plan
+        // for why this is the default rather than a request-level flag.
+        $billingAnchorDay = (int) $startDate->format('j');
+        $membership->enableRecurringBilling($billingAnchorDay, BillingCycleCalculator::advance($startDate, $billingAnchorDay));
+
         $this->em->persist($membership);
         $this->em->flush();
 
@@ -135,6 +143,35 @@ class MembershipService
         }
 
         $membership->cancel();
+        $this->em->flush();
+    }
+
+    /** gym-management-billing-v1.md §5.4 — Owner/Staff enforcement action, stops future invoice generation. Existing PENDING/ABSENT invoices are left as-is. */
+    public function suspend(Membership $membership): void
+    {
+        if ($membership->getStatus() !== MembershipStatus::ACTIVE) {
+            throw new MembershipConflictException('not_active', 'Only an active membership can be suspended.');
+        }
+
+        $membership->suspend();
+        $this->em->flush();
+    }
+
+    /**
+     * §5.4 — nextBillingDate resets to today (the reactivation date), not
+     * backfilled: the generation command will produce exactly one invoice
+     * for the member's now-current period on its next run, nothing for
+     * the months they were suspended. billingAnchorDay is left unchanged
+     * (only a fresh resetBillingCycle payment changes it).
+     */
+    public function reactivate(Membership $membership): void
+    {
+        if ($membership->getStatus() !== MembershipStatus::SUSPENDED) {
+            throw new MembershipConflictException('not_suspended', 'Only a suspended membership can be reactivated.');
+        }
+
+        $nextBillingDate = $membership->getBillingAnchorDay() !== null ? new \DateTimeImmutable('today') : null;
+        $membership->reactivate($nextBillingDate);
         $this->em->flush();
     }
 }

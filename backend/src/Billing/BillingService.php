@@ -6,6 +6,7 @@ use App\Audit\AuditLogger;
 use App\Entity\Invoice;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
+use App\Entity\Payment;
 use App\Entity\User;
 use App\Enum\InvoiceStatus;
 use App\Enum\PaymentMethod;
@@ -43,7 +44,17 @@ class BillingService
      */
     public function issueInvoiceForMembership(Membership $membership): Invoice
     {
-        $invoice = new Invoice($membership, $membership->getPlan()->getPrice());
+        $periodStart = $periodEnd = $dueDate = null;
+        if ($membership->getBillingAnchorDay() !== null) {
+            // gym-management-billing-v1.md §5.1: the very first invoice
+            // gets period fields too, so CheckInEligibilityChecker's
+            // overdue rule applies to it the same as every generated one.
+            $periodStart = $membership->getStartDate();
+            $periodEnd = BillingCycleCalculator::advance($periodStart, $membership->getBillingAnchorDay())->modify('-1 day');
+            $dueDate = $periodStart;
+        }
+
+        $invoice = new Invoice($membership, $membership->getPlan()->getPrice(), $periodStart, $periodEnd, $dueDate);
         $this->em->persist($invoice);
         $this->em->flush();
 
@@ -68,6 +79,50 @@ class BillingService
         }
 
         $this->applyPayment($invoice, $owner, $method);
+    }
+
+    /**
+     * gym-management-billing-v1.md §5.2 — the recurring-billing payment
+     * endpoint. Identical whether $invoice is PENDING or ABSENT (no
+     * reopening step); only "already PAID" is rejected. Voter checks
+     * (RECORD_PAYMENT, and RESET_BILLING_CYCLE when requested) are the
+     * caller's responsibility — this is the state-transition layer
+     * underneath, same split as markPaid()/pause()/resume().
+     */
+    public function recordRecurringPayment(
+        Invoice $invoice,
+        User $recordedBy,
+        string $amount,
+        PaymentMethod $method,
+        bool $resetBillingCycle,
+        ?string $note,
+    ): Payment {
+        if ($invoice->getStatus() === InvoiceStatus::PAID) {
+            throw new InvoiceConflictException('already_paid', 'This invoice has already been paid.');
+        }
+
+        // bcmath isn't available in this environment (confirmed via
+        // php -m) — normalized-string comparison instead, same
+        // number_format((float) ..., 2, '.', '') pattern this codebase
+        // already uses for money elsewhere (e.g. ExpenseController).
+        if (number_format((float) $amount, 2, '.', '') !== number_format((float) $invoice->getAmount(), 2, '.', '')) {
+            throw new PaymentAmountMismatchException();
+        }
+
+        $payment = new Payment($invoice, $amount, $method, $recordedBy, $resetBillingCycle, $note);
+        $this->em->persist($payment);
+
+        $this->applyPayment($invoice, $recordedBy, $method);
+
+        if ($resetBillingCycle) {
+            $membership = $invoice->getMembership();
+            $paidAt = $payment->getPaidAt();
+            $newAnchorDay = (int) $paidAt->format('j');
+            $membership->resetBillingCycle($newAnchorDay, BillingCycleCalculator::advance($paidAt, $newAnchorDay));
+            $this->em->flush();
+        }
+
+        return $payment;
     }
 
     /** @return Invoice[] */

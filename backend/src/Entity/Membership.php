@@ -90,6 +90,24 @@ class Membership
     #[Groups(['membership:me:read'])]
     private ?\DateTimeImmutable $cancelledAt = null;
 
+    /**
+     * Added by gym-management-billing-v1.md §3.1 (merged into Membership
+     * rather than a separate MemberSubscription entity — see that spec's
+     * reconciliation note). Both nullable and left unset for every
+     * Membership row that existed before this phase — no backfill. Set at
+     * enrollment for every new Membership going forward (MembershipService
+     * ::enroll()), which is what actually opts a member into the recurring
+     * billing engine: InvoiceGenerationService and CheckInEligibilityChecker
+     * only ever look at memberships where these are non-null.
+     */
+    #[ORM\Column(nullable: true)]
+    #[Groups(['membership:me:read'])]
+    private ?int $billingAnchorDay = null;
+
+    #[ORM\Column(type: 'date_immutable', nullable: true)]
+    #[Groups(['membership:me:read'])]
+    private ?\DateTimeImmutable $nextBillingDate = null;
+
     public function __construct(
         MemberProfile $member,
         MembershipPlan $plan,
@@ -142,10 +160,45 @@ class Membership
         return $this->autoRenew;
     }
 
-    /** A membership still holds the slot even while paused — only active+paused count as "in the way" of a plan deletion or a new enrollment. */
+    public function getBillingAnchorDay(): ?int
+    {
+        return $this->billingAnchorDay;
+    }
+
+    public function getNextBillingDate(): ?\DateTimeImmutable
+    {
+        return $this->nextBillingDate;
+    }
+
+    /** Called once, at enrollment, by MembershipService::enroll() — opts this Membership into the recurring billing engine. */
+    public function enableRecurringBilling(int $billingAnchorDay, \DateTimeImmutable $nextBillingDate): void
+    {
+        $this->billingAnchorDay = $billingAnchorDay;
+        $this->nextBillingDate = $nextBillingDate;
+    }
+
+    /** InvoiceGenerationService, after issuing this cycle's invoice. */
+    public function advanceNextBillingDate(\DateTimeImmutable $nextBillingDate): void
+    {
+        $this->nextBillingDate = $nextBillingDate;
+    }
+
+    /** gym-management-billing-v1.md §5.2 point 5 — a permanent anchor-day change, not a one-time nudge. */
+    public function resetBillingCycle(int $billingAnchorDay, \DateTimeImmutable $nextBillingDate): void
+    {
+        $this->billingAnchorDay = $billingAnchorDay;
+        $this->nextBillingDate = $nextBillingDate;
+    }
+
+    /**
+     * A membership still holds the slot even while paused or suspended —
+     * active+paused+suspended count as "in the way" of a plan deletion or
+     * a new enrollment. A suspended member still owes on this membership,
+     * so they can't sidestep it by re-enrolling into a fresh one.
+     */
     public function isOngoing(): bool
     {
-        return $this->status === MembershipStatus::ACTIVE || $this->status === MembershipStatus::PAUSED;
+        return in_array($this->status, [MembershipStatus::ACTIVE, MembershipStatus::PAUSED, MembershipStatus::SUSPENDED], true);
     }
 
     public function isNaturallyExpired(): bool
@@ -179,6 +232,26 @@ class Membership
     {
         $this->status = MembershipStatus::CANCELLED;
         $this->cancelledAt = new \DateTimeImmutable();
+    }
+
+    /** gym-management-billing-v1.md §5.4 — Owner/Staff enforcement action. Existing PENDING/ABSENT invoices are left untouched by design. */
+    public function suspend(): void
+    {
+        $this->status = MembershipStatus::SUSPENDED;
+    }
+
+    /**
+     * $nextBillingDate is the reactivation date itself — deliberately not
+     * backfilled for the suspended months (§5.4). Null for a membership
+     * that was never on the recurring engine to begin with (billingAnchorDay
+     * unset) — reactivating a legacy membership doesn't newly opt it in.
+     */
+    public function reactivate(?\DateTimeImmutable $nextBillingDate): void
+    {
+        $this->status = MembershipStatus::ACTIVE;
+        if ($nextBillingDate !== null) {
+            $this->nextBillingDate = $nextBillingDate;
+        }
     }
 
     public function getCancelledAt(): ?\DateTimeImmutable

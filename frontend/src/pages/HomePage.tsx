@@ -4,7 +4,7 @@ import { NavShell } from '../components/NavShell'
 import { COACH_NAV_ITEMS, MEMBER_NAV_ITEMS, OWNER_NAV_ITEMS, STAFF_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card } from '../components/ui'
 import { CheckInIcon, MembersIcon } from '../components/ui/icons'
-import { ActivityFeed, ChartCard, ExpenseCategoryDonutChart, KpiCard } from '../components/dashboard'
+import { ActivityFeed, AlertCard, ChartCard, ExpenseCategoryDonutChart, KpiCard } from '../components/dashboard'
 import { useAuth } from '../auth/AuthContext'
 import { OwnerInvitationsPanel } from '../invitations/OwnerInvitationsPanel'
 import { MyInvitationsPanel } from '../invitations/MyInvitationsPanel'
@@ -13,7 +13,11 @@ import { NotificationPreferences } from '../notifications/NotificationPreference
 import { useMemberDashboard } from '../dashboard/useMemberDashboard'
 import { useOwnerDashboard } from '../dashboard/useOwnerDashboard'
 import { useBranches } from '../branches/useBranches'
-import { BranchSwitcher } from '../branches/BranchSwitcher'
+import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
+import { useBranchBillingAttention } from '../billing/useBranchBillingAttention'
+import { useMemberBillingStatus } from '../billing/useMemberBillingStatus'
+import { RecordPaymentModal } from '../billing/RecordPaymentModal'
+import type { AttentionInvoiceDto } from '../billing/types'
 
 const NAV_ITEMS = { owner: OWNER_NAV_ITEMS, coach: COACH_NAV_ITEMS, member: MEMBER_NAV_ITEMS, staff: STAFF_NAV_ITEMS }
 
@@ -176,6 +180,12 @@ function OwnerDashboardWidgets() {
   const { branches } = useBranches()
   const [branchId, setBranchId] = useState<string | null>(null)
   const { summary, loaded } = useOwnerDashboard(branchId)
+  // The billing-attention endpoint (gym-management-billing-v1.md §6) needs
+  // one concrete branch — "All branches" here falls back to the default
+  // one, same resolution StaffDashboardPage/front-desk check-in already use.
+  const attentionBranchId = branchId ?? defaultBranchId(branches)
+  const { invoices: attentionInvoices, loaded: attentionLoaded, refresh: refreshAttention } = useBranchBillingAttention(attentionBranchId)
+  const [payingInvoice, setPayingInvoice] = useState<AttentionInvoiceDto | null>(null)
 
   return (
     <>
@@ -202,11 +212,36 @@ function OwnerDashboardWidgets() {
         </div>
       </Card>
 
+      {/* gym-management-billing-v1.md §7: "needs attention" — absent/overdue invoices, oldest due first, with a direct record-payment action. Answers "what needs my attention today" right here, not on a separate billing page. */}
+      {attentionLoaded && attentionInvoices.length > 0 ? (
+        <AlertCard tone="danger" title={`${attentionInvoices.length} payment${attentionInvoices.length === 1 ? '' : 's'} need attention`}>
+          <ul className="flex flex-col gap-2">
+            {attentionInvoices.map((invoice) => (
+              <li key={invoice.id} className="flex items-center justify-between gap-2">
+                <span>
+                  {invoice.member.name} — <span className="font-mono">${invoice.amount}</span>{' '}
+                  <span className="uppercase">{invoice.status}</span>
+                </span>
+                <Button variant="secondary" onClick={() => setPayingInvoice(invoice)}>
+                  Record payment
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </AlertCard>
+      ) : null}
+
       {loaded && summary && summary.expensesByCategory.length > 0 ? (
         <ChartCard title="Expenses by category">
           <ExpenseCategoryDonutChart data={summary.expensesByCategory} />
         </ChartCard>
       ) : null}
+
+      <RecordPaymentModal
+        invoice={payingInvoice ? { id: payingInvoice.id, amount: payingInvoice.amount, memberName: payingInvoice.member.name } : null}
+        onClose={() => setPayingInvoice(null)}
+        onRecorded={() => void refreshAttention()}
+      />
     </>
   )
 }
@@ -220,10 +255,43 @@ function OwnerDashboardWidgets() {
  * the attendance history page is the place for a fuller view.
  */
 function MemberDashboardWidgets() {
+  const { user } = useAuth()
   const { summary, loaded } = useMemberDashboard()
+  const { status: billingStatus, loaded: billingLoaded } = useMemberBillingStatus(user?.id ?? null)
 
   if (!loaded || !summary) return null
 
+  return (
+    <>
+      {/* gym-management-billing-v1.md §7: current billing status + next due date, read-only. Absent entirely for a member with no recurring subscription. */}
+      {billingLoaded && billingStatus && billingStatus.subscriptionStatus !== null ? (
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-ink">Billing</p>
+            {billingStatus.blockReason ? (
+              <span className="rounded-full bg-member-soft px-2 py-0.5 font-mono text-xs tracking-wide text-member uppercase">
+                {billingStatus.blockReason.replace(/_/g, ' ')}
+              </span>
+            ) : (
+              <span className="rounded-full bg-green-100 px-2 py-0.5 font-mono text-xs tracking-wide text-green-800 uppercase">
+                Current
+              </span>
+            )}
+          </div>
+          {billingStatus.outstandingInvoices[0]?.dueDate ? (
+            <p className="mt-1 text-sm text-ink-soft">
+              Next due {new Date(billingStatus.outstandingInvoices[0].dueDate).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <MemberDashboardActivity summary={summary} />
+    </>
+  )
+}
+
+function MemberDashboardActivity({ summary }: { summary: NonNullable<ReturnType<typeof useMemberDashboard>['summary']> }) {
   return (
     <Card>
       {summary.nextSession ? (

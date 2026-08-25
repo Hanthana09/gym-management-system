@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
-import type {
-  MemberAttendancePageDto,
-  MemberPaymentsStubDto,
-  MemberProfileDetailDto,
-  MemberPtScheduleDto,
-} from './types'
+import type { MemberAttendancePageDto, MemberProfileDetailDto, MemberPtScheduleDto } from './types'
 
 /**
  * gym-management-member-profile-extension.md §5's Member Detail screen —
  * profile loads eagerly (Profile tab is the default view); PT
- * schedule/attendance/payments are fetched lazily per-tab so switching to
- * Payments never pays for an attendance-history query nobody asked for.
+ * schedule/attendance are fetched lazily per-tab. The Payments tab now
+ * uses useMemberBillingStatus directly (gym-management-billing-v1.md) —
+ * the old stub loadPayments()/MemberPaymentsStubDto are retired.
  */
 export function useMemberDetail(memberId: string) {
   const { authFetch } = useAuth()
@@ -40,10 +36,5 @@ export function useMemberDetail(memberId: string) {
     [authFetch, memberId],
   )
 
-  const loadPayments = useCallback(
-    () => authFetch<MemberPaymentsStubDto>(`/members/${memberId}/payments`, { method: 'GET' }),
-    [authFetch, memberId],
-  )
-
-  return { profile, loaded, refreshProfile, loadPtSchedule, loadAttendance, loadPayments }
+  return { profile, loaded, refreshProfile, loadPtSchedule, loadAttendance }
 }

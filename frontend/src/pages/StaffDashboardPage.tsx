@@ -11,7 +11,10 @@ import { useMembers } from '../members/useMembers'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import { useStaffDashboard } from '../dashboard/useStaffDashboard'
+import { useBranchBillingAttention } from '../billing/useBranchBillingAttention'
+import { RecordPaymentModal } from '../billing/RecordPaymentModal'
 import type { MemberAccountStatus, MemberListItemDto } from '../members/types'
+import type { AttentionInvoiceDto } from '../billing/types'
 
 const PAGE_SIZE = 20
 
@@ -36,6 +39,10 @@ const BLOCKED_REASON_LABELS: Record<string, string> = {
   membership_cancelled: 'Membership cancelled',
   account_suspended: 'Account suspended',
   no_membership: 'No membership',
+  // gym-management-billing-v1.md §5.5/§7 — plain-language check-in-blocked reasons for billing gating.
+  subscription_inactive: 'Membership suspended',
+  absent_invoice: 'Payment missed',
+  overdue: 'Payment overdue',
 }
 
 function Pill({ label, styles }: { label: string; styles: string }) {
@@ -80,6 +87,8 @@ export function StaffDashboardPage() {
   )
   const activeBranchId = selectedBranchId ?? defaultBranchId(myBranches)
   const { summary, loaded: dashboardLoaded, error: dashboardError } = useStaffDashboard(activeBranchId)
+  const { invoices: attentionInvoices, loaded: attentionLoaded, refresh: refreshAttention } = useBranchBillingAttention(activeBranchId)
+  const [payingInvoice, setPayingInvoice] = useState<AttentionInvoiceDto | null>(null)
 
   const visibleMembers = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -156,6 +165,25 @@ export function StaffDashboardPage() {
                       {summary.expiringMemberships.map((m) => (
                         <li key={m.memberId}>
                           {m.memberName} — {new Date(m.endDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertCard>
+                ) : null}
+
+                {/* gym-management-billing-v1.md §7: "needs attention" widget — absent/overdue invoices, oldest due first, with a direct record-payment action. */}
+                {attentionLoaded && attentionInvoices.length > 0 ? (
+                  <AlertCard tone="danger" title={`${attentionInvoices.length} payment${attentionInvoices.length === 1 ? '' : 's'} need attention`}>
+                    <ul className="flex flex-col gap-2">
+                      {attentionInvoices.map((invoice) => (
+                        <li key={invoice.id} className="flex items-center justify-between gap-2">
+                          <span>
+                            {invoice.member.name} — <span className="font-mono">${invoice.amount}</span>{' '}
+                            <span className="uppercase">{invoice.status}</span>
+                          </span>
+                          <Button variant="secondary" onClick={() => setPayingInvoice(invoice)}>
+                            Record payment
+                          </Button>
                         </li>
                       ))}
                     </ul>
@@ -249,6 +277,12 @@ export function StaffDashboardPage() {
             <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
           </div>
         </div>
+
+        <RecordPaymentModal
+          invoice={payingInvoice ? { id: payingInvoice.id, amount: payingInvoice.amount, memberName: payingInvoice.member.name } : null}
+          onClose={() => setPayingInvoice(null)}
+          onRecorded={() => void refreshAttention()}
+        />
       </NavShell>
     </div>
   )

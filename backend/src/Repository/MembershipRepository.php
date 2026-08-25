@@ -164,6 +164,21 @@ class MembershipRepository extends ServiceEntityRepository
         return $qb;
     }
 
+    /** gym-management-billing-v1.md §5.1: subscriptions due for the invoice-generation command — ACTIVE and opted into recurring billing (nextBillingDate set) and due. */
+    public function findDueForBilling(\DateTimeImmutable $today): array
+    {
+        return $this->createQueryBuilder('m')
+            ->innerJoin('m.plan', 'p')
+            ->addSelect('p')
+            ->andWhere('m.status = :active')
+            ->andWhere('m.nextBillingDate IS NOT NULL')
+            ->andWhere('m.nextBillingDate <= :today')
+            ->setParameter('active', MembershipStatus::ACTIVE)
+            ->setParameter('today', $today)
+            ->getQuery()
+            ->getResult();
+    }
+
     /** Earliest enrollment on record — DailyMetricAggregator's backfill start bound. */
     public function findEarliestStartDate(): ?\DateTimeImmutable
     {

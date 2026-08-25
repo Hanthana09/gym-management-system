@@ -15,6 +15,10 @@ const BLOCKED_REASON_LABELS: Record<string, string> = {
   membership_cancelled: 'Membership cancelled',
   account_suspended: 'Account suspended',
   no_membership: 'No membership',
+  // gym-management-billing-v1.md §5.5/§7 — plain-language check-in-blocked reasons for billing gating.
+  subscription_inactive: 'Membership suspended',
+  absent_invoice: 'Payment missed',
+  overdue: 'Payment overdue',
 }
 
 function formatTime(iso: string): string {

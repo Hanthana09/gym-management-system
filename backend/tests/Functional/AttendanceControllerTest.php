@@ -192,6 +192,73 @@ final class AttendanceControllerTest extends WebTestCase
         self::assertSame('membership_cancelled', $result['body']['reason']);
     }
 
+    // ---- gym-management-billing-v1.md §5.5 billing-based check-in gating --
+
+    /** A PENDING invoice before its dueDate does not block — the member is current until the due date actually passes. Confirms the default post-enrollment state is eligible. */
+    public function test_given_pending_invoice_before_due_date_when_checkin_then_allowed(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+
+        $result = $this->request('POST', '/members/me/checkin', $member);
+
+        self::assertSame(201, $result['status']);
+    }
+
+    /**
+     * §5.5 rule 3, evaluated live: a PENDING invoice past dueDate blocks
+     * check-in even though it's still formally PENDING (only becomes
+     * ABSENT once the next cycle's generation runs) — not dependent on
+     * that command having run yet.
+     */
+    public function test_given_pending_invoice_past_due_date_when_checkin_then_blocked_overdue(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $this->em->getConnection()->executeStatement(
+            "UPDATE invoice SET due_date = current_date - interval '1 day' WHERE membership_id = (SELECT id FROM membership WHERE member_id = ?)",
+            [(string) $member->getId()],
+        );
+
+        $result = $this->request('POST', '/members/me/checkin', $member);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('checkin_blocked', $result['body']['error']);
+        self::assertSame('overdue', $result['body']['reason']);
+    }
+
+    public function test_given_absent_invoice_on_record_when_checkin_then_blocked_absent_invoice(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $this->em->getConnection()->executeStatement(
+            "UPDATE invoice SET status = 'absent', marked_absent_at = now() WHERE membership_id = (SELECT id FROM membership WHERE member_id = ?)",
+            [(string) $member->getId()],
+        );
+
+        $result = $this->request('POST', '/members/me/checkin', $member);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('absent_invoice', $result['body']['reason']);
+    }
+
+    public function test_given_suspended_subscription_when_checkin_then_blocked_subscription_inactive(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $this->createPlanAndEnroll($owner, $member);
+        $membershipId = $this->request('GET', '/members/me/membership', $member)['body']['membership']['id'];
+        $this->request('PATCH', "/memberships/{$membershipId}/suspend", $owner);
+
+        $result = $this->request('POST', '/members/me/checkin', $member);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('subscription_inactive', $result['body']['reason']);
+    }
+
     public function test_given_no_membership_when_checkin_then_blocked_with_specific_reason(): void
     {
         // A gym (and its primary branch) always exists by the time a real
