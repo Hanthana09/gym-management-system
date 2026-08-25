@@ -55,7 +55,7 @@ export function OwnerFinancialSummaryPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/finance">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Finance</h1>
             {/* functional requirements §15.4/§14.5: absent for single-branch gyms; defaults to "All branches" otherwise. */}

@@ -126,10 +126,24 @@ class MemberProfile
     #[ORM\OneToMany(mappedBy: 'member', targetEntity: Membership::class)]
     private Collection $memberships;
 
+    /**
+     * Inverse side of PtSession::$member, kept in sync from PtSession's
+     * own constructor (`$member->addPtSession($this)`) rather than
+     * Doctrine cascade — same pattern as $memberships above, so
+     * hasCoach() below works against freshly-constructed entities in
+     * unit tests with no EntityManager, exactly like the Voters that
+     * call it expect (AttendanceVoterTest/MemberVoterTest).
+     *
+     * @var Collection<int, PtSession>
+     */
+    #[ORM\OneToMany(mappedBy: 'member', targetEntity: PtSession::class)]
+    private Collection $ptSessions;
+
     public function __construct(User $user)
     {
         $this->user = $user;
         $this->memberships = new ArrayCollection();
+        $this->ptSessions = new ArrayCollection();
     }
 
     public function getUser(): User
@@ -163,16 +177,47 @@ class MemberProfile
         return null;
     }
 
+    /** @internal called from PtSession's own constructor to keep this side in sync. */
+    public function addPtSession(PtSession $session): void
+    {
+        if (!$this->ptSessions->contains($session)) {
+            $this->ptSessions->add($session);
+        }
+    }
+
     /**
-     * Needed by AttendanceVoter (§9.1, copied verbatim in Phase 5), whose
-     * VIEW branch grants a Coach access to "own clients." Personal
-     * Training (Phase 6) hasn't defined the actual coach-client
-     * relationship yet, so this is a placeholder that always denies —
-     * correct behavior for now, since no member has an assigned coach
-     * yet — until Phase 6 gives it a real implementation.
+     * @internal for a throwaway PtSession built only to exercise a Voter
+     * check (e.g. PtSessionController::create()'s permission-check
+     * candidate) and then discarded, never persisted. Left registered on
+     * a real, managed MemberProfile, it would still be sitting in this
+     * collection at the next flush — an unpersisted "new" entity Doctrine
+     * refuses to silently cascade-insert. The candidate's constructor
+     * call to addPtSession() already happened; this undoes exactly that,
+     * restoring the member to the state it was in before the candidate
+     * existed.
+     */
+    public function removePtSession(PtSession $session): void
+    {
+        $this->ptSessions->removeElement($session);
+    }
+
+    /**
+     * Needed by AttendanceVoter/MemberVoter (§9.1), whose VIEW branches
+     * grant a Coach access to "own clients." Personal Training (Phase 6)
+     * defines "own client" as: has this coach ever had a PT session with
+     * this member, any status, ever — the same relationship
+     * PtSessionRepository::countDistinctMembersForCoachAndBranch() already
+     * uses for the Coach dashboard's "assigned members" count, just
+     * evaluated for one specific coach/member pair instead of counted.
      */
     public function hasCoach(User $coach): bool
     {
+        foreach ($this->ptSessions as $session) {
+            if ($session->getCoach()->getUser() === $coach) {
+                return true;
+            }
+        }
+
         return false;
     }
 

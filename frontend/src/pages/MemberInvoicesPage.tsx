@@ -36,7 +36,7 @@ export function MemberInvoicesPage() {
   return (
     <div className="h-dvh">
       <NavShell role="member" title="Gym" navItems={MEMBER_NAV_ITEMS} activeHref="/member/invoices">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-5xl">
           <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">Billing</h1>
 
           {loaded && invoices.length === 0 ? (
@@ -45,7 +45,7 @@ export function MemberInvoicesPage() {
             </Card>
           ) : null}
 
-          <ul className="flex flex-col gap-3">
+          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {invoices.map((invoice) => (
               <li key={invoice.id}>
                 <InvoiceRow invoice={invoice} />

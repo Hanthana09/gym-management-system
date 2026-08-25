@@ -56,7 +56,7 @@ export function OwnerInvoicesPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/invoices">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
           <div className="flex items-center justify-between gap-3">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Billing</h1>
             <div className="w-40">
@@ -83,7 +83,7 @@ export function OwnerInvoicesPage() {
             </Card>
           ) : null}
 
-          <ul className="flex flex-col gap-3">
+          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {visibleInvoices.map((invoice) => (
               <li key={invoice.id}>
                 <Ticket className="flex items-center justify-between gap-3">

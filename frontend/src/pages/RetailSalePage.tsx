@@ -71,35 +71,37 @@ export function RetailSalePage() {
         navItems={isOwner ? OWNER_NAV_ITEMS : STAFF_NAV_ITEMS}
         activeHref={isOwner ? '/owner/sell' : '/staff/sell'}
       >
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Sell</h1>
             {/* Absent for a single-branch gym / single-branch Staff (DESIGN-SYSTEM.md §4.2). */}
             <BranchSwitcher branches={myBranches} value={effectiveBranchId} onChange={setSelectedBranchId} allowAll={isOwner} />
           </div>
 
-          <SaleForm
-            branchId={saleBranchId}
-            products={products}
-            productsLoaded={productsLoaded}
-            members={members}
-            onCreate={createSale}
-          />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+            <SaleForm
+              branchId={saleBranchId}
+              products={products}
+              productsLoaded={productsLoaded}
+              members={members}
+              onCreate={createSale}
+            />
 
-          <div>
-            <h2 className="mb-3 text-base font-semibold text-ink">Recent sales</h2>
-            {salesLoaded && sales.length === 0 ? (
-              <Card>
-                <p className="py-6 text-center text-sm text-ink-soft">No sales in the last 7 days.</p>
-              </Card>
-            ) : null}
-            <ul className="flex flex-col gap-3">
-              {sales.map((sale) => (
-                <li key={sale.id}>
-                  <SaleTicket sale={sale} branches={myBranches} />
-                </li>
-              ))}
-            </ul>
+            <div className="lg:col-span-2">
+              <h2 className="mb-3 text-base font-semibold text-ink">Recent sales</h2>
+              {salesLoaded && sales.length === 0 ? (
+                <Card>
+                  <p className="py-6 text-center text-sm text-ink-soft">No sales in the last 7 days.</p>
+                </Card>
+              ) : null}
+              <ul className="flex flex-col gap-3">
+                {sales.map((sale) => (
+                  <li key={sale.id}>
+                    <SaleTicket sale={sale} branches={myBranches} />
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
       </NavShell>

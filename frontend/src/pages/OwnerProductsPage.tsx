@@ -75,7 +75,7 @@ export function OwnerProductsPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/products">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-6xl">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Products</h1>
             <div className="flex gap-2">
@@ -125,7 +125,7 @@ export function OwnerProductsPage() {
             </Card>
           ) : null}
 
-          <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {pagedProducts.map((product) => (
               <Card key={product.id}>
                 <div className="flex items-start justify-between gap-3">

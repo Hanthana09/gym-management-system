@@ -31,27 +31,29 @@ export function MemberTrackingPage() {
   return (
     <div className="h-dvh">
       <NavShell role="member" title="Gym" navItems={MEMBER_NAV_ITEMS} activeHref="/member/tracking">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <LogWorkoutForm onLog={logWorkout} />
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+          <div className="flex flex-col gap-4 lg:col-span-2">
+            <LogWorkoutForm onLog={logWorkout} />
 
-          <Card>
-            <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
-              Workout history
-            </h2>
-            {!workoutsLoaded ? (
-              <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
-            ) : workouts.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-soft">No workouts logged yet.</p>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {workouts.map((workout) => (
-                  <li key={workout.id}>
-                    <WorkoutRow workout={workout} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+            <Card>
+              <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
+                Workout history
+              </h2>
+              {!workoutsLoaded ? (
+                <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
+              ) : workouts.length === 0 ? (
+                <p className="py-6 text-center text-sm text-ink-soft">No workouts logged yet.</p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {workouts.map((workout) => (
+                    <li key={workout.id}>
+                      <WorkoutRow workout={workout} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
 
           <Card>
             <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
@@ -168,7 +170,7 @@ function LogBodyMetricForm({ onLog }: { onLog: (weightKg: string, bodyFatPct?: s
   }
 
   return (
-    <form className="flex flex-col gap-4 sm:flex-row sm:items-end" onSubmit={handleSubmit}>
+    <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
       <div className="flex-1">
         <Input
           label="Weight (kg)"
@@ -190,7 +192,7 @@ function LogBodyMetricForm({ onLog }: { onLog: (weightKg: string, bodyFatPct?: s
           onChange={(event) => setBodyFatPct(event.target.value)}
         />
       </div>
-      <Button type="submit" variant="secondary" fullWidth className="sm:w-auto" disabled={submitting || !weightKg}>
+      <Button type="submit" variant="secondary" fullWidth disabled={submitting || !weightKg}>
         {submitting ? 'Saving…' : 'Log weight'}
       </Button>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

@@ -49,11 +49,11 @@ class MemberProfileRepository extends ServiceEntityRepository
     /**
      * Roadmap Phase 7: defines "own clients" for a Coach's announcement
      * audience (functional requirements §6.3) — any Member with at least
-     * one PT session (any status) booked with this Coach. This is a
-     * narrower, purpose-built definition for the announcement feature, not
-     * a change to MemberProfile::hasCoach() (still a Phase-6-onward
-     * placeholder for a different, still-undefined "assigned coach"
-     * concept used by AttendanceVoter) — this method doesn't touch that.
+     * one PT session (any status) booked with this Coach. Same underlying
+     * relationship MemberProfile::hasCoach() now checks (per-member,
+     * for AttendanceVoter/MemberVoter) — this is the list form of the
+     * same definition, for callers that need every client at once rather
+     * than a single membership test.
      *
      * @return MemberProfile[]
      */

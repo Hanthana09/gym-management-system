@@ -80,3 +80,18 @@ body {
   --color-ink-soft: #9BA39C;
   --color-line: #333b38;
 }
+
+/*
+ * Chart categorical-series colors (dataviz skill): computed per-datum at
+ * render time (one hue per category, hashed from its id), so they can't
+ * live in the static @theme block above the way ink/paper/line do. Same
+ * "override under :root.dark" mechanism, just parameterized per element:
+ * a chart sets --series-color-light/--series-color-dark inline via style,
+ * this flips which one `color` (and therefore `currentColor`) resolves to.
+ */
+.chart-series {
+  color: var(--series-color-light);
+}
+:root.dark .chart-series {
+  color: var(--series-color-dark);
+}

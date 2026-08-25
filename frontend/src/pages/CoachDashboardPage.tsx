@@ -31,7 +31,7 @@ export function CoachDashboardPage() {
   return (
     <div className="h-dvh">
       <NavShell role="coach" title="Gym" navItems={COACH_NAV_ITEMS} activeHref="/coach/dashboard">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
           <div className="flex items-center gap-3">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Dashboard</h1>
             {/* Absent entirely when this Coach is assigned to only one branch (DESIGN-SYSTEM.md §4.2). */}
@@ -47,20 +47,25 @@ export function CoachDashboardPage() {
               <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
             </Card>
           ) : (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <KpiCard label="Sessions today" value={summary.todaySessions.length} />
-                <KpiCard label="Assigned members" value={summary.assignedMembersCount} />
+            // Same main+secondary split as StaffDashboardPage: today's
+            // session list is the actual work list, so it gets the wider
+            // lg: column; KPIs/utilization stay narrower alongside it.
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+              <div className="flex flex-col gap-4 lg:order-2 lg:col-span-1">
+                <div className="grid grid-cols-2 gap-4">
+                  <KpiCard label="Sessions today" value={summary.todaySessions.length} />
+                  <KpiCard label="Assigned members" value={summary.assignedMembersCount} />
+                </div>
+
+                <ChartCard title="This week's utilization">
+                  <ProgressBar
+                    percentage={summary.weeklyUtilization.percentage}
+                    label={`${summary.weeklyUtilization.sessionsThisWeek} session${summary.weeklyUtilization.sessionsThisWeek === 1 ? '' : 's'} this week`}
+                  />
+                </ChartCard>
               </div>
 
-              <ChartCard title="This week's utilization">
-                <ProgressBar
-                  percentage={summary.weeklyUtilization.percentage}
-                  label={`${summary.weeklyUtilization.sessionsThisWeek} session${summary.weeklyUtilization.sessionsThisWeek === 1 ? '' : 's'} this week`}
-                />
-              </ChartCard>
-
-              <Card>
+              <Card className="lg:order-1 lg:col-span-2">
                 <h2 className="mb-3 text-base font-semibold text-ink">Today's sessions</h2>
                 <ActivityFeed
                   items={summary.todaySessions.map((s) => ({
@@ -71,7 +76,7 @@ export function CoachDashboardPage() {
                   emptyMessage="No sessions scheduled today."
                 />
               </Card>
-            </>
+            </div>
           )}
         </div>
       </NavShell>

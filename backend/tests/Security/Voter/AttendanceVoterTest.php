@@ -5,8 +5,10 @@ namespace App\Tests\Security\Voter;
 use App\Entity\AttendanceLog;
 use App\Entity\Branch;
 use App\Entity\BranchAssignment;
+use App\Entity\CoachProfile;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
+use App\Entity\PtSession;
 use App\Entity\User;
 use App\Enum\CheckInMethod;
 use App\Enum\UserRole;
@@ -222,11 +224,11 @@ final class AttendanceVoterTest extends TestCase
     }
 
     /**
-     * MemberProfile::hasCoach() is a Phase 6 placeholder that always
-     * returns false (no coach-client relationship exists yet) — a Coach
-     * must therefore be denied VIEW on every member for now.
+     * MemberProfile::hasCoach() defines "own client" as having had at
+     * least one PT session with this coach (any status) — with no such
+     * session, a Coach has no relationship to this member at all yet.
      */
-    public function test_coach_cannot_view_a_members_attendance_before_coach_assignment_exists_403(): void
+    public function test_coach_cannot_view_a_members_attendance_before_any_pt_session_exists_403(): void
     {
         $coach = $this->user(UserRole::COACH);
         $memberUser = $this->user(UserRole::MEMBER);
@@ -236,6 +238,28 @@ final class AttendanceVoterTest extends TestCase
         $result = $this->voter->vote($this->tokenFor($coach), $log, [AttendanceVoter::VIEW]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /**
+     * MemberProfile::hasCoach(): a real PT session (constructed entirely
+     * in-memory — PtSession's own constructor keeps MemberProfile's
+     * inverse $ptSessions collection in sync, no EntityManager needed
+     * here, same pattern as Membership/$memberships elsewhere in this
+     * test) is what makes this member this coach's "own client."
+     */
+    public function test_coach_can_view_a_members_attendance_once_they_have_had_a_pt_session_together(): void
+    {
+        $coachUser = $this->user(UserRole::COACH);
+        $coachProfile = new CoachProfile($coachUser);
+        $memberUser = $this->user(UserRole::MEMBER);
+        $profile = new MemberProfile($memberUser);
+        $branch = $this->branch();
+        new PtSession($coachProfile, $profile, $branch, new \DateTimeImmutable('+1 day'), 60);
+        $log = $this->logFor($profile, $branch);
+
+        $result = $this->voter->vote($this->tokenFor($coachUser), $log, [AttendanceVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
     }
 
     /** roadmap Phase 16: Staff's VIEW now requires an actual branch assignment matching the log's branch — a real check, not the Phase 15 gym-wide collapse. */

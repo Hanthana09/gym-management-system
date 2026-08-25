@@ -12,6 +12,7 @@ use App\Gym\GymProvisioningService;
 use App\Repository\AttendanceLogRepository;
 use App\Repository\BranchRepository;
 use App\Repository\CoachProfileRepository;
+use App\Repository\ExpenseRepository;
 use App\Repository\GymRepository;
 use App\Repository\InvoiceRepository;
 use App\Repository\MemberProfileRepository;
@@ -51,6 +52,7 @@ class DashboardController extends AbstractController
         private readonly MembershipRepository $memberships,
         private readonly InvoiceRepository $invoices,
         private readonly PtSessionRepository $ptSessions,
+        private readonly ExpenseRepository $expenses,
         private readonly CoachProfileRepository $coachProfiles,
         private readonly MemberProfileRepository $memberProfiles,
         private readonly NotificationRepository $notifications,
@@ -83,6 +85,21 @@ class DashboardController extends AbstractController
             'todayRevenue' => $this->invoices->sumPaidAmountOnDate($today, $branch),
             'activeMembersCount' => $this->memberships->countWithinTermOnDate($today, $branch),
             'unreadNotificationCount' => $this->notifications->countUnreadForUser($user),
+            // KpiCard sparklines: last 7 days including today, oldest
+            // first — same trailing window OwnerDashboardPage's own
+            // attendance report defaults to. Queried live rather than off
+            // DailyMetricSnapshot (the pre-aggregated read model every
+            // other trend chart in this app reads from) because that
+            // table is populated by a nightly scheduled job — days it
+            // hasn't run for yet would render as flat zero, which is
+            // worse than the extra live queries here.
+            'checkinsTrend' => $this->trend($today, fn ($date) => $this->attendanceLogs->countForDate($date, $branch)),
+            'revenueTrend' => $this->trend($today, fn ($date) => $this->invoices->sumPaidAmountOnDate($date, $branch)),
+            'activeMembersTrend' => $this->trend($today, fn ($date) => $this->memberships->countWithinTermOnDate($date, $branch)),
+            // Month-to-date — a single day's worth of expenses is too
+            // sparse for a meaningful donut chart. Same `branch` filter as
+            // the KPI cards above (null = gym-wide rollup).
+            'expensesByCategory' => $this->expensesByCategory($branch, $today),
         ]);
     }
 
@@ -226,6 +243,38 @@ class DashboardController extends AbstractController
             'status' => $session->getStatus()->value,
             'branch' => ['id' => (string) $session->getBranch()->getId(), 'name' => $session->getBranch()->getName()],
         ];
+    }
+
+    /**
+     * KpiCard sparklines: 7 points, day-6 through today, oldest first.
+     * $metric is called once per day with that day's start-of-day
+     * DateTimeImmutable — same per-day repository methods
+     * DailyMetricAggregator itself uses for backfill, just not persisted.
+     *
+     * @param callable(\DateTimeImmutable): (int|string) $metric
+     *
+     * @return array<int, int|string>
+     */
+    private function trend(\DateTimeImmutable $today, callable $metric): array
+    {
+        $points = [];
+        for ($daysAgo = 6; $daysAgo >= 0; $daysAgo--) {
+            $points[] = $metric($today->modify("-{$daysAgo} days"));
+        }
+
+        return $points;
+    }
+
+    /** @return array<int, array{categoryId: string, categoryName: string, amount: string}> */
+    private function expensesByCategory(?Branch $branch, \DateTimeImmutable $today): array
+    {
+        $monthStart = $today->modify('first day of this month');
+
+        return array_map(fn (array $row) => [
+            'categoryId' => $row['categoryId'],
+            'categoryName' => $row['categoryName'],
+            'amount' => $row['total'],
+        ], $this->expenses->amountByCategoryForDateRange($monthStart, $today->modify('+1 day'), $branch));
     }
 
     /** Owner: unchanged from ReportController's own `resolveReportBranch` — omitted means the gym-wide rollup. @return array{0: ?Branch, 1: ?JsonResponse} */

@@ -40,6 +40,22 @@ export function XIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function ChevronLeftIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M15 6l-6 6 6 6" />
+    </IconBase>
+  )
+}
+
+export function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <IconBase {...props}>
+      <path d="M9 6l6 6-6 6" />
+    </IconBase>
+  )
+}
+
 export function CheckInIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <IconBase {...props}>

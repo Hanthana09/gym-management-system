@@ -92,7 +92,12 @@ export function OwnerDashboardPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/dashboard">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        {/* Wider than the old max-w-3xl single column — a 1440px screen
+            was leaving well over half its width empty. Still one column
+            (the tab content below is inherently sequential, not
+            naturally splittable into a main+secondary pair), just with
+            more breathing room and a wider KPI row. */}
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
           {/* functional requirements §10.1/§14.5: absent for single-branch gyms; defaults to "All branches" otherwise. */}
           <div className="flex items-center justify-end">
             <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />

@@ -90,7 +90,7 @@ export function ExpensesPage() {
         navItems={isOwner ? OWNER_NAV_ITEMS : STAFF_NAV_ITEMS}
         activeHref={isOwner ? '/owner/expenses' : '/staff/expenses'}
       >
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="truncate font-display text-lg font-semibold tracking-wide text-ink uppercase">
@@ -135,7 +135,7 @@ export function ExpensesPage() {
             </Card>
           ) : null}
 
-          <ul className="flex flex-col gap-3">
+          <ul className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {expenses.map((expense) => (
               <li key={expense.id}>
                 <Ticket className="flex flex-col gap-2">

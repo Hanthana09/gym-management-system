@@ -4,7 +4,7 @@ import { NavShell } from '../components/NavShell'
 import { COACH_NAV_ITEMS, MEMBER_NAV_ITEMS, OWNER_NAV_ITEMS, STAFF_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card } from '../components/ui'
 import { CheckInIcon, MembersIcon } from '../components/ui/icons'
-import { ActivityFeed, KpiCard } from '../components/dashboard'
+import { ActivityFeed, ChartCard, ExpenseCategoryDonutChart, KpiCard } from '../components/dashboard'
 import { useAuth } from '../auth/AuthContext'
 import { OwnerInvitationsPanel } from '../invitations/OwnerInvitationsPanel'
 import { MyInvitationsPanel } from '../invitations/MyInvitationsPanel'
@@ -34,62 +34,38 @@ export function HomePage() {
   return (
     <div className="h-dvh">
       <NavShell role={user.role} title="Gym" navItems={NAV_ITEMS[user.role]} activeHref="/">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          {user.role === 'owner' ? (
-            <>
-              <OwnerDashboardWidgets />
-              <OwnerInvitationsPanel />
-              <Link to="/owner/dashboard">
-                <Card className="transition-colors hover:bg-paper-dim">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-ink">Full reports</span>
-                    <span className="text-sm text-ink-soft">Trends, forecast, export →</span>
-                  </div>
-                </Card>
-              </Link>
-              {/* Not in OWNER_NAV_ITEMS (sidebar nav stays unchanged, per this phase's own rule) — these two are otherwise unreachable, so they stay here rather than in the removed shortcut grid. */}
-              <Link to="/owner/import">
-                <Card className="transition-colors hover:bg-paper-dim">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-ink">Bulk Import Members</span>
-                    <span className="text-sm text-ink-soft">Upload CSV →</span>
-                  </div>
-                </Card>
-              </Link>
-              <Link to="/owner/referrals">
-                <Card className="transition-colors hover:bg-paper-dim">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-ink">Referrals</span>
-                    <span className="text-sm text-ink-soft">Your code →</span>
-                  </div>
-                </Card>
-              </Link>
-            </>
-          ) : (
-            <>
-              <MyInvitationsPanel />
-              {user.role === 'member' ? (
-                <>
-                  <Link to="/member/check-in">
-                    <Button fullWidth className="!min-h-16 !text-base">
-                      <CheckInIcon />
-                      Check In
-                    </Button>
-                  </Link>
-                  <MyMembershipCard />
-                  <MemberDashboardWidgets />
-                  <Link to="/member/invoices">
-                    <Card className="transition-colors hover:bg-paper-dim">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-ink">Billing</span>
-                        <span className="text-sm text-ink-soft">Invoice history →</span>
-                      </div>
-                    </Card>
-                  </Link>
-                </>
-              ) : null}
-              {user.role === 'coach' ? (
-                <>
+        {/*
+         * Wide-screen layout (lg:+): main content (KPIs/charts/panels —
+         * whatever's most information-dense for this role) gets 2/3 of
+         * the width, secondary content (quick links, account) gets 1/3,
+         * side by side instead of one long narrow column. Below lg:, both
+         * stack to a single column exactly as before — mobile-first still
+         * holds, this only changes how the extra space on a wide screen
+         * gets used.
+         */}
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+          <div className="flex flex-col gap-4 lg:col-span-2">
+            {user.role === 'owner' ? (
+              <>
+                <OwnerDashboardWidgets />
+                <OwnerInvitationsPanel />
+              </>
+            ) : (
+              <>
+                <MyInvitationsPanel />
+                {user.role === 'member' ? (
+                  <>
+                    <Link to="/member/check-in">
+                      <Button fullWidth className="!min-h-16 !text-base">
+                        <CheckInIcon />
+                        Check In
+                      </Button>
+                    </Link>
+                    <MyMembershipCard />
+                    <MemberDashboardWidgets />
+                  </>
+                ) : null}
+                {user.role === 'coach' ? (
                   <Link to="/coach/sessions">
                     <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
                       <div className="flex items-center justify-between">
@@ -98,46 +74,90 @@ export function HomePage() {
                       </div>
                     </Card>
                   </Link>
-                  <Link to="/coach/refer">
-                    <Card className="transition-colors hover:bg-paper-dim">
+                ) : null}
+                {user.role === 'staff' ? (
+                  <Link to="/staff/members">
+                    <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-ink">Recommend this to another gym</span>
-                        <span className="text-sm text-ink-soft">→</span>
+                        <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                          <MembersIcon />
+                          Members
+                        </span>
+                        <span className="text-sm text-ink-soft">View & check in →</span>
                       </div>
                     </Card>
                   </Link>
-                </>
-              ) : null}
-              {user.role === 'staff' ? (
-                <Link to="/staff/members">
-                  <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
+                ) : null}
+              </>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-4">
+            {user.role === 'owner' ? (
+              <>
+                <Link to="/owner/dashboard">
+                  <Card className="transition-colors hover:bg-paper-dim">
                     <div className="flex items-center justify-between">
-                      <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-                        <MembersIcon />
-                        Members
-                      </span>
-                      <span className="text-sm text-ink-soft">View & check in →</span>
+                      <span className="text-sm font-medium text-ink">Full reports</span>
+                      <span className="text-sm text-ink-soft">Trends, forecast, export →</span>
                     </div>
                   </Card>
                 </Link>
-              ) : null}
-            </>
-          )}
+                {/* Not in OWNER_NAV_ITEMS (sidebar nav stays unchanged, per this phase's own rule) — these two are otherwise unreachable, so they stay here rather than in the removed shortcut grid. */}
+                <Link to="/owner/import">
+                  <Card className="transition-colors hover:bg-paper-dim">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-ink">Bulk Import Members</span>
+                      <span className="text-sm text-ink-soft">Upload CSV →</span>
+                    </div>
+                  </Card>
+                </Link>
+                <Link to="/owner/referrals">
+                  <Card className="transition-colors hover:bg-paper-dim">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-ink">Referrals</span>
+                      <span className="text-sm text-ink-soft">Your code →</span>
+                    </div>
+                  </Card>
+                </Link>
+              </>
+            ) : null}
+            {user.role === 'member' ? (
+              <Link to="/member/invoices">
+                <Card className="transition-colors hover:bg-paper-dim">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-ink">Billing</span>
+                    <span className="text-sm text-ink-soft">Invoice history →</span>
+                  </div>
+                </Card>
+              </Link>
+            ) : null}
+            {user.role === 'coach' ? (
+              <Link to="/coach/refer">
+                <Card className="transition-colors hover:bg-paper-dim">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-ink">Recommend this to another gym</span>
+                    <span className="text-sm text-ink-soft">→</span>
+                  </div>
+                </Card>
+              </Link>
+            ) : null}
 
-          <Card>
-            <div className="text-center">
-              <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Signed in</h1>
-              <p className="mt-1 text-sm text-ink-soft">
-                {user.name} · {user.email ?? user.phone} · <span className="capitalize">{user.role}</span>
-              </p>
-            </div>
-            <div className="mt-4">
-              <NotificationPreferences />
-            </div>
-            <Button className="mt-4" fullWidth variant="secondary" onClick={logout}>
-              Log out
-            </Button>
-          </Card>
+            <Card>
+              <div className="text-center">
+                <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Signed in</h1>
+                <p className="mt-1 text-sm text-ink-soft">
+                  {user.name} · {user.email ?? user.phone} · <span className="capitalize">{user.role}</span>
+                </p>
+              </div>
+              <div className="mt-4">
+                <NotificationPreferences />
+              </div>
+              <Button className="mt-4" fullWidth variant="secondary" onClick={logout}>
+                Log out
+              </Button>
+            </Card>
+          </div>
         </div>
       </NavShell>
     </div>
@@ -158,16 +178,36 @@ function OwnerDashboardWidgets() {
   const { summary, loaded } = useOwnerDashboard(branchId)
 
   return (
-    <Card>
-      <div className="mb-3 flex items-center justify-end">
-        <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
-      </div>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <KpiCard label="Check-ins today" value={!loaded || !summary ? '—' : summary.todayCheckins} />
-        <KpiCard label="Revenue today" value={!loaded || !summary ? '—' : `$${summary.todayRevenue}`} />
-        <KpiCard label="Active members" value={!loaded || !summary ? '—' : summary.activeMembersCount} />
-      </div>
-    </Card>
+    <>
+      <Card>
+        <div className="mb-3 flex items-center justify-end">
+          <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
+        </div>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <KpiCard
+            label="Check-ins today"
+            value={!loaded || !summary ? '—' : summary.todayCheckins}
+            trend={loaded && summary ? summary.checkinsTrend : undefined}
+          />
+          <KpiCard
+            label="Revenue today"
+            value={!loaded || !summary ? '—' : `$${summary.todayRevenue}`}
+            trend={loaded && summary ? summary.revenueTrend : undefined}
+          />
+          <KpiCard
+            label="Active members"
+            value={!loaded || !summary ? '—' : summary.activeMembersCount}
+            trend={loaded && summary ? summary.activeMembersTrend : undefined}
+          />
+        </div>
+      </Card>
+
+      {loaded && summary && summary.expensesByCategory.length > 0 ? (
+        <ChartCard title="Expenses by category">
+          <ExpenseCategoryDonutChart data={summary.expensesByCategory} />
+        </ChartCard>
+      ) : null}
+    </>
   )
 }
 

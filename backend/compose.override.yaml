@@ -44,6 +44,17 @@ services:
       - "5432"
 ###< doctrine/doctrine-bundle ###
 
+  worker:
+    image: ${IMAGES_PREFIX:-}app-php-dev
+    build:
+      context: .
+      target: frankenphp_dev
+    volumes:
+      - ./:/app
+      - /app/var
+    environment:
+      APP_ENV: "${APP_ENV:-dev}"
+
 ###> symfony/mailer ###
   mailer:
     image: axllent/mailpit

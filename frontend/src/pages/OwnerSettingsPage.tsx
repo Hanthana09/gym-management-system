@@ -70,96 +70,110 @@ export function OwnerSettingsPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/settings">
-        <div className="mx-auto flex max-w-lg flex-col gap-4">
-          <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Branding</h1>
-          <p className="text-sm text-ink-soft">
-            Your gym name appears in the top-left corner of every screen. Your logo and accent color appear on
-            the navigation header and on members' digital membership badges. The check-in button and role
-            colors always stay the product's standard colors.
-          </p>
+        <div className="mx-auto max-w-6xl">
+          <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">Settings</h1>
 
-          <Card>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-              <Input
-                label="Gym name"
-                value={effectiveName}
-                onChange={(e) => {
-                  setName(e.target.value)
-                  setSuccess(false)
-                }}
-                required
-              />
-
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+            <div className="flex flex-col gap-4">
               <div>
-                <label htmlFor="logo-upload" className="mb-1.5 block text-sm font-medium text-ink">
-                  Logo
-                </label>
-                <div className="flex items-center gap-3">
-                  {logoPreview || branding.logoUrl ? (
-                    <img
-                      src={logoPreview ?? branding.logoUrl ?? undefined}
-                      alt="Gym logo"
-                      className="h-12 w-12 rounded-md border border-line object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-line text-xs text-ink-soft">
-                      None
-                    </div>
-                  )}
-                  <input
-                    id="logo-upload"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    onChange={(e) => handleLogoChange(e.target.files?.[0] ?? null)}
-                    className="min-h-touch flex-1 text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-paper-dim file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
-                  />
-                </div>
+                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Branding</h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  Your gym name appears in the top-left corner of every screen. Your logo and accent color appear on
+                  the navigation header and on members' digital membership badges. The check-in button and role
+                  colors always stay the product's standard colors.
+                </p>
               </div>
 
-              <div>
-                <label htmlFor="brand-color" className="mb-1.5 block text-sm font-medium text-ink">
-                  Brand color
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    id="brand-color"
-                    type="color"
-                    value={effectiveColor}
+              <Card>
+                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                  <Input
+                    label="Gym name"
+                    value={effectiveName}
                     onChange={(e) => {
-                      setBrandColor(e.target.value)
+                      setName(e.target.value)
                       setSuccess(false)
                     }}
-                    className="h-11 w-16 rounded-md border border-line bg-card p-1"
+                    required
                   />
-                  <span className="font-mono text-sm text-ink-soft uppercase">{effectiveColor}</span>
-                </div>
+
+                  <div>
+                    <label htmlFor="logo-upload" className="mb-1.5 block text-sm font-medium text-ink">
+                      Logo
+                    </label>
+                    <div className="flex items-center gap-3">
+                      {logoPreview || branding.logoUrl ? (
+                        <img
+                          src={logoPreview ?? branding.logoUrl ?? undefined}
+                          alt="Gym logo"
+                          className="h-12 w-12 rounded-md border border-line object-contain"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-line text-xs text-ink-soft">
+                          None
+                        </div>
+                      )}
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => handleLogoChange(e.target.files?.[0] ?? null)}
+                        className="min-h-touch flex-1 text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-paper-dim file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="brand-color" className="mb-1.5 block text-sm font-medium text-ink">
+                      Brand color
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        id="brand-color"
+                        type="color"
+                        value={effectiveColor}
+                        onChange={(e) => {
+                          setBrandColor(e.target.value)
+                          setSuccess(false)
+                        }}
+                        className="h-11 w-16 rounded-md border border-line bg-card p-1"
+                      />
+                      <span className="font-mono text-sm text-ink-soft uppercase">{effectiveColor}</span>
+                    </div>
+                  </div>
+
+                  {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                  {success ? <p className="text-sm text-green-700">Branding saved.</p> : null}
+
+                  <Button type="submit" disabled={submitting || !loaded}>
+                    {submitting ? 'Saving…' : 'Save branding'}
+                  </Button>
+                </form>
+              </Card>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Member ID</h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  Choose how new members get their Member ID: Setly can generate one automatically, or your front
+                  desk can enter your gym's own numbering scheme at registration. This can't be changed once the
+                  gym has any members.
+                </p>
               </div>
+              <MemberIdSettingsSection />
 
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              {success ? <p className="text-sm text-green-700">Branding saved.</p> : null}
-
-              <Button type="submit" disabled={submitting || !loaded}>
-                {submitting ? 'Saving…' : 'Save branding'}
-              </Button>
-            </form>
-          </Card>
-
-          <h1 className="mt-2 font-display text-lg font-semibold tracking-wide text-ink uppercase">Member ID</h1>
-          <p className="text-sm text-ink-soft">
-            Choose how new members get their Member ID: Setly can generate one automatically, or your front desk
-            can enter your gym's own numbering scheme at registration. This can't be changed once the gym has any
-            members.
-          </p>
-          <MemberIdSettingsSection />
-
-          <h1 className="mt-2 font-display text-lg font-semibold tracking-wide text-ink uppercase">
-            WhatsApp notifications
-          </h1>
-          <p className="text-sm text-ink-soft">
-            Set up your gym's WhatsApp Business number so members can opt in to booking and billing updates.
-            This is a gym-wide switch — each member still opts in individually from their own account.
-          </p>
-          <WhatsAppSettingsSection />
+              <div className="mt-2">
+                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">
+                  WhatsApp notifications
+                </h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  Set up your gym's WhatsApp Business number so members can opt in to booking and billing updates.
+                  This is a gym-wide switch — each member still opts in individually from their own account.
+                </p>
+              </div>
+              <WhatsAppSettingsSection />
+            </div>
+          </div>
         </div>
       </NavShell>
     </div>

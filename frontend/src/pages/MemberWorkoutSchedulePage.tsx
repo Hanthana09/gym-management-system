@@ -31,7 +31,7 @@ export function MemberWorkoutSchedulePage() {
   return (
     <div className="h-dvh">
       <NavShell role="member" title="Gym" navItems={MEMBER_NAV_ITEMS} activeHref="/member/workouts">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <div className="mx-auto flex max-w-4xl flex-col gap-4">
           <Card>
             <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">My workout</h2>
 

@@ -18,6 +18,7 @@ import { CoachReferralPage } from './pages/CoachReferralPage'
 import { OwnerDashboardPage } from './pages/OwnerDashboardPage'
 import { MemberCheckInPage } from './pages/MemberCheckInPage'
 import { MemberSessionsPage } from './pages/MemberSessionsPage'
+import { CoachMembersPage } from './pages/CoachMembersPage'
 import { CoachSchedulePage } from './pages/CoachSchedulePage'
 import { MemberTrackingPage } from './pages/MemberTrackingPage'
 import { ComingSoonPage } from './pages/ComingSoonPage'
@@ -235,7 +236,7 @@ function App() {
         path="/coach/members"
         element={
           <RequireAuth>
-            <ComingSoonPage title="Members" activeHref="/coach/members" role="coach" />
+            <CoachMembersPage />
           </RequireAuth>
         }
       />

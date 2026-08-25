@@ -3,12 +3,24 @@ export interface BranchRef {
   name: string
 }
 
+export interface ExpenseCategoryBreakdownEntryDto {
+  categoryId: string
+  categoryName: string
+  amount: string
+}
+
 export interface OwnerDashboardDto {
   branchId: string | null
   todayCheckins: number
   todayRevenue: string
   activeMembersCount: number
   unreadNotificationCount: number
+  /** 7 points, day-6..today, oldest first — same `branchId` filter as the KPI card above it. */
+  checkinsTrend: number[]
+  revenueTrend: string[]
+  activeMembersTrend: number[]
+  /** Month-to-date, scoped by the same `branchId` filter as the KPI cards above. Empty when nothing's been logged this month. */
+  expensesByCategory: ExpenseCategoryBreakdownEntryDto[]
 }
 
 export interface ExpiringMembershipDto {

@@ -58,7 +58,7 @@ export function MemberDetailPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/members">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4">
           {!loaded ? (
             <p className="text-sm text-ink-soft">Loading…</p>
           ) : profile === null ? (
@@ -162,7 +162,8 @@ function ProfileTab({ profile, onSave, onSaved }: ProfileTabProps) {
   return (
     <Card>
       <div className="mb-4 flex flex-col gap-1 text-sm text-ink-soft">
-        <p>{profile.email ?? profile.phone}</p>
+        {profile.email ? <p>{profile.email}</p> : null}
+        {profile.phone ? <p>{profile.phone}</p> : null}
         {profile.membership ? (
           <p>
             {profile.membership.planName} — {profile.membership.status}

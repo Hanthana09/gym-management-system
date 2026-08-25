@@ -34,29 +34,31 @@ export function CoachReferralPage() {
   return (
     <div className="h-dvh">
       <NavShell role="coach" title="Gym" navItems={COACH_NAV_ITEMS} activeHref="/coach/refer">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-6xl">
           <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">
             Recommend This Gym
           </h1>
 
-          <LeadForm onSubmit={submitLead} />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+            <LeadForm onSubmit={submitLead} />
 
-          <Card className="mt-4">
-            <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
-              Your referrals
-            </h2>
-            {!loaded ? (
-              <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
-            ) : leads.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-soft">No referrals submitted yet.</p>
-            ) : (
-              <ul className="flex flex-col gap-2">
-                {leads.map((lead) => (
-                  <LeadRow key={lead.id} lead={lead} />
-                ))}
-              </ul>
-            )}
-          </Card>
+            <Card className="lg:col-span-2">
+              <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
+                Your referrals
+              </h2>
+              {!loaded ? (
+                <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
+              ) : leads.length === 0 ? (
+                <p className="py-6 text-center text-sm text-ink-soft">No referrals submitted yet.</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {leads.map((lead) => (
+                    <LeadRow key={lead.id} lead={lead} />
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
         </div>
       </NavShell>
     </div>

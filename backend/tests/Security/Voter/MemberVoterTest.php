@@ -4,10 +4,12 @@ namespace App\Tests\Security\Voter;
 
 use App\Entity\Branch;
 use App\Entity\BranchAssignment;
+use App\Entity\CoachProfile;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
+use App\Entity\PtSession;
 use App\Entity\User;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
@@ -98,8 +100,8 @@ final class MemberVoterTest extends TestCase
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
     }
 
-    /** MemberProfile::hasCoach() is a still-undefined placeholder (Phase 6) that always returns false. */
-    public function test_coach_cannot_view_a_member_before_coach_assignment_exists_403(): void
+    /** MemberProfile::hasCoach() defines "own client" as having had a PT session with this coach — none exists here yet. */
+    public function test_coach_cannot_view_a_member_before_any_pt_session_exists_403(): void
     {
         $coach = $this->user(UserRole::COACH);
         $profile = new MemberProfile($this->user(UserRole::MEMBER));
@@ -107,6 +109,24 @@ final class MemberVoterTest extends TestCase
         $result = $this->voter->vote($this->tokenFor($coach), $profile, [MemberVoter::VIEW]);
 
         self::assertSame(VoterInterface::ACCESS_DENIED, $result);
+    }
+
+    /**
+     * MemberProfile::hasCoach(): a real PT session, constructed entirely
+     * in-memory (PtSession's constructor keeps MemberProfile's inverse
+     * $ptSessions collection in sync, no EntityManager needed), is what
+     * makes this member this coach's "own client."
+     */
+    public function test_coach_can_view_a_member_they_have_had_a_pt_session_with(): void
+    {
+        $coachUser = $this->user(UserRole::COACH);
+        $coachProfile = new CoachProfile($coachUser);
+        $profile = new MemberProfile($this->user(UserRole::MEMBER));
+        new PtSession($coachProfile, $profile, $this->branch(), new \DateTimeImmutable('+1 day'), 60);
+
+        $result = $this->voter->vote($this->tokenFor($coachUser), $profile, [MemberVoter::VIEW]);
+
+        self::assertSame(VoterInterface::ACCESS_GRANTED, $result);
     }
 
     /** roadmap Phase 16: Staff's VIEW now requires the member's enrolling branch to match one of Staff's own assignments — a real check, not the Phase 15 gym-wide collapse. */

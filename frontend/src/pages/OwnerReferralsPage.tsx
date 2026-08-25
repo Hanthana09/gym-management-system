@@ -44,54 +44,58 @@ export function OwnerReferralsPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/referrals">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-6xl">
         <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">Referrals</h1>
 
-        <Card>
-          <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
-            Your referral code
-          </h2>
-          {!codeLoaded || !code ? (
-            <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
-          ) : (
-            <>
-              <p className="mb-3 text-sm text-ink-soft">
-                Share this with another gym owner — when they sign up and mention it, you both get a free month.
-              </p>
-              <div className="flex items-center justify-between gap-3 rounded-md border-2 border-dashed border-line bg-paper-dim p-4">
-                <span className="font-mono text-2xl font-bold tracking-wide text-ink">{code.code}</span>
-                <Button variant="secondary" onClick={handleCopy}>
-                  {copied ? 'Copied!' : 'Copy'}
-                </Button>
-              </div>
-              <p className="mt-2 text-sm text-ink-soft">
-                Used <span className="font-mono font-semibold text-ink">{code.usageCount}</span>{' '}
-                time{code.usageCount === 1 ? '' : 's'}.
-              </p>
-            </>
-          )}
-        </Card>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+          <div className="flex flex-col gap-4">
+            <Card>
+              <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
+                Your referral code
+              </h2>
+              {!codeLoaded || !code ? (
+                <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
+              ) : (
+                <>
+                  <p className="mb-3 text-sm text-ink-soft">
+                    Share this with another gym owner — when they sign up and mention it, you both get a free month.
+                  </p>
+                  <div className="flex items-center justify-between gap-3 rounded-md border-2 border-dashed border-line bg-paper-dim p-4">
+                    <span className="font-mono text-2xl font-bold tracking-wide text-ink">{code.code}</span>
+                    <Button variant="secondary" onClick={handleCopy}>
+                      {copied ? 'Copied!' : 'Copy'}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-sm text-ink-soft">
+                    Used <span className="font-mono font-semibold text-ink">{code.usageCount}</span>{' '}
+                    time{code.usageCount === 1 ? '' : 's'}.
+                  </p>
+                </>
+              )}
+            </Card>
 
-        <Card className="mt-4">
-          <LeadForm onSubmit={submitLead} />
-        </Card>
+            <Card>
+              <LeadForm onSubmit={submitLead} />
+            </Card>
+          </div>
 
-        <Card className="mt-4">
-          <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
-            Gyms you've referred
-          </h2>
-          {!leadsLoaded ? (
-            <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
-          ) : leads.length === 0 ? (
-            <p className="py-6 text-center text-sm text-ink-soft">No referrals submitted yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {leads.map((lead) => (
-                <LeadRow key={lead.id} lead={lead} />
-              ))}
-            </ul>
-          )}
-        </Card>
+          <Card className="lg:col-span-2">
+            <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
+              Gyms you've referred
+            </h2>
+            {!leadsLoaded ? (
+              <p className="py-6 text-center text-sm text-ink-soft">Loading…</p>
+            ) : leads.length === 0 ? (
+              <p className="py-6 text-center text-sm text-ink-soft">No referrals submitted yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {leads.map((lead) => (
+                  <LeadRow key={lead.id} lead={lead} />
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
         </div>
       </NavShell>
     </div>

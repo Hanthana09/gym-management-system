@@ -2,8 +2,11 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\Branch;
 use App\Entity\CoachProfile;
+use App\Entity\Gym;
 use App\Entity\MemberProfile;
+use App\Entity\PtSession;
 use App\Entity\User;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
@@ -230,13 +233,56 @@ final class MemberControllerTest extends WebTestCase
         self::assertSame('expired', $result['body']['members'][0]['membership']['status']);
     }
 
-    public function test_coach_cannot_list_members_403(): void
+    /**
+     * MemberVoter::VIEW has always declared "Coach: own clients" (architecture
+     * doc §9.1) — MemberProfile::hasCoach() only gained a real implementation
+     * once PT sessions existed to derive it from. A Coach's own /members call
+     * returns just their clients (no coach directory alongside, unlike
+     * Owner/Staff's roster) — this is the Coach "Members" page's data source.
+     */
+    public function test_coach_sees_only_members_who_have_had_a_pt_session_with_them(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner-coach-roster@example.com', UserRole::OWNER);
+        $gym = new Gym("Owner's Gym", '1 Main St', $owner);
+        $this->em->persist($gym);
+        $branch = new Branch($gym, 'Main', '1 Main St', isPrimary: true);
+        $this->em->persist($branch);
+
+        $coachUser = $this->createUser('Carlos Coach', 'coach-roster@example.com', UserRole::COACH);
+        $coachProfile = new CoachProfile($coachUser);
+        $this->em->persist($coachProfile);
+
+        // Deliberately created BEFORE the actual client, so the survivor
+        // isn't at findAllWithUser()'s index 0 — array_filter() preserves
+        // source keys, and a regression there would json_encode() as a
+        // JSON object (which the frontend can't parse as MemberListItemDto[])
+        // while still passing an index-0-only assertion undetected.
+        $this->createApprovedMember('Sam Stranger', 'sam-stranger@example.com');
+
+        $clientUser = $this->createApprovedMember('Mia Client', 'mia-client@example.com');
+        $clientProfile = $this->em->getRepository(MemberProfile::class)->findOneBy(['user' => $clientUser]);
+        $this->em->persist(new PtSession($coachProfile, $clientProfile, $branch, new \DateTimeImmutable('+1 day'), 60));
+        $this->em->flush();
+
+        $result = $this->request('GET', '/members', $coachUser);
+
+        self::assertSame(200, $result['status']);
+        self::assertTrue(array_is_list($result['body']['members']), 'members must decode as a JSON array, not an object with gaps');
+        self::assertCount(1, $result['body']['members']);
+        self::assertSame('Mia Client', $result['body']['members'][0]['name']);
+        // No coach-directory rows — unlike the Owner/Staff roster.
+        self::assertSame('member', $result['body']['members'][0]['role']);
+    }
+
+    public function test_coach_with_no_pt_sessions_yet_sees_an_empty_roster_not_403(): void
     {
         $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $this->createApprovedMember('Mia Member', 'mia-unrelated@example.com');
 
         $result = $this->request('GET', '/members', $coach);
 
-        self::assertSame(403, $result['status']);
+        self::assertSame(200, $result['status']);
+        self::assertSame([], $result['body']['members']);
     }
 
     public function test_member_cannot_list_members_403(): void

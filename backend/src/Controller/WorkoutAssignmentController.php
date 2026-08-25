@@ -48,12 +48,13 @@ class WorkoutAssignmentController extends AbstractController
 
     /**
      * Frontend assign-flow's member picker. Decision: a Coach may assign a
-     * schedule to any current gym member — there's no persisted coach-
-     * roster entity in this codebase (MemberProfile::hasCoach() is a
-     * permanent Phase-6-onward placeholder that always returns false;
-     * findClientsOfCoach() was purpose-built for the announcement-audience
-     * feature only, not a general relationship), and this is a single-gym
-     * product, so the full member roster is the correct picker source.
+     * schedule to any current gym member, not just their existing PT
+     * clients (MemberProfile::hasCoach()/findClientsOfCoach() both define
+     * "client" as "has had a PT session with this coach" — too narrow
+     * here, since assigning a workout is often how a coach-member
+     * relationship *starts*, not something that presupposes one already
+     * exists), and this is a single-gym product, so the full member
+     * roster is the correct picker source.
      */
     #[Route('/workout-assignments/members', name: 'workout_assignments_members', methods: ['GET'])]
     public function members(): JsonResponse

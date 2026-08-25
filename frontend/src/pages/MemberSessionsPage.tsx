@@ -55,17 +55,19 @@ export function MemberSessionsPage() {
   return (
     <div className="h-dvh">
       <NavShell role="member" title="Gym" navItems={MEMBER_NAV_ITEMS} activeHref="/member/sessions">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          {/* functional requirements §14.3: any branch with an assigned Coach, not just the Member's own enrolling branch. Absent for single-branch gyms. */}
-          <BranchSwitcher branches={branches} value={effectiveBranchId} onChange={setSelectedBranchId} />
-          <BookingForm
-            coaches={coaches}
-            coachesLoaded={coachesLoaded}
-            branchId={effectiveBranchId}
-            onRequest={requestSession}
-          />
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+          <div className="flex flex-col gap-4">
+            {/* functional requirements §14.3: any branch with an assigned Coach, not just the Member's own enrolling branch. Absent for single-branch gyms. */}
+            <BranchSwitcher branches={branches} value={effectiveBranchId} onChange={setSelectedBranchId} />
+            <BookingForm
+              coaches={coaches}
+              coachesLoaded={coachesLoaded}
+              branchId={effectiveBranchId}
+              onRequest={requestSession}
+            />
+          </div>
 
-          <Card>
+          <Card className="lg:col-span-2">
             <h2 className="font-display mb-3 text-base font-semibold tracking-wide text-ink uppercase">
               My sessions
             </h2>

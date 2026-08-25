@@ -2,15 +2,19 @@
 
 namespace App\Tests\Functional;
 
+use App\Entity\AttendanceLog;
 use App\Entity\Branch;
 use App\Entity\BranchAssignment;
 use App\Entity\CoachProfile;
+use App\Entity\Expense;
+use App\Entity\ExpenseCategory;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
 use App\Entity\PtSession;
 use App\Entity\User;
+use App\Enum\CheckInMethod;
 use App\Enum\PtSessionStatus;
 use App\Enum\UserRole;
 use App\Enum\UserStatus;
@@ -92,6 +96,72 @@ final class DashboardControllerTest extends WebTestCase
         self::assertSame(200, $result['status']);
         self::assertArrayHasKey('todayCheckins', $result['body']);
         self::assertArrayHasKey('unreadNotificationCount', $result['body']);
+    }
+
+    public function test_owner_dashboard_trends_are_seven_points_ending_in_todays_live_value(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner-trend@example.com', UserRole::OWNER);
+        [, $branch] = $this->gymAndBranch($owner);
+
+        $member = $this->createUser('Mia Member', 'mia-trend@example.com', UserRole::MEMBER);
+        $memberProfile = new MemberProfile($member);
+        $this->em->persist($memberProfile);
+        $this->em->persist(new AttendanceLog($memberProfile, $branch, new \DateTimeImmutable(), CheckInMethod::MANUAL));
+        $this->em->flush();
+
+        $result = $this->get('/owner', $owner);
+
+        self::assertSame(200, $result['status']);
+        foreach (['checkinsTrend', 'revenueTrend', 'activeMembersTrend'] as $key) {
+            self::assertCount(7, $result['body'][$key], "{$key} should have exactly 7 points (day-6..today)");
+        }
+        // Today's check-in landed — the trend's last point (today) must
+        // match the live todayCheckins value, not a stale/zero snapshot.
+        self::assertSame($result['body']['todayCheckins'], end($result['body']['checkinsTrend']));
+    }
+
+    public function test_owner_dashboard_expenses_by_category_covers_month_to_date_only(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner-expenses@example.com', UserRole::OWNER);
+        [$gym, $branch] = $this->gymAndBranch($owner);
+
+        $utilities = new ExpenseCategory($gym, 'Utilities');
+        $rent = new ExpenseCategory($gym, 'Rent');
+        $this->em->persist($utilities);
+        $this->em->persist($rent);
+        $this->em->flush();
+
+        $today = new \DateTimeImmutable('today');
+        $this->em->persist(new Expense($branch, $utilities, '40.00', 'LKR', null, $today, $owner));
+        $this->em->persist(new Expense($branch, $utilities, '20.00', 'LKR', null, $today, $owner));
+        $this->em->persist(new Expense($branch, $rent, '100.00', 'LKR', null, $today, $owner));
+        // Outside the current month — must not be counted.
+        $lastMonth = new \DateTimeImmutable('first day of last month');
+        $this->em->persist(new Expense($branch, $rent, '500.00', 'LKR', null, $lastMonth, $owner));
+        $this->em->flush();
+
+        $result = $this->get('/owner', $owner);
+
+        self::assertSame(200, $result['status']);
+        $byCategory = $result['body']['expensesByCategory'];
+        self::assertCount(2, $byCategory);
+
+        $rentEntry = current(array_filter($byCategory, fn ($e) => $e['categoryName'] === 'Rent'));
+        self::assertSame('100.00', $rentEntry['amount']); // not 600.00 — last month's expense excluded
+
+        $utilitiesEntry = current(array_filter($byCategory, fn ($e) => $e['categoryName'] === 'Utilities'));
+        self::assertSame('60.00', $utilitiesEntry['amount']); // 40 + 20, summed per category
+    }
+
+    public function test_owner_dashboard_expenses_by_category_is_empty_when_none_logged_this_month(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner-no-expenses@example.com', UserRole::OWNER);
+        $this->gymAndBranch($owner);
+
+        $result = $this->get('/owner', $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame([], $result['body']['expensesByCategory']);
     }
 
     public function test_staff_calling_owner_dashboard_403(): void

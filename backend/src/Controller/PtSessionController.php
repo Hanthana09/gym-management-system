@@ -176,8 +176,15 @@ class PtSessionController extends AbstractController
         // architecture doc §9.1's PtSessionVoter::REQUEST expects an actual
         // PtSession subject; this candidate exercises the real check (a
         // Member always passes for themselves, anyone else always fails).
+        // Discarded immediately after — removePtSession() undoes the
+        // constructor's addPtSession($member) side effect (MemberProfile
+        // §9.1's Coach-client relationship), so this throwaway object
+        // doesn't leave $member's real, managed PtSession collection
+        // holding a reference to an entity that's never actually persisted.
         $candidate = new PtSession($coach, $member, $branch, $scheduledAt, $durationMinutes);
-        if (!$this->isGranted(PtSessionVoter::REQUEST, $candidate)) {
+        $isGranted = $this->isGranted(PtSessionVoter::REQUEST, $candidate);
+        $member->removePtSession($candidate);
+        if (!$isGranted) {
             return $this->forbidden();
         }
 

@@ -304,7 +304,8 @@ export function OwnerMembersPage() {
                       )}
                       <Pill label={member.role} styles={ROLE_STYLES[member.role]} />
                     </div>
-                    <p className="mt-0.5 text-sm text-ink-soft">{member.email ?? member.phone}</p>
+                    {member.email ? <p className="mt-0.5 text-sm text-ink-soft">{member.email}</p> : null}
+                    {member.phone ? <p className="mt-0.5 text-sm text-ink-soft">{member.phone}</p> : null}
                     {/* gym-management-member-profile-extension.md §8: memberId shown here, age deliberately not shown at list granularity. */}
                     {member.memberId ? <p className="mt-0.5 font-mono text-xs text-ink-soft">{member.memberId}</p> : null}
                   </div>
@@ -387,14 +388,15 @@ export function OwnerMembersPage() {
             <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
               <thead>
                 <tr className="text-left text-sm text-ink-soft">
-                  <SortableHeader field="name" label="Name" active={sortField === 'name'} indicator={sortIndicator} onClick={toggleSort} className="w-[24%]" />
+                  <SortableHeader field="name" label="Name" active={sortField === 'name'} indicator={sortIndicator} onClick={toggleSort} className="w-[22%]" />
                   {/* gym-management-member-profile-extension.md §8: memberId column — not sortable, it's an identifier not a ranking. */}
-                  <th className="w-[12%] border-b border-line px-4 py-3">Member ID</th>
-                  <SortableHeader field="role" label="Role" active={sortField === 'role'} indicator={sortIndicator} onClick={toggleSort} className="w-[7%]" />
-                  <SortableHeader field="status" label="Status" active={sortField === 'status'} indicator={sortIndicator} onClick={toggleSort} className="w-[8%]" />
-                  <SortableHeader field="plan" label="Plan" active={sortField === 'plan'} indicator={sortIndicator} onClick={toggleSort} className="w-[16%]" />
+                  <th className="w-[10%] border-b border-line px-4 py-3">Member ID</th>
+                  <th className="w-[16%] border-b border-line px-4 py-3">Contact</th>
+                  <SortableHeader field="role" label="Role" active={sortField === 'role'} indicator={sortIndicator} onClick={toggleSort} className="w-[6%]" />
+                  <SortableHeader field="status" label="Status" active={sortField === 'status'} indicator={sortIndicator} onClick={toggleSort} className="w-[7%]" />
+                  <SortableHeader field="plan" label="Plan" active={sortField === 'plan'} indicator={sortIndicator} onClick={toggleSort} className="w-[14%]" />
                   {/* Widest column on purpose — this is the only one holding two buttons (or, mid-confirm, "Suspend {name}?" text plus two more), not just a badge or a date. */}
-                  <th className="w-[33%] border-b border-line px-4 py-3">Actions</th>
+                  <th className="w-[25%] border-b border-line px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -414,6 +416,11 @@ export function OwnerMembersPage() {
                       )}
                     </td>
                     <td className="border-b border-line/60 px-4 py-3 font-mono text-xs whitespace-nowrap text-ink-soft">{member.memberId ?? '—'}</td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">
+                      {member.email ? <p>{member.email}</p> : null}
+                      {member.phone ? <p>{member.phone}</p> : null}
+                      {!member.email && !member.phone ? '—' : null}
+                    </td>
                     <td className="border-b border-line/60 px-4 py-3">
                       <Pill label={member.role} styles={ROLE_STYLES[member.role]} />
                     </td>

@@ -1,0 +1,22 @@
+{
+  // VS Code's bundled "PHP Language Features" extension registers its own
+  // (file-local, non-project-aware) definition provider. Left enabled
+  // alongside Intelephense, it shadows Intelephense's provider often enough
+  // that Ctrl+click / Go to Definition silently fails to resolve
+  // project classes/methods. Disabling it lets Intelephense's provider
+  // (which actually indexes backend/src via composer.json's PSR-4 map) win.
+  "php.suggest.basic": false,
+  "php.validate.enable": false,
+
+  "intelephense.environment.phpVersion": "8.3.33",
+  "intelephense.files.exclude": [
+    "**/.git/**",
+    "**/.svn/**",
+    "**/.hg/**",
+    "**/CVS/**",
+    "**/.DS_Store/**",
+    "**/node_modules/**",
+    "**/backend/var/**",
+    "**/.phpunit.cache/**"
+  ]
+}

@@ -89,7 +89,7 @@ export function OwnerBranchesPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/branches">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-6xl">
           <div className="mb-4 flex items-center justify-between">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Branches</h1>
             <Button onClick={() => setEditingBranch('new')}>New branch</Button>
@@ -116,7 +116,7 @@ export function OwnerBranchesPage() {
             </Card>
           ) : null}
 
-          <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {pagedBranches.map((branch) => (
               <Card key={branch.id}>
                 <div className="flex items-start justify-between gap-3">

@@ -125,7 +125,7 @@ export function OwnerBulkImportPage() {
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/import">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto max-w-4xl">
           <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">
             Bulk import members
           </h1>
@@ -207,7 +207,7 @@ function MappingPreview({ parsed, mapping, onChangeMapping, onConfirm, onCancel,
         before importing.
       </p>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {parsed.headers.map((header, index) => {
           const samples = parsed.rows
             .slice(0, 3)

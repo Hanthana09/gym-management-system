@@ -124,66 +124,75 @@ export function StaffDashboardPage() {
   return (
     <div className="h-dvh">
       <NavShell role="staff" title="Gym" navItems={STAFF_NAV_ITEMS} activeHref="/staff/members">
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
-            {/* Absent entirely when Staff is assigned to only one branch (DESIGN-SYSTEM.md §4.2). */}
-            <BranchSwitcher branches={myBranches} value={activeBranchId} onChange={setSelectedBranchId} />
+        {/* Wider than the old single max-w-2xl column: the member list
+            (Staff's actual working area) gets the wider lg: column so
+            more of each row's info/actions fit without truncating, while
+            the summary widgets stay narrower alongside it instead of
+            pushing the list far down the page. Both stack to one column
+            below lg:, unchanged from before. */}
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Members</h1>
+              {/* Absent entirely when Staff is assigned to only one branch (DESIGN-SYSTEM.md §4.2). */}
+              <BranchSwitcher branches={myBranches} value={activeBranchId} onChange={setSelectedBranchId} />
+            </div>
+
+            {/* gym-management-dashboard-redesign.md Phase 4: check-ins/expiring-memberships/activity widgets, scoped to whichever branch is selected above — re-fetch on branch change via useStaffDashboard's own dependency on activeBranchId. */}
+            {dashboardError ? (
+              <AlertCard tone="danger" title="Couldn't load dashboard">
+                {dashboardError}
+              </AlertCard>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <KpiCard label="Check-ins today" value={!dashboardLoaded || !summary ? '—' : summary.todayCheckins} />
+                  <KpiCard label="Expiring soon" value={!dashboardLoaded || !summary ? '—' : summary.expiringMembershipsCount} hint="Next 7 days" />
+                </div>
+
+                {dashboardLoaded && summary && summary.expiringMembershipsCount > 0 ? (
+                  <AlertCard tone="warning" title={`${summary.expiringMembershipsCount} membership${summary.expiringMembershipsCount === 1 ? '' : 's'} expiring soon`}>
+                    <ul className="list-inside list-disc">
+                      {summary.expiringMemberships.map((m) => (
+                        <li key={m.memberId}>
+                          {m.memberName} — {new Date(m.endDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertCard>
+                ) : null}
+
+                {dashboardLoaded && summary ? (
+                  <Card>
+                    <h2 className="mb-3 text-base font-semibold text-ink">Today's check-ins</h2>
+                    <ActivityFeed
+                      items={summary.recentActivity.map((a) => ({ id: a.id, label: a.memberName, timestamp: a.checkInAt }))}
+                      emptyMessage="No check-ins yet today."
+                    />
+                  </Card>
+                ) : null}
+              </>
+            )}
           </div>
 
-          {/* gym-management-dashboard-redesign.md Phase 4: check-ins/expiring-memberships/activity widgets, scoped to whichever branch is selected above — re-fetch on branch change via useStaffDashboard's own dependency on activeBranchId. */}
-          {dashboardError ? (
-            <AlertCard tone="danger" title="Couldn't load dashboard">
-              {dashboardError}
-            </AlertCard>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <KpiCard label="Check-ins today" value={!dashboardLoaded || !summary ? '—' : summary.todayCheckins} />
-                <KpiCard label="Expiring soon" value={!dashboardLoaded || !summary ? '—' : summary.expiringMembershipsCount} hint="Next 7 days" />
-              </div>
+          <div className="flex flex-col gap-4 lg:col-span-2">
+            <Input
+              label="Search"
+              placeholder="Search by name, email, or phone"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
 
-              {dashboardLoaded && summary && summary.expiringMembershipsCount > 0 ? (
-                <AlertCard tone="warning" title={`${summary.expiringMembershipsCount} membership${summary.expiringMembershipsCount === 1 ? '' : 's'} expiring soon`}>
-                  <ul className="list-inside list-disc">
-                    {summary.expiringMemberships.map((m) => (
-                      <li key={m.memberId}>
-                        {m.memberName} — {new Date(m.endDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                      </li>
-                    ))}
-                  </ul>
-                </AlertCard>
-              ) : null}
+            {loaded && visibleMembers.length === 0 ? (
+              <Card>
+                <p className="py-6 text-center text-sm text-ink-soft">
+                  {members.length === 0 ? 'No members yet.' : 'No one matches this search.'}
+                </p>
+              </Card>
+            ) : null}
 
-              {dashboardLoaded && summary ? (
-                <Card>
-                  <h2 className="mb-3 text-base font-semibold text-ink">Today's check-ins</h2>
-                  <ActivityFeed
-                    items={summary.recentActivity.map((a) => ({ id: a.id, label: a.memberName, timestamp: a.checkInAt }))}
-                    emptyMessage="No check-ins yet today."
-                  />
-                </Card>
-              ) : null}
-            </>
-          )}
-
-          <Input
-            label="Search"
-            placeholder="Search by name, email, or phone"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-
-          {loaded && visibleMembers.length === 0 ? (
-            <Card>
-              <p className="py-6 text-center text-sm text-ink-soft">
-                {members.length === 0 ? 'No members yet.' : 'No one matches this search.'}
-              </p>
-            </Card>
-          ) : null}
-
-          <div className="flex flex-col gap-3">
-            {pagedMembers.map((member) => {
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {pagedMembers.map((member) => {
               const state = rowState[member.id]
 
               return (
@@ -235,9 +244,10 @@ export function StaffDashboardPage() {
                 </Card>
               )
             })}
-          </div>
+            </div>
 
-          <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
+            <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
+          </div>
         </div>
       </NavShell>
     </div>

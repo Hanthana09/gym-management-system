@@ -60,6 +60,17 @@ use Symfony\Component\Routing\Attribute\Route;
  * entries are left unfiltered — MemberVoter doesn't govern CoachProfile
  * subjects, and this phase's retrofit checklist doesn't ask for a
  * separate Staff-vs-coach-roster branch rule.
+ *
+ * Coach members page: list() now also accepts Coach — architecture doc
+ * §9.1's MemberVoter::VIEW already declared "Coach: own clients," it just
+ * had no path to reach this endpoint before MemberProfile::hasCoach()
+ * gained a real implementation (see that entity's own docblock). The
+ * existing per-row `isGranted(MemberVoter::VIEW, ...)` filter below
+ * needed no change at all — it already expressed exactly this rule, only
+ * the role gate was stopping a Coach from reaching it. The coach-roster
+ * half (serializeCoach() below) is skipped for a Coach caller: a Coach's
+ * own "Members" page is their client list, not the staff directory
+ * Owner/Staff see theirs alongside.
  */
 #[Route('/api')]
 class MemberController extends AbstractController
@@ -158,7 +169,7 @@ class MemberController extends AbstractController
             return $this->unauthenticated();
         }
 
-        if ($user->getRole() !== UserRole::OWNER && $user->getRole() !== UserRole::STAFF) {
+        if (!in_array($user->getRole(), [UserRole::OWNER, UserRole::STAFF, UserRole::COACH], true)) {
             return $this->forbidden();
         }
 
@@ -167,13 +178,29 @@ class MemberController extends AbstractController
             fn (MemberProfile $profile) => $this->isGranted(MemberVoter::VIEW, $profile),
         );
 
-        $roster = [
-            ...array_map(fn (MemberProfile $profile) => $this->serializeMember($profile), $visibleMembers),
-            ...array_map(
-                fn (CoachProfile $profile) => $this->serializeCoach($profile),
-                $this->coachProfiles->findAllWithUser(),
-            ),
-        ];
+        // array_filter() preserves the source array's keys, so a Coach's
+        // filtered-down roster (most of the gym's members don't survive
+        // "was there ever a PT session with this coach") ends up with
+        // gaps — e.g. keys 103, 108, 111. json_encode() serializes a
+        // non-sequential-keyed array as a JSON *object*, not an array,
+        // which the frontend's MemberListItemDto[] can't consume. The
+        // spread here reindexes to a clean 0..n-1 array, same as the
+        // Owner/Staff branch below already gets for free from its own
+        // [...a, ...b] spread.
+        $roster = [...array_map(fn (MemberProfile $profile) => $this->serializeMember($profile), $visibleMembers)];
+
+        // Owner/Staff get the coach directory alongside the member roster
+        // (one place to see everyone at the gym, per this method's own
+        // docblock); a Coach's own call is their client list only.
+        if ($user->getRole() !== UserRole::COACH) {
+            $roster = [
+                ...$roster,
+                ...array_map(
+                    fn (CoachProfile $profile) => $this->serializeCoach($profile),
+                    $this->coachProfiles->findAllWithUser(),
+                ),
+            ];
+        }
 
         return new JsonResponse(['members' => $roster]);
     }

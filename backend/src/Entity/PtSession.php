@@ -51,7 +51,7 @@ class PtSession
     #[ORM\JoinColumn(name: 'coach_id', referencedColumnName: 'user_id', nullable: false)]
     private CoachProfile $coach;
 
-    #[ORM\ManyToOne(targetEntity: MemberProfile::class)]
+    #[ORM\ManyToOne(targetEntity: MemberProfile::class, inversedBy: 'ptSessions')]
     #[ORM\JoinColumn(name: 'member_id', referencedColumnName: 'user_id', nullable: false)]
     private MemberProfile $member;
 
@@ -89,6 +89,7 @@ class PtSession
         $this->durationMinutes = $durationMinutes;
         $this->status = PtSessionStatus::PENDING;
         $this->createdAt = new \DateTimeImmutable();
+        $member->addPtSession($this);
     }
 
     public function getId(): Uuid

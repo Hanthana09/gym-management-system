@@ -67,6 +67,28 @@ class ExpenseRepository extends ServiceEntityRepository
         return $byCategory;
     }
 
+    /**
+     * Owner dashboard donut chart: per-category totals over an arbitrary
+     * [from, toExclusive) range, category name included directly (one
+     * query, no N+1 lookup against ExpenseCategoryRepository per row).
+     *
+     * @return array<int, array{categoryId: string, categoryName: string, total: string}>
+     */
+    public function amountByCategoryForDateRange(\DateTimeImmutable $from, \DateTimeImmutable $toExclusive, ?Branch $branch = null): array
+    {
+        $qb = $this->withBranch($this->createQueryBuilder('e'), $branch)
+            ->select('IDENTITY(e.category) as categoryId', 'c.name as categoryName', 'SUM(e.amount) as total')
+            ->join('e.category', 'c')
+            ->andWhere('e.expenseDate >= :from')
+            ->andWhere('e.expenseDate < :to')
+            ->setParameter('from', $from->format('Y-m-d'))
+            ->setParameter('to', $toExclusive->format('Y-m-d'))
+            ->groupBy('e.category', 'c.name')
+            ->orderBy('total', 'DESC');
+
+        return $qb->getQuery()->getResult();
+    }
+
     /** FinancialSummaryController: total expenses over an arbitrary [from, toExclusive) range. */
     public function sumAmountForDateRange(\DateTimeImmutable $from, \DateTimeImmutable $toExclusive, ?Branch $branch = null): string
     {
