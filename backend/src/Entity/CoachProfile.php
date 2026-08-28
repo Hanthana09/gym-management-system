@@ -24,11 +24,14 @@ use Doctrine\ORM\Mapping as ORM;
  * in this codebase ever read or wrote it before now). Architecture doc
  * §6.13's note explains why: it's "the minimal use of an existing,
  * otherwise-unused field" for FinancialSummaryController's read-time PT
- * revenue estimate. No setter existed anywhere to test against, so
- * `setHourlyRate()` is added alongside the getter — still no dedicated
- * "edit coach profile" endpoint exists in this codebase, so it's set
- * directly (tests aside) only where a future coach-profile-management
- * phase would naturally add one.
+ * revenue estimate.
+ *
+ * gym-management-coach-management.md: the "future coach-profile-
+ * management phase" the note above anticipated. `specialty`/`bio` (both
+ * present since Phase 2, both previously accessor-less) are now wired up
+ * alongside `hourlyRate`, all three editable via PATCH /coaches/:id
+ * (CoachController → CoachService). No schema change — every column
+ * already existed.
  */
 #[ApiResource(routePrefix: '/api/v1', operations: [])]
 #[ORM\Entity(repositoryClass: CoachProfileRepository::class)]
@@ -56,6 +59,26 @@ class CoachProfile
     public function getUser(): User
     {
         return $this->user;
+    }
+
+    public function getSpecialty(): ?string
+    {
+        return $this->specialty;
+    }
+
+    public function setSpecialty(?string $specialty): void
+    {
+        $this->specialty = $specialty;
+    }
+
+    public function getBio(): ?string
+    {
+        return $this->bio;
+    }
+
+    public function setBio(?string $bio): void
+    {
+        $this->bio = $bio;
     }
 
     public function getHourlyRate(): ?string

@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import { useMembers } from '../members/useMembers'
 import { useCreateMember } from '../members/useCreateMember'
+import { AddCoachModal } from '../coaches/AddCoachModal'
 import {
   EMPTY_MEMBER_PROFILE_FORM_VALUES,
   MemberProfileForm,
@@ -115,6 +116,7 @@ export function OwnerMembersPage() {
   const { enroll } = useEnrollMember()
   const { branches } = useBranches()
   const [addingMember, setAddingMember] = useState(false)
+  const [addingCoach, setAddingCoach] = useState(false)
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
   const [sortField, setSortField] = useState<SortField>('name')
@@ -226,9 +228,17 @@ export function OwnerMembersPage() {
               <BranchSwitcher branches={branches} value={selectedBranchId} onChange={setSelectedBranchId} allowAll />
             </div>
             {/* gym-management-member-profile-extension.md §4/§8: walk-in creation, a new path alongside the existing invite flow. Owner + Staff (follow-up feature widened this from Owner-only — front-desk registration is typically a Staff task). */}
-            {user?.role === 'owner' || user?.role === 'staff' ? (
-              <Button onClick={() => setAddingMember(true)}>Add Member</Button>
-            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {user?.role === 'owner' || user?.role === 'staff' ? (
+                <Button onClick={() => setAddingMember(true)}>Add Member</Button>
+              ) : null}
+              {/* gym-management-coach-management.md: direct coach creation, Owner-only. Sits alongside the invite flow, not replacing it. */}
+              {user?.role === 'owner' ? (
+                <Button variant="secondary" onClick={() => setAddingCoach(true)}>
+                  Add coach
+                </Button>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -291,11 +301,13 @@ export function OwnerMembersPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      {member.role === 'member' ? (
+                      {member.role === 'member' || (member.role === 'coach' && user?.role === 'owner') ? (
                         <button
                           type="button"
                           className="text-sm font-semibold text-ink underline-offset-2 hover:underline"
-                          onClick={() => navigate(`/owner/members/${member.id}`)}
+                          onClick={() =>
+                            navigate(member.role === 'coach' ? `/owner/coaches/${member.id}` : `/owner/members/${member.id}`)
+                          }
                         >
                           {member.name}
                         </button>
@@ -403,11 +415,13 @@ export function OwnerMembersPage() {
                 {pagedMembers.map((member) => (
                   <tr key={member.id} className="text-sm text-ink">
                     <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
-                      {member.role === 'member' ? (
+                      {member.role === 'member' || (member.role === 'coach' && user?.role === 'owner') ? (
                         <button
                           type="button"
                           className="underline-offset-2 hover:underline"
-                          onClick={() => navigate(`/owner/members/${member.id}`)}
+                          onClick={() =>
+                            navigate(member.role === 'coach' ? `/owner/coaches/${member.id}` : `/owner/members/${member.id}`)
+                          }
                         >
                           {member.name}
                         </button>
@@ -514,6 +528,8 @@ export function OwnerMembersPage() {
         />
 
         <AddMemberModal open={addingMember} onClose={() => setAddingMember(false)} onCreated={refresh} />
+
+        <AddCoachModal open={addingCoach} onClose={() => setAddingCoach(false)} onCreated={refresh} />
       </NavShell>
     </div>
   )

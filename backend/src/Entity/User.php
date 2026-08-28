@@ -128,14 +128,38 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         return $this->name;
     }
 
+    /**
+     * gym-management-coach-management.md: identity fields became editable
+     * for the first time here (via PATCH /coaches/:id). No setter existed
+     * before because every earlier phase only ever set name/email/phone
+     * at construction (invite acceptance, walk-in creation) — editing an
+     * existing account's identity is new with coach management. The
+     * member-side equivalent stayed deliberately deferred
+     * (gym-management-member-profile-extension.md §4).
+     */
+    public function setName(string $name): void
+    {
+        $this->name = $name;
+    }
+
     public function getEmail(): ?string
     {
         return $this->email;
     }
 
+    public function setEmail(?string $email): void
+    {
+        $this->email = $email;
+    }
+
     public function getPhone(): ?string
     {
         return $this->phone;
+    }
+
+    public function setPhone(?string $phone): void
+    {
+        $this->phone = $phone;
     }
 
     public function getPasswordHash(): ?string
