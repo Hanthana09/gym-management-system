@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react'
-import { NavShell } from '../components/NavShell'
-import { OWNER_NAV_ITEMS } from '../components/nav-items'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Button, Card, Input, Pagination, Select, Tabs, Ticket } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { usePagination } from '../lib/usePagination'
@@ -12,6 +10,11 @@ import { useRetention } from '../analytics/useRetention'
 import { useExportReport } from '../analytics/useExportReport'
 import { AttendanceTrendChart } from '../analytics/AttendanceTrendChart'
 import { RevenueForecastChart } from '../analytics/RevenueForecastChart'
+// Recharts is heavy (~500kB); code-split it out of the initial mobile
+// bundle — the charts sit below the fold on a phone anyway.
+const AnalyticsChartsGrid = lazy(() =>
+  import('../analytics/AnalyticsChartsGrid').then((m) => ({ default: m.AnalyticsChartsGrid })),
+)
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher } from '../branches/BranchSwitcher'
 import type { ExportFormat, ExportReportType } from '../analytics/types'
@@ -49,9 +52,10 @@ const DASHBOARD_TABS: { value: DashboardTab; label: string }[] = [
  * roadmap Phase 5 (live counter + date-range report) extended in Phase 11
  * with the aggregated trend/forecast/retention/export views — "Dashboard:
  * live counters alongside the aggregated trend/forecast views," per the
- * roadmap, rather than a separate screen. Every number and chart below
- * REPORT_VIEW-gates through ReportVoter server-side; this page just
- * renders what the API already scoped to the Owner's own gym.
+ * roadmap. Rendered as the Owner's home screen (HomePage) — there is no
+ * separate Dashboard route. Every number and chart below REPORT_VIEW-gates
+ * through ReportVoter server-side; this just renders what the API already
+ * scoped to the Owner's own gym.
  *
  * The three "today" stat cards stay always visible above the tabs — the
  * roadmap's own framing is "live counters alongside the aggregated
@@ -60,7 +64,7 @@ const DASHBOARD_TABS: { value: DashboardTab; label: string }[] = [
  * was a long vertical stack of unrelated sections; tabs group each into
  * its own view instead.
  */
-export function OwnerDashboardPage() {
+export function OwnerReportsDashboard() {
   const { branches } = useBranches()
   // functional requirements §14.5: reports default to the gym-wide rollup
   // (null), not a single branch — the opposite default from front-desk
@@ -90,105 +94,106 @@ export function OwnerDashboardPage() {
   }, [from, to, branchId, setEntriesPage])
 
   return (
-    <div className="h-dvh">
-      <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/dashboard">
-        {/* Wider than the old max-w-3xl single column — a 1440px screen
-            was leaving well over half its width empty. Still one column
-            (the tab content below is inherently sequential, not
-            naturally splittable into a main+secondary pair), just with
-            more breathing room and a wider KPI row. */}
-        <div className="mx-auto flex max-w-6xl flex-col gap-4">
-          {/* functional requirements §10.1/§14.5: absent for single-branch gyms; defaults to "All branches" otherwise. */}
-          <div className="flex items-center justify-end">
-            <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
+    <div className="mx-auto flex max-w-6xl flex-col gap-4">
+      {/* functional requirements §10.1/§14.5: absent for single-branch gyms; defaults to "All branches" otherwise. */}
+      <div className="flex items-center justify-end">
+        <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
+      </div>
+
+      {/* functional requirements §10.1: today's numbers, live. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Card>
+          <p className="text-sm text-ink-soft">Check-ins today</p>
+          <p className="mt-1 font-display text-4xl font-bold text-ink tabular-nums">
+            {liveCount === null ? '—' : liveCount}
+          </p>
+        </Card>
+        <Card>
+          <p className="text-sm text-ink-soft">Revenue today</p>
+          <p className="mt-1 font-display text-4xl font-bold text-ink tabular-nums">
+            {summary === null ? '—' : `$${summary.todayRevenue}`}
+          </p>
+        </Card>
+        <Card>
+          <p className="text-sm text-ink-soft">Active members</p>
+          <p className="mt-1 font-display text-4xl font-bold text-ink tabular-nums">
+            {summary === null ? '—' : summary.activeMembersCount}
+          </p>
+        </Card>
+      </div>
+
+      {/*
+       * roadmap Phase 11 (Owner analytics slice): six chart widgets, always
+       * visible above the drill-down tabs. Branch-scoped charts (peak hours,
+       * membership health) follow the BranchSwitcher above; the rest are
+       * hub-wide by design.
+       */}
+      <Suspense fallback={<div className="h-72 animate-pulse rounded-xl bg-paper-dim" />}>
+        <AnalyticsChartsGrid branchId={branchId} branchCount={branches.length} />
+      </Suspense>
+
+      <Tabs items={DASHBOARD_TABS} value={tab} onChange={(value) => setTab(value as DashboardTab)} />
+
+      {tab === 'attendance' ? (
+        <Card>
+          <h2 className="mb-3 text-base font-semibold text-ink">Attendance report</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
 
-          {/* functional requirements §10.1: today's numbers, live. */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Card>
-              <p className="text-sm text-ink-soft">Check-ins today</p>
-              <p className="mt-1 font-display text-4xl font-bold text-ink tabular-nums">
-                {liveCount === null ? '—' : liveCount}
-              </p>
-            </Card>
-            <Card>
-              <p className="text-sm text-ink-soft">Revenue today</p>
-              <p className="mt-1 font-display text-4xl font-bold text-ink tabular-nums">
-                {summary === null ? '—' : `$${summary.todayRevenue}`}
-              </p>
-            </Card>
-            <Card>
-              <p className="text-sm text-ink-soft">Active members</p>
-              <p className="mt-1 font-display text-4xl font-bold text-ink tabular-nums">
-                {summary === null ? '—' : summary.activeMembersCount}
-              </p>
-            </Card>
-          </div>
-
-          <Tabs items={DASHBOARD_TABS} value={tab} onChange={(value) => setTab(value as DashboardTab)} />
-
-          {tab === 'attendance' ? (
-            <Card>
-              <h2 className="mb-3 text-base font-semibold text-ink">Attendance report</h2>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Input label="From" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-                <Input label="To" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          {loading ? (
+            <p className="mt-4 text-sm text-ink-soft">Loading…</p>
+          ) : (
+            <>
+              {/* functional requirements §10.2: "check-in counts per day... as a chart." */}
+              <div className="mt-4">
+                <AttendanceTrendChart data={dailyCounts} />
               </div>
 
-              {loading ? (
-                <p className="mt-4 text-sm text-ink-soft">Loading…</p>
+              {entries.length === 0 ? (
+                <p className="mt-4 text-sm text-ink-soft">No check-ins in this range.</p>
               ) : (
                 <>
-                  {/* functional requirements §10.2: "check-in counts per day... as a chart." */}
+                  <ul className="mt-4 flex flex-col gap-3">
+                    {pagedEntries.map((entry) => (
+                      <li key={entry.id}>
+                        <Ticket className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-ink">{entry.memberName}</span>
+                          <span className="font-mono text-xs text-ink-soft">
+                            {new Date(entry.checkInAt).toLocaleString([], {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </Ticket>
+                      </li>
+                    ))}
+                  </ul>
                   <div className="mt-4">
-                    <AttendanceTrendChart data={dailyCounts} />
+                    <Pagination
+                      page={entriesPage}
+                      pageCount={entriesPageCount}
+                      rangeStart={entriesRangeStart}
+                      rangeEnd={entriesRangeEnd}
+                      total={entriesTotal}
+                      onChange={setEntriesPage}
+                    />
                   </div>
-
-                  {entries.length === 0 ? (
-                    <p className="mt-4 text-sm text-ink-soft">No check-ins in this range.</p>
-                  ) : (
-                    <>
-                      <ul className="mt-4 flex flex-col gap-3">
-                        {pagedEntries.map((entry) => (
-                          <li key={entry.id}>
-                            <Ticket className="flex items-center justify-between text-sm">
-                              <span className="font-medium text-ink">{entry.memberName}</span>
-                              <span className="font-mono text-xs text-ink-soft">
-                                {new Date(entry.checkInAt).toLocaleString([], {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                })}
-                              </span>
-                            </Ticket>
-                          </li>
-                        ))}
-                      </ul>
-                      <div className="mt-4">
-                        <Pagination
-                          page={entriesPage}
-                          pageCount={entriesPageCount}
-                          rangeStart={entriesRangeStart}
-                          rangeEnd={entriesRangeEnd}
-                          total={entriesTotal}
-                          onChange={setEntriesPage}
-                        />
-                      </div>
-                    </>
-                  )}
                 </>
               )}
-            </Card>
-          ) : tab === 'revenue' ? (
-            <RevenueForecastCard branchId={branchId} />
-          ) : tab === 'retention' ? (
-            <RetentionCard branchId={branchId} />
-          ) : (
-            <ExportCard from={from} to={to} branchId={branchId} />
+            </>
           )}
-        </div>
-      </NavShell>
+        </Card>
+      ) : tab === 'revenue' ? (
+        <RevenueForecastCard branchId={branchId} />
+      ) : tab === 'retention' ? (
+        <RetentionCard branchId={branchId} />
+      ) : (
+        <ExportCard from={from} to={to} branchId={branchId} />
+      )}
     </div>
   )
 }

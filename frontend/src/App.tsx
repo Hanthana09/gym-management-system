@@ -16,7 +16,6 @@ import { MemberInvoicesPage } from './pages/MemberInvoicesPage'
 import { OwnerBulkImportPage } from './pages/OwnerBulkImportPage'
 import { OwnerReferralsPage } from './pages/OwnerReferralsPage'
 import { CoachReferralPage } from './pages/CoachReferralPage'
-import { OwnerDashboardPage } from './pages/OwnerDashboardPage'
 import { MemberCheckInPage } from './pages/MemberCheckInPage'
 import { MemberSessionsPage } from './pages/MemberSessionsPage'
 import { CoachMembersPage } from './pages/CoachMembersPage'
@@ -185,14 +184,7 @@ function App() {
           </RequireAuth>
         }
       />
-      <Route
-        path="/owner/dashboard"
-        element={
-          <RequireAuth>
-            <OwnerDashboardPage />
-          </RequireAuth>
-        }
-      />
+      <Route path="/owner/dashboard" element={<Navigate to="/" replace />} />
       <Route
         path="/member/check-in"
         element={

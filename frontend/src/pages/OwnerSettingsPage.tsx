@@ -1,7 +1,11 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Input, Select } from '../components/ui'
+import { useAuth } from '../auth/AuthContext'
+import { OwnerInvitationsPanel } from '../invitations/OwnerInvitationsPanel'
+import { NotificationPreferences } from '../notifications/NotificationPreferences'
 import { useGymBranding } from '../gym/useGymBranding'
 import { useGymMemberIdSettings, type MemberIdMode } from '../gym/useGymMemberIdSettings'
 import { useWhatsAppSettings } from '../gym/useWhatsAppSettings'
@@ -21,6 +25,7 @@ const DEFAULT_BRAND_COLOR = '#1F2937'
  * until now (same dormant-link class of bug fixed in earlier phases).
  */
 export function OwnerSettingsPage() {
+  const { user, logout } = useAuth()
   const { branding, loaded, updateBranding } = useGymBranding()
   const [name, setName] = useState<string | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -172,6 +177,62 @@ export function OwnerSettingsPage() {
                 </p>
               </div>
               <WhatsAppSettingsSection />
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Tools</h2>
+                <p className="mt-1 text-sm text-ink-soft">
+                  Bulk member import and your referral code.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <Link to="/owner/import">
+                  <Card className="transition-colors hover:bg-paper-dim">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-ink">Bulk Import Members</span>
+                      <span className="text-sm text-ink-soft">Upload CSV →</span>
+                    </div>
+                  </Card>
+                </Link>
+                <Link to="/owner/referrals">
+                  <Card className="transition-colors hover:bg-paper-dim">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-ink">Referrals</span>
+                      <span className="text-sm text-ink-soft">Your code →</span>
+                    </div>
+                  </Card>
+                </Link>
+              </div>
+
+              <OwnerInvitationsPanel />
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Account</h2>
+                <p className="mt-1 text-sm text-ink-soft">Notification preferences and sign out.</p>
+              </div>
+
+              {user ? (
+                <Card>
+                  <div className="text-center">
+                    <h3 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Signed in</h3>
+                    <p className="mt-1 text-sm text-ink-soft">
+                      {user.name} · {user.email ?? user.phone} · <span className="capitalize">{user.role}</span>
+                    </p>
+                  </div>
+                  <div className="mt-4">
+                    <NotificationPreferences />
+                  </div>
+                  <Button className="mt-4" fullWidth variant="secondary" onClick={logout}>
+                    Log out
+                  </Button>
+                </Card>
+              ) : null}
             </div>
           </div>
         </div>

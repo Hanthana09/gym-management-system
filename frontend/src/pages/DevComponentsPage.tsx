@@ -233,7 +233,7 @@ export function DevComponentsPage() {
             role="owner"
             title="Gym"
             navItems={OWNER_NAV_ITEMS}
-            activeHref="/owner/dashboard"
+            activeHref="/owner/branches"
           >
             <p className="text-sm text-ink-soft">Page content area.</p>
           </NavShell>

@@ -1,131 +1,93 @@
-import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { COACH_NAV_ITEMS, MEMBER_NAV_ITEMS, OWNER_NAV_ITEMS, STAFF_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card } from '../components/ui'
 import { CheckInIcon, MembersIcon } from '../components/ui/icons'
-import { ActivityFeed, AlertCard, ChartCard, ExpenseCategoryDonutChart, KpiCard } from '../components/dashboard'
+import { ActivityFeed } from '../components/dashboard'
 import { useAuth } from '../auth/AuthContext'
-import { OwnerInvitationsPanel } from '../invitations/OwnerInvitationsPanel'
 import { MyInvitationsPanel } from '../invitations/MyInvitationsPanel'
 import { MyMembershipCard } from '../membership/MyMembershipCard'
 import { NotificationPreferences } from '../notifications/NotificationPreferences'
+import { OwnerReportsDashboard } from './OwnerReportsDashboard'
 import { useMemberDashboard } from '../dashboard/useMemberDashboard'
-import { useOwnerDashboard } from '../dashboard/useOwnerDashboard'
-import { useBranches } from '../branches/useBranches'
-import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
-import { useBranchBillingAttention } from '../billing/useBranchBillingAttention'
 import { useMemberBillingStatus } from '../billing/useMemberBillingStatus'
-import { RecordPaymentModal } from '../billing/RecordPaymentModal'
-import type { AttentionInvoiceDto } from '../billing/types'
 
 const NAV_ITEMS = { owner: OWNER_NAV_ITEMS, coach: COACH_NAV_ITEMS, member: MEMBER_NAV_ITEMS, staff: STAFF_NAV_ITEMS }
 
 /**
- * Still a placeholder landing page (a full per-role dashboard is a later
- * phase), but now carries Phase 3's invitation UI, Phase 4's membership
- * UI, and Phase 5's entry points: Owner gets a link to the live
- * attendance dashboard, Member gets a prominent Check-in link (the actual
- * check-in screen has its own bottom nav from there on). Wrapped in
- * NavShell like every other authenticated page — this is the first
- * screen after login, so skipping it here meant the sidebar/bottom-nav
- * appeared to vanish the moment you signed in.
+ * The first screen after login, wrapped in NavShell like every other
+ * authenticated page. For an Owner it IS the reports dashboard
+ * (OwnerReportsDashboard) — there's no separate Dashboard nav entry.
+ * Other roles get their invitation UI plus role-specific entry points:
+ * Member a prominent Check-in link and membership card, Coach/Staff a
+ * shortcut into their main screen.
  */
 export function HomePage() {
   const { user, logout } = useAuth()
   if (!user) return null
 
+  if (user.role === 'owner') {
+    return (
+      <div className="h-dvh">
+        <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/">
+          <OwnerReportsDashboard />
+        </NavShell>
+      </div>
+    )
+  }
+
   return (
     <div className="h-dvh">
       <NavShell role={user.role} title="Gym" navItems={NAV_ITEMS[user.role]} activeHref="/">
         {/*
-         * Wide-screen layout (lg:+): main content (KPIs/charts/panels —
-         * whatever's most information-dense for this role) gets 2/3 of
-         * the width, secondary content (quick links, account) gets 1/3,
-         * side by side instead of one long narrow column. Below lg:, both
-         * stack to a single column exactly as before — mobile-first still
-         * holds, this only changes how the extra space on a wide screen
-         * gets used.
+         * Wide-screen layout (lg:+): main content (panels — whatever's
+         * most information-dense for this role) gets 2/3 of the width,
+         * secondary content (quick links, account) gets 1/3, side by side
+         * instead of one long narrow column. Below lg:, both stack to a
+         * single column — mobile-first still holds, this only changes how
+         * the extra space on a wide screen gets used.
          */}
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
           <div className="flex flex-col gap-4 lg:col-span-2">
-            {user.role === 'owner' ? (
+            <MyInvitationsPanel />
+            {user.role === 'member' ? (
               <>
-                <OwnerDashboardWidgets />
-                <OwnerInvitationsPanel />
+                <Link to="/member/check-in">
+                  <Button fullWidth className="!min-h-16 !text-base">
+                    <CheckInIcon />
+                    Check In
+                  </Button>
+                </Link>
+                <MyMembershipCard />
+                <MemberDashboardWidgets />
               </>
-            ) : (
-              <>
-                <MyInvitationsPanel />
-                {user.role === 'member' ? (
-                  <>
-                    <Link to="/member/check-in">
-                      <Button fullWidth className="!min-h-16 !text-base">
-                        <CheckInIcon />
-                        Check In
-                      </Button>
-                    </Link>
-                    <MyMembershipCard />
-                    <MemberDashboardWidgets />
-                  </>
-                ) : null}
-                {user.role === 'coach' ? (
-                  <Link to="/coach/sessions">
-                    <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold text-ink">My schedule</span>
-                        <span className="text-sm text-ink-soft">Session requests →</span>
-                      </div>
-                    </Card>
-                  </Link>
-                ) : null}
-                {user.role === 'staff' ? (
-                  <Link to="/staff/members">
-                    <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
-                      <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-                          <MembersIcon />
-                          Members
-                        </span>
-                        <span className="text-sm text-ink-soft">View & check in →</span>
-                      </div>
-                    </Card>
-                  </Link>
-                ) : null}
-              </>
-            )}
+            ) : null}
+            {user.role === 'coach' ? (
+              <Link to="/coach/sessions">
+                <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-ink">My schedule</span>
+                    <span className="text-sm text-ink-soft">Session requests →</span>
+                  </div>
+                </Card>
+              </Link>
+            ) : null}
+            {user.role === 'staff' ? (
+              <Link to="/staff/members">
+                <Card className="border-2 border-ink transition-colors hover:bg-paper-dim">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+                      <MembersIcon />
+                      Members
+                    </span>
+                    <span className="text-sm text-ink-soft">View & check in →</span>
+                  </div>
+                </Card>
+              </Link>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-4">
-            {user.role === 'owner' ? (
-              <>
-                <Link to="/owner/dashboard">
-                  <Card className="transition-colors hover:bg-paper-dim">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-ink">Full reports</span>
-                      <span className="text-sm text-ink-soft">Trends, forecast, export →</span>
-                    </div>
-                  </Card>
-                </Link>
-                {/* Not in OWNER_NAV_ITEMS (sidebar nav stays unchanged, per this phase's own rule) — these two are otherwise unreachable, so they stay here rather than in the removed shortcut grid. */}
-                <Link to="/owner/import">
-                  <Card className="transition-colors hover:bg-paper-dim">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-ink">Bulk Import Members</span>
-                      <span className="text-sm text-ink-soft">Upload CSV →</span>
-                    </div>
-                  </Card>
-                </Link>
-                <Link to="/owner/referrals">
-                  <Card className="transition-colors hover:bg-paper-dim">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-ink">Referrals</span>
-                      <span className="text-sm text-ink-soft">Your code →</span>
-                    </div>
-                  </Card>
-                </Link>
-              </>
-            ) : null}
             {user.role === 'member' ? (
               <Link to="/member/invoices">
                 <Card className="transition-colors hover:bg-paper-dim">
@@ -165,84 +127,6 @@ export function HomePage() {
         </div>
       </NavShell>
     </div>
-  )
-}
-
-/**
- * gym-management-dashboard-redesign.md Phase 4: Owner's at-a-glance KPIs
- * right on the home view — the same numbers /owner/dashboard's Reports
- * page shows, surfaced here too so an Owner doesn't have to click
- * through just to see today's basics. `allowAll` matches
- * OwnerDashboardPage's own reports-default-to-gym-wide-rollup rule
- * (DESIGN-SYSTEM.md §4.2).
- */
-function OwnerDashboardWidgets() {
-  const { branches } = useBranches()
-  const [branchId, setBranchId] = useState<string | null>(null)
-  const { summary, loaded } = useOwnerDashboard(branchId)
-  // The billing-attention endpoint (gym-management-billing-v1.md §6) needs
-  // one concrete branch — "All branches" here falls back to the default
-  // one, same resolution StaffDashboardPage/front-desk check-in already use.
-  const attentionBranchId = branchId ?? defaultBranchId(branches)
-  const { invoices: attentionInvoices, loaded: attentionLoaded, refresh: refreshAttention } = useBranchBillingAttention(attentionBranchId)
-  const [payingInvoice, setPayingInvoice] = useState<AttentionInvoiceDto | null>(null)
-
-  return (
-    <>
-      <Card>
-        <div className="mb-3 flex items-center justify-end">
-          <BranchSwitcher branches={branches} value={branchId} onChange={setBranchId} allowAll />
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <KpiCard
-            label="Check-ins today"
-            value={!loaded || !summary ? '—' : summary.todayCheckins}
-            trend={loaded && summary ? summary.checkinsTrend : undefined}
-          />
-          <KpiCard
-            label="Revenue today"
-            value={!loaded || !summary ? '—' : `$${summary.todayRevenue}`}
-            trend={loaded && summary ? summary.revenueTrend : undefined}
-          />
-          <KpiCard
-            label="Active members"
-            value={!loaded || !summary ? '—' : summary.activeMembersCount}
-            trend={loaded && summary ? summary.activeMembersTrend : undefined}
-          />
-        </div>
-      </Card>
-
-      {/* gym-management-billing-v1.md §7: "needs attention" — absent/overdue invoices, oldest due first, with a direct record-payment action. Answers "what needs my attention today" right here, not on a separate billing page. */}
-      {attentionLoaded && attentionInvoices.length > 0 ? (
-        <AlertCard tone="danger" title={`${attentionInvoices.length} payment${attentionInvoices.length === 1 ? '' : 's'} need attention`}>
-          <ul className="flex flex-col gap-2">
-            {attentionInvoices.map((invoice) => (
-              <li key={invoice.id} className="flex items-center justify-between gap-2">
-                <span>
-                  {invoice.member.name} — <span className="font-mono">${invoice.amount}</span>{' '}
-                  <span className="uppercase">{invoice.status}</span>
-                </span>
-                <Button variant="secondary" onClick={() => setPayingInvoice(invoice)}>
-                  Record payment
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </AlertCard>
-      ) : null}
-
-      {loaded && summary && summary.expensesByCategory.length > 0 ? (
-        <ChartCard title="Expenses by category">
-          <ExpenseCategoryDonutChart data={summary.expensesByCategory} />
-        </ChartCard>
-      ) : null}
-
-      <RecordPaymentModal
-        invoice={payingInvoice ? { id: payingInvoice.id, amount: payingInvoice.amount, memberName: payingInvoice.member.name } : null}
-        onClose={() => setPayingInvoice(null)}
-        onRecorded={() => void refreshAttention()}
-      />
-    </>
   )
 }
 

@@ -86,7 +86,7 @@ class Gym
      * browser once set — GymWhatsAppSettingsController's GET returns
      * only whether it's set, not the value itself.
      */
-    #[ORM\Column(length: 255, nullable: true)]
+    #[ORM\Column(type: 'text', nullable: true)]
     private ?string $whatsappAccessToken = null;
 
     #[ORM\Column(length: 64, nullable: true)]

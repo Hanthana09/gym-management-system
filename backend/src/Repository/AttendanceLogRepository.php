@@ -88,6 +88,36 @@ class AttendanceLogRepository extends ServiceEntityRepository
         return $qb;
     }
 
+    /**
+     * Raw check-in instants from $since (inclusive) onward — the material
+     * for the home-dashboard "peak hours" chart (Owner analytics slice).
+     * DQL has no EXTRACT(DOW|HOUR), and this codebase uses no native SQL,
+     * so the day-of-week × hour bucketing happens in PHP (PeakHoursAnalyzer)
+     * — the same "roll the rows up in PHP" shape ReportController already
+     * uses for daily check-in counts. A 30-day window is a few thousand
+     * rows at most; if that ever bites, cache at the HTTP layer, don't
+     * pre-aggregate (§Phase 11 note).
+     *
+     * @return \DateTimeImmutable[]
+     */
+    public function checkInInstantsSince(\DateTimeImmutable $since, ?Branch $branch = null): array
+    {
+        $rows = $this->withBranch($this->createQueryBuilder('a'), $branch)
+            ->select('a.checkIn AS checkIn')
+            ->andWhere('a.checkIn >= :since')
+            ->setParameter('since', $since)
+            ->getQuery()
+            ->getResult();
+
+        // Scalar DQL hydration returns a DateTimeImmutable on some drivers,
+        // a raw datetime string on others — normalize to DateTimeImmutable.
+        return array_map(static function (array $row) {
+            $value = $row['checkIn'];
+
+            return $value instanceof \DateTimeImmutable ? $value : new \DateTimeImmutable((string) $value);
+        }, $rows);
+    }
+
     /** roadmap Phase 9.3: raw material for streak calculation — newest first. */
     public function findAllForMember(MemberProfile $member): array
     {

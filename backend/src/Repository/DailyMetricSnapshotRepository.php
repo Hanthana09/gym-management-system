@@ -54,4 +54,30 @@ class DailyMetricSnapshotRepository extends ServiceEntityRepository
 
         return $qb->getQuery()->getResult();
     }
+
+    /**
+     * Per-branch snapshot rows (never the gym-wide rollup) across an
+     * inclusive [from, to] range, oldest-first — the raw material for the
+     * home-dashboard "branch comparison" chart. Revenue / check-ins are
+     * summed over the range by the caller; active-members is a
+     * point-in-time count, so the caller takes the most recent row's
+     * value rather than summing it.
+     *
+     * @return DailyMetricSnapshot[]
+     */
+    public function findPerBranchForDateRange(Gym $gym, \DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        return $this->createQueryBuilder('s')
+            ->addSelect('b')
+            ->innerJoin('s.branch', 'b')
+            ->andWhere('s.gym = :gym')
+            ->andWhere('s.snapshotDate >= :from')
+            ->andWhere('s.snapshotDate <= :to')
+            ->setParameter('gym', $gym)
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->orderBy('s.snapshotDate', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
 }

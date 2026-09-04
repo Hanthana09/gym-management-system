@@ -36,7 +36,6 @@ export const MEMBER_NAV_ITEMS: NavItem[] = [
 // own back button.
 export const OWNER_NAV_ITEMS: NavItem[] = [
   { label: 'Home', href: '/', icon: <HomeIcon /> },
-  { label: 'Dashboard', href: '/owner/dashboard', icon: <DashboardIcon /> },
   { label: 'Branches', href: '/owner/branches', icon: <BranchIcon /> },
   { label: 'Members', href: '/owner/members', icon: <MembersIcon /> },
   { label: 'Plans', href: '/owner/plans', icon: <PlansIcon /> },

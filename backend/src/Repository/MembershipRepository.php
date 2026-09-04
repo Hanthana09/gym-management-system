@@ -209,4 +209,127 @@ class MembershipRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Home-dashboard "membership health" chart (Owner analytics slice).
+     * Live, point-in-time buckets as of $asOf — never persisted (CLAUDE.md:
+     * derived at query time from MEMBERSHIP + billing status, no new status
+     * column). There is no `frozen` status in this system (see
+     * App\Enum\MembershipStatus); the chart maps to what actually exists:
+     *   - expiring : ACTIVE and end_date within EXPIRY_WARNING_DAYS (7) of
+     *                $asOf — same threshold RetentionAnalyzer uses
+     *   - active   : ACTIVE and still comfortably within term
+     *   - expired  : EXPIRED, or an ACTIVE row already past its end_date
+     *                (the `status` column is lazily reconciled — §Phase 11)
+     *   - paused / suspended / cancelled : the remaining status values
+     *
+     * @return array<string, int> keys: active, expiring, expired, paused, suspended, cancelled
+     */
+    public function healthCountsByStatus(\DateTimeImmutable $asOf, ?Branch $branch = null): array
+    {
+        $expiryCutoff = $asOf->modify('+7 days');
+
+        $row = $this->withBranch($this->createQueryBuilder('m'), $branch)
+            ->select(
+                'SUM(CASE WHEN m.status = :paused THEN 1 ELSE 0 END) AS paused',
+                'SUM(CASE WHEN m.status = :suspended THEN 1 ELSE 0 END) AS suspended',
+                'SUM(CASE WHEN m.status = :cancelled THEN 1 ELSE 0 END) AS cancelled',
+                'SUM(CASE WHEN m.status = :expired THEN 1 ELSE 0 END) AS expiredStatus',
+                'SUM(CASE WHEN m.status = :active AND m.endDate < :asOf THEN 1 ELSE 0 END) AS activePastEnd',
+                'SUM(CASE WHEN m.status = :active AND m.endDate >= :asOf AND m.endDate <= :cutoff THEN 1 ELSE 0 END) AS expiring',
+                'SUM(CASE WHEN m.status = :active AND m.endDate > :cutoff THEN 1 ELSE 0 END) AS active',
+            )
+            ->setParameter('paused', MembershipStatus::PAUSED)
+            ->setParameter('suspended', MembershipStatus::SUSPENDED)
+            ->setParameter('cancelled', MembershipStatus::CANCELLED)
+            ->setParameter('expired', MembershipStatus::EXPIRED)
+            ->setParameter('active', MembershipStatus::ACTIVE)
+            ->setParameter('asOf', $asOf)
+            ->setParameter('cutoff', $expiryCutoff)
+            ->getQuery()
+            ->getSingleResult();
+
+        return [
+            'active' => (int) $row['active'],
+            'expiring' => (int) $row['expiring'],
+            'expired' => (int) $row['expiredStatus'] + (int) $row['activePastEnd'],
+            'paused' => (int) $row['paused'],
+            'suspended' => (int) $row['suspended'],
+            'cancelled' => (int) $row['cancelled'],
+        ];
+    }
+
+    /**
+     * Home-dashboard "new vs returning" chart (Owner analytics slice),
+     * rolled up per calendar month over [$from, $to). "Returning" is not a
+     * persisted concept (no such column on MEMBERSHIP or the snapshot) — it
+     * is derived: a membership whose start_date falls in the month counts
+     * as *returning* if that member had any earlier membership, otherwise
+     * *new*. One grouped query, no N+1.
+     *
+     * @return array<string, array{new: int, returning: int}> keyed 'YYYY-MM', ascending
+     */
+    public function newVsReturningByMonth(\DateTimeImmutable $from, \DateTimeImmutable $to, ?Branch $branch = null): array
+    {
+        $qb = $this->createQueryBuilder('m')
+            ->select('m.startDate AS startDate', 'IDENTITY(m.member) AS memberId')
+            ->andWhere('m.startDate >= :from')
+            ->andWhere('m.startDate < :to')
+            ->andWhere('m.status != :cancelled')
+            ->setParameter('from', $from)
+            ->setParameter('to', $to)
+            ->setParameter('cancelled', MembershipStatus::CANCELLED)
+            ->orderBy('m.startDate', 'ASC');
+
+        if ($branch !== null) {
+            $qb->innerJoin('m.plan', 'p')->andWhere('p.branch = :branch')->setParameter('branch', $branch);
+        }
+
+        $starts = $qb->getQuery()->getResult();
+        if ($starts === []) {
+            return [];
+        }
+
+        $starts = array_map(static fn (array $r) => [
+            'day' => self::toDayString($r['startDate']),
+            'memberId' => (string) $r['memberId'],
+        ], $starts);
+
+        $memberIds = array_values(array_unique(array_map(static fn (array $r) => $r['memberId'], $starts)));
+
+        $firsts = $this->createQueryBuilder('m')
+            ->select('IDENTITY(m.member) AS memberId', 'MIN(m.startDate) AS firstStart')
+            ->andWhere('IDENTITY(m.member) IN (:ids)')
+            ->setParameter('ids', $memberIds)
+            ->groupBy('memberId')
+            ->getQuery()
+            ->getResult();
+
+        $firstDayByMember = [];
+        foreach ($firsts as $row) {
+            $firstDayByMember[(string) $row['memberId']] = self::toDayString($row['firstStart']);
+        }
+
+        $series = [];
+        foreach ($starts as $row) {
+            $month = substr($row['day'], 0, 7);
+            $series[$month] ??= ['new' => 0, 'returning' => 0];
+            $isFirstEver = ($firstDayByMember[$row['memberId']] ?? null) === $row['day'];
+            ++$series[$month][$isFirstEver ? 'new' : 'returning'];
+        }
+
+        ksort($series);
+
+        return $series;
+    }
+
+    /** Scalar DQL hydration returns either a DateTimeImmutable or a raw 'Y-m-d ...' string depending on driver — normalize both to 'Y-m-d'. */
+    private static function toDayString(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        return substr((string) $value, 0, 10);
+    }
 }
