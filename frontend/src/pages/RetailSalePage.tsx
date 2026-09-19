@@ -153,11 +153,11 @@ export function RetailSalePage() {
                 <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
                   <thead>
                     <tr className="text-left text-sm text-ink-soft">
-                      <th className="w-[14%] border-b border-line px-4 py-3">Date</th>
-                      <th className="w-[32%] border-b border-line px-4 py-3">Product</th>
-                      <th className="w-[14%] border-b border-line px-4 py-3">Payment</th>
-                      <th className="w-[14%] border-b border-line px-4 py-3">Total</th>
-                      <th className="w-[26%] border-b border-line px-4 py-3">Sold by</th>
+                      <th className="w-[20%] border-b border-line px-4 py-3">Date</th>
+                      <th className="w-[28%] border-b border-line px-4 py-3">Product</th>
+                      <th className="w-[12%] border-b border-line px-4 py-3">Payment</th>
+                      <th className="w-[12%] border-b border-line px-4 py-3">Total</th>
+                      <th className="w-[28%] border-b border-line px-4 py-3">Sold by</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -166,7 +166,7 @@ export function RetailSalePage() {
 
                       return (
                         <tr key={sale.id} className="text-sm text-ink">
-                          <td className="border-b border-line/60 px-4 py-3 whitespace-nowrap text-ink-soft">
+                          <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">
                             {formatDateTime(sale.saleDate)}
                           </td>
                           <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
