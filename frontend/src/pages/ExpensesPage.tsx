@@ -1,14 +1,17 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS, STAFF_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input, Modal, Select, Ticket } from '../components/ui'
+import { Button, Card, Input, Modal, Pagination, Select, Ticket } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useAuth } from '../auth/AuthContext'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import { useExpenseCategories } from '../expenses/useExpenseCategories'
 import { useExpenses } from '../expenses/useExpenses'
+import { usePagination } from '../lib/usePagination'
 import type { ExpenseDto, ExpenseInput } from '../expenses/types'
+
+const PAGE_SIZE = 20
 
 // architecture doc §5.1: EXPENSE.currency "default LKR".
 const DEFAULT_CURRENCY = 'LKR'
@@ -37,7 +40,11 @@ function formatDate(iso: string): string {
  * (/owner/expenses, /staff/expenses) both render this component, which
  * reads its own role from useAuth() to pick nav items and which actions
  * to show. Coach/Member never get a route to this component at all, and
- * the server 403s regardless if either bypasses the UI.
+ * the server 403s regardless if either bypasses the UI. Card grid on
+ * mobile/tablet (Ticket pattern), real table at lg: and up with
+ * usePagination/Pagination — same card/table split as OwnerMembersPage/
+ * OwnerInvoicesPage, since GET /expenses returns the filtered result as
+ * one array (no server-side pagination).
  */
 export function ExpensesPage() {
   const { user } = useAuth()
@@ -68,6 +75,19 @@ export function ExpensesPage() {
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+
+  const { page, pageCount, paged: pagedExpenses, rangeStart, rangeEnd, total, setPage } = usePagination(
+    expenses,
+    PAGE_SIZE,
+  )
+
+  // A filter/branch change can shrink the result set or move a row to a
+  // different page — always land back on page 1 rather than risk
+  // stranding the Owner/Staff on a now-empty page (same rule as
+  // OwnerMembersPage/OwnerInvoicesPage).
+  useEffect(() => {
+    setPage(1)
+  }, [effectiveBranchId, categoryId, from, to, setPage])
 
   async function handleDelete(id: string) {
     setDeleteError(null)
@@ -135,8 +155,9 @@ export function ExpensesPage() {
             </Card>
           ) : null}
 
-          <ul className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            {expenses.map((expense) => (
+          {/* Card list — default (mobile/tablet), same pattern as OwnerMembersPage/OwnerInvoicesPage */}
+          <ul className="grid grid-cols-1 gap-3 lg:hidden">
+            {pagedExpenses.map((expense) => (
               <li key={expense.id}>
                 <Ticket className="flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-3">
@@ -164,41 +185,89 @@ export function ExpensesPage() {
                       ) : null}
                     </p>
                     {isOwner ? (
-                      confirmingDeleteId === expense.id ? (
-                        <div className="flex items-center gap-2">
-                          <Button variant="secondary" onClick={() => setConfirmingDeleteId(null)}>
-                            Cancel
-                          </Button>
-                          <Button
-                            variant="danger"
-                            disabled={busyId === expense.id}
-                            onClick={() => handleDelete(expense.id)}
-                          >
-                            {busyId === expense.id ? 'Deleting…' : 'Confirm delete'}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <Button variant="secondary" onClick={() => setFormState(expense)}>
-                            Edit
-                          </Button>
-                          <Button
-                            variant="danger"
-                            onClick={() => {
-                              setDeleteError(null)
-                              setConfirmingDeleteId(expense.id)
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      )
+                      <ExpenseRowActions
+                        confirming={confirmingDeleteId === expense.id}
+                        busy={busyId === expense.id}
+                        onEdit={() => setFormState(expense)}
+                        onRequestDelete={() => {
+                          setDeleteError(null)
+                          setConfirmingDeleteId(expense.id)
+                        }}
+                        onCancelDelete={() => setConfirmingDeleteId(null)}
+                        onConfirmDelete={() => handleDelete(expense.id)}
+                      />
                     ) : null}
                   </div>
                 </Ticket>
               </li>
             ))}
           </ul>
+
+          {/* Table — lg: and up */}
+          {pagedExpenses.length > 0 ? (
+            <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
+              <thead>
+                <tr className="text-left text-sm text-ink-soft">
+                  <th className="w-[10%] border-b border-line px-4 py-3">Date</th>
+                  <th className="w-[13%] border-b border-line px-4 py-3">Category</th>
+                  <th className="w-[13%] border-b border-line px-4 py-3">Branch</th>
+                  <th className="w-[10%] border-b border-line px-4 py-3">Amount</th>
+                  <th className="w-[24%] border-b border-line px-4 py-3">Description</th>
+                  <th className="w-[15%] border-b border-line px-4 py-3">Recorded by</th>
+                  {isOwner ? <th className="w-[15%] border-b border-line px-4 py-3">Actions</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {pagedExpenses.map((expense) => (
+                  <tr key={expense.id} className="text-sm text-ink">
+                    <td className="border-b border-line/60 px-4 py-3 whitespace-nowrap text-ink-soft">
+                      {formatDate(expense.expenseDate)}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 font-medium break-words">{expense.category.name}</td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">{expense.branchName}</td>
+                    <td className="border-b border-line/60 px-4 py-3 font-mono whitespace-nowrap">
+                      {expense.currency} {expense.amount}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">
+                      {expense.description || '—'}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">
+                      <p>{expense.recordedByName}</p>
+                      {expense.receiptUrl ? (
+                        <a href={expense.receiptUrl} target="_blank" rel="noreferrer" className="underline">
+                          Receipt
+                        </a>
+                      ) : null}
+                    </td>
+                    {isOwner ? (
+                      <td className="border-b border-line/60 px-4 py-3">
+                        <ExpenseRowActions
+                          confirming={confirmingDeleteId === expense.id}
+                          busy={busyId === expense.id}
+                          onEdit={() => setFormState(expense)}
+                          onRequestDelete={() => {
+                            setDeleteError(null)
+                            setConfirmingDeleteId(expense.id)
+                          }}
+                          onCancelDelete={() => setConfirmingDeleteId(null)}
+                          onConfirmDelete={() => handleDelete(expense.id)}
+                        />
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            total={total}
+            onChange={setPage}
+          />
         </div>
 
         <ExpenseFormModal
@@ -222,6 +291,42 @@ export function ExpensesPage() {
           />
         ) : null}
       </NavShell>
+    </div>
+  )
+}
+
+interface ExpenseRowActionsProps {
+  confirming: boolean
+  busy: boolean
+  onEdit: () => void
+  onRequestDelete: () => void
+  onCancelDelete: () => void
+  onConfirmDelete: () => void
+}
+
+/** Unchanged from the previous inline JSX — shared between the card and table renderings of the same row. */
+function ExpenseRowActions({ confirming, busy, onEdit, onRequestDelete, onCancelDelete, onConfirmDelete }: ExpenseRowActionsProps) {
+  if (confirming) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="secondary" onClick={onCancelDelete}>
+          Cancel
+        </Button>
+        <Button variant="danger" disabled={busy} onClick={onConfirmDelete}>
+          {busy ? 'Deleting…' : 'Confirm delete'}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="secondary" onClick={onEdit}>
+        Edit
+      </Button>
+      <Button variant="danger" onClick={onRequestDelete}>
+        Delete
+      </Button>
     </div>
   )
 }
