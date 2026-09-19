@@ -27,6 +27,13 @@ function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+function matchesSearch(sale: ProductSaleDto, query: string): boolean {
+  if (query === '') return true
+  const haystack = [sale.product.name, sale.soldByName, sale.paymentMethod].join(' ').toLowerCase()
+
+  return haystack.includes(query)
+}
+
 /**
  * functional requirements §15.3 / roadmap Phase 17: Owner and Staff share
  * this screen (both have PRODUCT_SALE_CREATE/VIEW), same shared-component
@@ -36,6 +43,8 @@ function formatDateTime(iso: string): string {
  * usePagination/Pagination — same card/table split as the other Phase 17
  * list pages, but a 10-row default page (PAGE_SIZE above) rather than
  * the usual 20, since this is a denser, more frequently-refreshed feed.
+ * Search matches product name/sold-by name (matchesSearch above) — no
+ * Member column/field is shown here at all, by request.
  */
 export function RetailSalePage() {
   const { user } = useAuth()
@@ -61,19 +70,27 @@ export function RetailSalePage() {
 
   const saleBranchId = effectiveBranchId ?? defaultBranchId(myBranches)
 
+  const [search, setSearch] = useState('')
+
+  const visibleSales = useMemo(() => {
+    const query = search.trim().toLowerCase()
+
+    return sales.filter((sale) => matchesSearch(sale, query))
+  }, [sales, search])
+
   const { page, pageCount, paged: pagedSales, rangeStart, rangeEnd, total, setPage } = usePagination(
-    sales,
+    visibleSales,
     PAGE_SIZE,
   )
 
-  // A branch-filter change, or a newly-confirmed sale landing at the top
-  // of the list, can shift what page a given row is on — always land
-  // back on page 1 so a just-recorded sale is immediately visible,
-  // rather than risk stranding on a now-empty page (same rule as
-  // OwnerMembersPage/OwnerInvoicesPage/ExpensesPage).
+  // A branch-filter change, a search, or a newly-confirmed sale landing
+  // at the top of the list, can shift what page a given row is on —
+  // always land back on page 1 so a just-recorded sale is immediately
+  // visible, rather than risk stranding on a now-empty page (same rule
+  // as OwnerMembersPage/OwnerInvoicesPage/ExpensesPage).
   useEffect(() => {
     setPage(1)
-  }, [effectiveBranchId, sales.length, setPage])
+  }, [effectiveBranchId, search, sales.length, setPage])
 
   return (
     <div className="h-dvh">
@@ -100,10 +117,25 @@ export function RetailSalePage() {
             />
 
             <div className="lg:col-span-2">
-              <h2 className="mb-3 text-base font-semibold text-ink">Recent sales</h2>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-ink">Recent sales</h2>
+                <div className="w-full sm:w-64">
+                  <Input
+                    label="Search"
+                    placeholder="Product or sold by"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
               {salesLoaded && sales.length === 0 ? (
                 <Card>
                   <p className="py-6 text-center text-sm text-ink-soft">No sales yet.</p>
+                </Card>
+              ) : salesLoaded && sales.length > 0 && visibleSales.length === 0 ? (
+                <Card>
+                  <p className="py-6 text-center text-sm text-ink-soft">No sales match this search.</p>
                 </Card>
               ) : null}
 
@@ -122,11 +154,10 @@ export function RetailSalePage() {
                   <thead>
                     <tr className="text-left text-sm text-ink-soft">
                       <th className="w-[14%] border-b border-line px-4 py-3">Date</th>
-                      <th className="w-[26%] border-b border-line px-4 py-3">Product</th>
-                      <th className="w-[16%] border-b border-line px-4 py-3">Member</th>
-                      <th className="w-[12%] border-b border-line px-4 py-3">Payment</th>
-                      <th className="w-[12%] border-b border-line px-4 py-3">Total</th>
-                      <th className="w-[20%] border-b border-line px-4 py-3">Sold by</th>
+                      <th className="w-[32%] border-b border-line px-4 py-3">Product</th>
+                      <th className="w-[14%] border-b border-line px-4 py-3">Payment</th>
+                      <th className="w-[14%] border-b border-line px-4 py-3">Total</th>
+                      <th className="w-[26%] border-b border-line px-4 py-3">Sold by</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -140,9 +171,6 @@ export function RetailSalePage() {
                           </td>
                           <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
                             {sale.product.name} × {sale.quantity}
-                          </td>
-                          <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">
-                            {sale.member ? sale.member.name : 'Walk-in'}
                           </td>
                           <td className="border-b border-line/60 px-4 py-3 text-ink-soft capitalize">{sale.paymentMethod}</td>
                           <td className="border-b border-line/60 px-4 py-3 font-mono whitespace-nowrap">${sale.totalAmount}</td>
@@ -188,7 +216,7 @@ function SaleTicket({ sale, branches }: { sale: ProductSaleDto; branches: { id: 
         </p>
         <p className="text-xs text-ink-soft">
           {branchName ? `${branchName} · ` : ''}
-          {sale.member ? sale.member.name : 'Walk-in'} · {sale.paymentMethod} · sold by {sale.soldByName}
+          {sale.paymentMethod} · sold by {sale.soldByName}
         </p>
         <p className="text-xs text-ink-soft">{formatDateTime(sale.saleDate)}</p>
       </div>
