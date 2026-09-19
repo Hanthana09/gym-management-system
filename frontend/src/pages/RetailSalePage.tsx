@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS, STAFF_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input, Select, Ticket } from '../components/ui'
+import { Button, Card, Input, Pagination, Select, Ticket } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useAuth } from '../auth/AuthContext'
 import { useBranches } from '../branches/useBranches'
@@ -9,7 +9,13 @@ import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import { useMembers } from '../members/useMembers'
 import { useProducts } from '../retail/useProducts'
 import { useProductSales } from '../retail/useProductSales'
+import { usePagination } from '../lib/usePagination'
 import type { PaymentMethod, ProductSaleDto } from '../retail/types'
+
+// Explicitly requested default (other list pages default to 20) — recent
+// sales is a denser, more frequently-refreshed feed, so a shorter page
+// reads better here.
+const PAGE_SIZE = 10
 
 const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
   { value: 'cash', label: 'Cash' },
@@ -36,7 +42,11 @@ function formatDateTime(iso: string): string {
  * functional requirements §15.3 / roadmap Phase 17: Owner and Staff share
  * this screen (both have PRODUCT_SALE_CREATE/VIEW), same shared-component
  * pattern as ExpensesPage — role read from useAuth(), two routes
- * (/owner/sell, /staff/sell) render the same component.
+ * (/owner/sell, /staff/sell) render the same component. Recent sales:
+ * card list on mobile/tablet, real table at lg: and up with
+ * usePagination/Pagination — same card/table split as the other Phase 17
+ * list pages, but a 10-row default page (PAGE_SIZE above) rather than
+ * the usual 20, since this is a denser, more frequently-refreshed feed.
  */
 export function RetailSalePage() {
   const { user } = useAuth()
@@ -62,6 +72,20 @@ export function RetailSalePage() {
   })
 
   const saleBranchId = effectiveBranchId ?? defaultBranchId(myBranches)
+
+  const { page, pageCount, paged: pagedSales, rangeStart, rangeEnd, total, setPage } = usePagination(
+    sales,
+    PAGE_SIZE,
+  )
+
+  // A branch-filter change, or a newly-confirmed sale landing at the top
+  // of the list, can shift what page a given row is on — always land
+  // back on page 1 so a just-recorded sale is immediately visible,
+  // rather than risk stranding on a now-empty page (same rule as
+  // OwnerMembersPage/OwnerInvoicesPage/ExpensesPage).
+  useEffect(() => {
+    setPage(1)
+  }, [effectiveBranchId, sales.length, setPage])
 
   return (
     <div className="h-dvh">
@@ -94,13 +118,67 @@ export function RetailSalePage() {
                   <p className="py-6 text-center text-sm text-ink-soft">No sales in the last 7 days.</p>
                 </Card>
               ) : null}
-              <ul className="flex flex-col gap-3">
-                {sales.map((sale) => (
+
+              {/* Card list — default (mobile/tablet), same pattern as OwnerMembersPage/OwnerInvoicesPage/ExpensesPage/OwnerProductsPage */}
+              <ul className="flex flex-col gap-3 lg:hidden">
+                {pagedSales.map((sale) => (
                   <li key={sale.id}>
                     <SaleTicket sale={sale} branches={myBranches} />
                   </li>
                 ))}
               </ul>
+
+              {/* Table — lg: and up */}
+              {pagedSales.length > 0 ? (
+                <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
+                  <thead>
+                    <tr className="text-left text-sm text-ink-soft">
+                      <th className="w-[14%] border-b border-line px-4 py-3">Date</th>
+                      <th className="w-[26%] border-b border-line px-4 py-3">Product</th>
+                      <th className="w-[16%] border-b border-line px-4 py-3">Member</th>
+                      <th className="w-[12%] border-b border-line px-4 py-3">Payment</th>
+                      <th className="w-[12%] border-b border-line px-4 py-3">Total</th>
+                      <th className="w-[20%] border-b border-line px-4 py-3">Sold by</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedSales.map((sale) => {
+                      const branchName = myBranches.find((b) => b.id === sale.branchId)?.name ?? null
+
+                      return (
+                        <tr key={sale.id} className="text-sm text-ink">
+                          <td className="border-b border-line/60 px-4 py-3 whitespace-nowrap text-ink-soft">
+                            {formatDateTime(sale.saleDate)}
+                          </td>
+                          <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
+                            {sale.product.name} × {sale.quantity}
+                          </td>
+                          <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">
+                            {sale.member ? sale.member.name : 'Walk-in'}
+                          </td>
+                          <td className="border-b border-line/60 px-4 py-3 text-ink-soft capitalize">{sale.paymentMethod}</td>
+                          <td className="border-b border-line/60 px-4 py-3 font-mono whitespace-nowrap">${sale.totalAmount}</td>
+                          <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">
+                            <p>{sale.soldByName}</p>
+                            {branchName ? <p className="text-xs">{branchName}</p> : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              ) : null}
+
+              <div className="mt-4">
+                <Pagination
+                  page={page}
+                  pageCount={pageCount}
+                  rangeStart={rangeStart}
+                  rangeEnd={rangeEnd}
+                  total={total}
+                  onChange={setPage}
+                />
+              </div>
             </div>
           </div>
         </div>
