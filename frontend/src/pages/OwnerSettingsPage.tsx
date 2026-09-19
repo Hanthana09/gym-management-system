@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input, Select } from '../components/ui'
+import { Button, Card, Input, Select, Tabs, type TabItem } from '../components/ui'
 import { useAuth } from '../auth/AuthContext'
 import { OwnerInvitationsPanel } from '../invitations/OwnerInvitationsPanel'
 import { NotificationPreferences } from '../notifications/NotificationPreferences'
@@ -18,6 +18,15 @@ const MEMBER_ID_MODE_OPTIONS: { value: MemberIdMode; label: string }[] = [
 
 const DEFAULT_BRAND_COLOR = '#1F2937'
 
+type SettingsTab = 'general' | 'notifications' | 'tools' | 'account'
+
+const SETTINGS_TAB_ITEMS: TabItem[] = [
+  { value: 'general', label: 'General' },
+  { value: 'notifications', label: 'Notifications' },
+  { value: 'tools', label: 'Tools & Invitations' },
+  { value: 'account', label: 'Account' },
+]
+
 /**
  * roadmap Phase 15.2 / DESIGN-SYSTEM.md §4.1: logo + one accent color,
  * nothing else — deliberately not a general "appearance" screen. The
@@ -26,6 +35,7 @@ const DEFAULT_BRAND_COLOR = '#1F2937'
  */
 export function OwnerSettingsPage() {
   const { user, logout } = useAuth()
+  const [tab, setTab] = useState<SettingsTab>('general')
   const { branding, loaded, updateBranding } = useGymBranding()
   const [name, setName] = useState<string | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)
@@ -78,109 +88,136 @@ export function OwnerSettingsPage() {
         <div className="mx-auto max-w-6xl">
           <h1 className="mb-4 font-display text-lg font-semibold tracking-wide text-ink uppercase">Settings</h1>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
-            <div className="flex flex-col gap-4">
-              <div>
-                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Branding</h2>
-                <p className="mt-1 text-sm text-ink-soft">
-                  Your gym name appears in the top-left corner of every screen. Your logo and accent color appear on
-                  the navigation header and on members' digital membership badges. The check-in button and role
-                  colors always stay the product's standard colors.
-                </p>
-              </div>
+          <Tabs
+            items={SETTINGS_TAB_ITEMS}
+            value={tab}
+            onChange={(v) => setTab(v as SettingsTab)}
+            className="mb-6"
+          />
 
-              <Card>
-                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                  <Input
-                    label="Gym name"
-                    value={effectiveName}
-                    onChange={(e) => {
-                      setName(e.target.value)
-                      setSuccess(false)
-                    }}
-                    required
-                  />
+          {tab === 'general' ? (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Branding</h2>
+                  <p className="mt-1 text-sm text-ink-soft">
+                    Your gym name appears in the top-left corner of every screen. Your logo and accent color appear on
+                    the navigation header and on members' digital membership badges. The check-in button and role
+                    colors always stay the product's standard colors.
+                  </p>
+                </div>
 
-                  <div>
-                    <label htmlFor="logo-upload" className="mb-1.5 block text-sm font-medium text-ink">
-                      Logo
-                    </label>
-                    <div className="flex items-center gap-3">
-                      {logoPreview || branding.logoUrl ? (
-                        <img
-                          src={logoPreview ?? branding.logoUrl ?? undefined}
-                          alt="Gym logo"
-                          className="h-12 w-12 rounded-md border border-line object-contain"
+                <Card>
+                  <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                    <Input
+                      label="Gym name"
+                      value={effectiveName}
+                      onChange={(e) => {
+                        setName(e.target.value)
+                        setSuccess(false)
+                      }}
+                      required
+                    />
+
+                    <div>
+                      <label htmlFor="logo-upload" className="mb-1.5 block text-sm font-medium text-ink">
+                        Logo
+                      </label>
+                      <div className="flex items-center gap-3">
+                        {logoPreview || branding.logoUrl ? (
+                          <img
+                            src={logoPreview ?? branding.logoUrl ?? undefined}
+                            alt="Gym logo"
+                            className="h-12 w-12 rounded-md border border-line object-contain"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-line text-xs text-ink-soft">
+                            None
+                          </div>
+                        )}
+                        <input
+                          id="logo-upload"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(e) => handleLogoChange(e.target.files?.[0] ?? null)}
+                          className="min-h-touch flex-1 text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-paper-dim file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
                         />
-                      ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-md border border-dashed border-line text-xs text-ink-soft">
-                          None
-                        </div>
-                      )}
-                      <input
-                        id="logo-upload"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        onChange={(e) => handleLogoChange(e.target.files?.[0] ?? null)}
-                        className="min-h-touch flex-1 text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-paper-dim file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
-                      />
+                      </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label htmlFor="brand-color" className="mb-1.5 block text-sm font-medium text-ink">
-                      Brand color
-                    </label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        id="brand-color"
-                        type="color"
-                        value={effectiveColor}
-                        onChange={(e) => {
-                          setBrandColor(e.target.value)
-                          setSuccess(false)
-                        }}
-                        className="h-11 w-16 rounded-md border border-line bg-card p-1"
-                      />
-                      <span className="font-mono text-sm text-ink-soft uppercase">{effectiveColor}</span>
+                    <div>
+                      <label htmlFor="brand-color" className="mb-1.5 block text-sm font-medium text-ink">
+                        Brand color
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          id="brand-color"
+                          type="color"
+                          value={effectiveColor}
+                          onChange={(e) => {
+                            setBrandColor(e.target.value)
+                            setSuccess(false)
+                          }}
+                          className="h-11 w-16 rounded-md border border-line bg-card p-1"
+                        />
+                        <span className="font-mono text-sm text-ink-soft uppercase">{effectiveColor}</span>
+                      </div>
                     </div>
-                  </div>
 
-                  {error ? <p className="text-sm text-red-600">{error}</p> : null}
-                  {success ? <p className="text-sm text-green-700">Branding saved.</p> : null}
+                    {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                    {success ? <p className="text-sm text-green-700">Branding saved.</p> : null}
 
-                  <Button type="submit" disabled={submitting || !loaded}>
-                    {submitting ? 'Saving…' : 'Save branding'}
-                  </Button>
-                </form>
-              </Card>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <div>
-                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Member ID</h2>
-                <p className="mt-1 text-sm text-ink-soft">
-                  Choose how new members get their Member ID: Setly can generate one automatically, or your front
-                  desk can enter your gym's own numbering scheme at registration. This can't be changed once the
-                  gym has any members.
-                </p>
+                    <Button type="submit" disabled={submitting || !loaded}>
+                      {submitting ? 'Saving…' : 'Save branding'}
+                    </Button>
+                  </form>
+                </Card>
               </div>
-              <MemberIdSettingsSection />
 
-              <div className="mt-2">
-                <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">
-                  WhatsApp notifications
-                </h2>
-                <p className="mt-1 text-sm text-ink-soft">
-                  Set up your gym's WhatsApp Business number so members can opt in to booking and billing updates.
-                  This is a gym-wide switch — each member still opts in individually from their own account.
-                </p>
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Member ID</h2>
+                  <p className="mt-1 text-sm text-ink-soft">
+                    Choose how new members get their Member ID: Setly can generate one automatically, or your front
+                    desk can enter your gym's own numbering scheme at registration. This can't be changed once the
+                    gym has any members.
+                  </p>
+                </div>
+                <MemberIdSettingsSection />
               </div>
-              <WhatsAppSettingsSection />
             </div>
-          </div>
+          ) : null}
 
-          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+          {tab === 'notifications' ? (
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">
+                    WhatsApp notifications
+                  </h2>
+                  <p className="mt-1 text-sm text-ink-soft">
+                    Set up your gym's WhatsApp Business number so members can opt in to booking and billing updates.
+                    This is a gym-wide switch — each member still opts in individually from their own account.
+                  </p>
+                </div>
+                <WhatsAppSettingsSection />
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">
+                    Notification preferences
+                  </h2>
+                  <p className="mt-1 text-sm text-ink-soft">Choose how you personally are notified.</p>
+                </div>
+                <Card>
+                  <NotificationPreferences />
+                </Card>
+              </div>
+            </div>
+          ) : null}
+
+          {tab === 'tools' ? (
             <div className="flex flex-col gap-4">
               <div>
                 <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Tools</h2>
@@ -210,11 +247,13 @@ export function OwnerSettingsPage() {
 
               <OwnerInvitationsPanel />
             </div>
+          ) : null}
 
+          {tab === 'account' ? (
             <div className="flex flex-col gap-4">
               <div>
                 <h2 className="font-display text-base font-semibold tracking-wide text-ink uppercase">Account</h2>
-                <p className="mt-1 text-sm text-ink-soft">Notification preferences and sign out.</p>
+                <p className="mt-1 text-sm text-ink-soft">Your account and sign out.</p>
               </div>
 
               {user ? (
@@ -225,16 +264,13 @@ export function OwnerSettingsPage() {
                       {user.name} · {user.email ?? user.phone} · <span className="capitalize">{user.role}</span>
                     </p>
                   </div>
-                  <div className="mt-4">
-                    <NotificationPreferences />
-                  </div>
                   <Button className="mt-4" fullWidth variant="secondary" onClick={logout}>
                     Log out
                   </Button>
                 </Card>
               ) : null}
             </div>
-          </div>
+          ) : null}
         </div>
       </NavShell>
     </div>
