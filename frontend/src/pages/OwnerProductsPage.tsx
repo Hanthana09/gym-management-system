@@ -29,7 +29,9 @@ function Pill({ label, styles }: { label: string; styles: string }) {
  * from OwnerPlansPage/OwnerBranchesPage, no new visual patterns. Staff
  * never reaches this screen at all (no nav entry, no route) — they only
  * ever see products read-only, inside the Sell picker on RetailSalePage.
- * No unit_cost/margin field anywhere here, on purpose (§6.13).
+ * No unit_cost/margin field anywhere here, on purpose (§6.13). Card grid
+ * on mobile/tablet, real table at lg: and up — same card/table split as
+ * OwnerMembersPage/OwnerInvoicesPage/ExpensesPage.
  */
 export function OwnerProductsPage() {
   const { categories, createCategory, deleteCategory } = useProductCategories()
@@ -125,7 +127,8 @@ export function OwnerProductsPage() {
             </Card>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {/* Card grid — default (mobile/tablet), same pattern as OwnerMembersPage/OwnerInvoicesPage/ExpensesPage */}
+          <div className="grid grid-cols-1 gap-3 lg:hidden">
             {pagedProducts.map((product) => (
               <Card key={product.id}>
                 <div className="flex items-start justify-between gap-3">
@@ -158,6 +161,54 @@ export function OwnerProductsPage() {
               </Card>
             ))}
           </div>
+
+          {/* Table — lg: and up */}
+          {pagedProducts.length > 0 ? (
+            <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
+              <thead>
+                <tr className="text-left text-sm text-ink-soft">
+                  <th className="w-[26%] border-b border-line px-4 py-3">Name</th>
+                  <th className="w-[18%] border-b border-line px-4 py-3">Category</th>
+                  <th className="w-[16%] border-b border-line px-4 py-3">SKU</th>
+                  <th className="w-[12%] border-b border-line px-4 py-3">Price</th>
+                  <th className="w-[10%] border-b border-line px-4 py-3">Status</th>
+                  <th className="w-[18%] border-b border-line px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedProducts.map((product) => (
+                  <tr key={product.id} className="text-sm text-ink">
+                    <td className="border-b border-line/60 px-4 py-3 font-medium break-words">{product.name}</td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">{product.category.name}</td>
+                    <td className="border-b border-line/60 px-4 py-3 font-mono text-xs whitespace-nowrap text-ink-soft">
+                      {product.sku ?? '—'}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 font-mono whitespace-nowrap">${product.unitPrice}</td>
+                    <td className="border-b border-line/60 px-4 py-3">
+                      <Pill
+                        label={product.isActive ? 'Active' : 'Inactive'}
+                        styles={product.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}
+                      />
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button variant="secondary" onClick={() => setEditingProduct(product)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant={product.isActive ? 'danger' : 'secondary'}
+                          disabled={busyId === product.id}
+                          onClick={() => handleToggleActive(product)}
+                        >
+                          {busyId === product.id ? 'Saving…' : product.isActive ? 'Deactivate' : 'Activate'}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
 
           <div className="mt-4">
             <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
