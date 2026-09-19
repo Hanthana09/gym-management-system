@@ -6,6 +6,12 @@ export interface BranchAssignmentDto {
   role: 'coach' | 'staff'
 }
 
+/** A Member's Owner-set "home branch" tag — separate from BranchAssignmentDto above (Coach/Staff access-scoping); purely informational, doesn't restrict check-in. */
+export interface BranchMemberAssignmentDto {
+  userId: string
+  name: string
+}
+
 export interface BranchDto {
   id: string
   name: string
@@ -14,6 +20,7 @@ export interface BranchDto {
   isPrimary: boolean
   status: BranchStatus
   assignments: BranchAssignmentDto[]
+  memberAssignments: BranchMemberAssignmentDto[]
 }
 
 export interface AssignableUserDto {

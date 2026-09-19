@@ -2,6 +2,7 @@
 
 namespace App\Repository;
 
+use App\Entity\Branch;
 use App\Entity\CoachProfile;
 use App\Entity\Gym;
 use App\Entity\MemberProfile;
@@ -82,6 +83,19 @@ class MemberProfileRepository extends ServiceEntityRepository
     public function findOneByGymAndMemberId(Gym $gym, string $memberId): ?MemberProfile
     {
         return $this->findOneBy(['gym' => $gym, 'memberId' => $memberId]);
+    }
+
+    /** BranchController's member-assign endpoints (BranchDetailPage's "Members" table) — every Member whose Owner-set home branch is this one. */
+    public function findByAssignedBranch(Branch $branch): array
+    {
+        return $this->createQueryBuilder('m')
+            ->innerJoin('m.user', 'u')
+            ->addSelect('u')
+            ->andWhere('m.assignedBranch = :branch')
+            ->setParameter('branch', $branch)
+            ->orderBy('u.name', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 
     /** Gates the "can't change Member ID mode once members exist" rule (GymMemberIdSettingsController). */

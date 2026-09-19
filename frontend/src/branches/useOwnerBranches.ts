@@ -64,6 +64,37 @@ export function useOwnerBranches() {
   )
 
   /**
+   * A Member's Owner-set "home branch" tag — a separate mechanism from
+   * assign()/unassign() above (BranchAssignmentDto is Coach/Staff access-
+   * scoping; a Member is never restricted to a branch, functional
+   * requirements §14.3's hub model). A Member has at most one assigned
+   * branch, so assigning to a new one simply moves them rather than
+   * erroring the way a duplicate Coach/Staff assignment would.
+   */
+  const assignMember = useCallback(
+    async (branchId: string, userId: string) => {
+      const branch = await authFetch<BranchDto>(`/branches/${branchId}/assign-member`, {
+        method: 'POST',
+        body: { userId },
+      })
+      await refresh()
+
+      return branch
+    },
+    [authFetch, refresh],
+  )
+
+  const unassignMember = useCallback(
+    async (branchId: string, userId: string) => {
+      const branch = await authFetch<BranchDto>(`/branches/${branchId}/assign-member/${userId}`, { method: 'DELETE' })
+      await refresh()
+
+      return branch
+    },
+    [authFetch, refresh],
+  )
+
+  /**
    * Branch delete facility: a genuine hard delete, only ever possible for
    * a branch the backend confirms has never been used (no attendance,
    * plans, or PT sessions) and isn't the primary branch — otherwise a 409
@@ -79,5 +110,17 @@ export function useOwnerBranches() {
     [authFetch, refresh],
   )
 
-  return { branches, assignableUsers, loaded, refresh, createBranch, updateBranch, assign, unassign, deleteBranch }
+  return {
+    branches,
+    assignableUsers,
+    loaded,
+    refresh,
+    createBranch,
+    updateBranch,
+    assign,
+    unassign,
+    assignMember,
+    unassignMember,
+    deleteBranch,
+  }
 }

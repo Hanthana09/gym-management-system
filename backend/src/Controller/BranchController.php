@@ -13,6 +13,7 @@ use App\Gym\GymProvisioningService;
 use App\Repository\BranchAssignmentRepository;
 use App\Repository\BranchRepository;
 use App\Repository\GymRepository;
+use App\Repository\MemberProfileRepository;
 use App\Repository\UserRepository;
 use App\Security\Voter\BranchVoter;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -37,6 +38,7 @@ class BranchController extends AbstractController
         private readonly BranchService $branchService,
         private readonly GymProvisioningService $gymProvisioning,
         private readonly GymRepository $gyms,
+        private readonly MemberProfileRepository $memberProfiles,
     ) {
     }
 
@@ -233,6 +235,88 @@ class BranchController extends AbstractController
         return new JsonResponse($this->serialize($branch));
     }
 
+    /**
+     * Owner-set "home branch" tag for a Member — see BranchService::
+     * assignMember()'s docblock for why this is a separate mechanism
+     * from the Coach/Staff assign()/unassign() above rather than reusing
+     * BranchAssignment. A Member has at most one assigned branch, so no
+     * assignable-users precheck endpoint is needed here the way Coach/
+     * Staff has one: the picker just needs every active Member not
+     * already assigned to *this* branch, which the frontend already has
+     * from GET /members.
+     */
+    #[Route('/branches/{id}/assign-member', name: 'branches_assign_member', methods: ['POST'])]
+    public function assignMember(string $id, Request $request): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $branch = $this->branches->find($id);
+        if ($branch === null) {
+            return $this->notFound('Branch not found.');
+        }
+        if (!$this->isGranted(BranchVoter::MANAGE, $branch)) {
+            return $this->forbidden();
+        }
+
+        $data = $this->decode($request);
+        $userId = (string) ($data['userId'] ?? '');
+        if ($userId === '') {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'userId is required.'], 400);
+        }
+
+        $target = $this->users->find($userId);
+        if ($target === null || $target->getRole() !== UserRole::MEMBER) {
+            return $this->notFound('Member not found.');
+        }
+
+        $profile = $this->memberProfiles->findOneByUser($target);
+        if ($profile === null) {
+            return $this->notFound('Member not found.');
+        }
+
+        $this->branchService->assignMember($branch, $profile);
+
+        return new JsonResponse($this->serialize($branch), 201);
+    }
+
+    #[Route('/branches/{id}/assign-member/{userId}', name: 'branches_unassign_member', methods: ['DELETE'])]
+    public function unassignMember(string $id, string $userId): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $branch = $this->branches->find($id);
+        if ($branch === null) {
+            return $this->notFound('Branch not found.');
+        }
+        if (!$this->isGranted(BranchVoter::MANAGE, $branch)) {
+            return $this->forbidden();
+        }
+
+        $target = $this->users->find($userId);
+        if ($target === null) {
+            return $this->notFound('User not found.');
+        }
+
+        $profile = $this->memberProfiles->findOneByUser($target);
+        if ($profile === null) {
+            return $this->notFound('Member not found.');
+        }
+
+        try {
+            $this->branchService->unassignMember($branch, $profile);
+        } catch (BranchAssignmentConflictException $exception) {
+            return new JsonResponse(['error' => $exception->reason, 'message' => $exception->getMessage()], 409);
+        }
+
+        return new JsonResponse($this->serialize($branch));
+    }
+
     private function serialize(Branch $branch): array
     {
         return [
@@ -247,6 +331,10 @@ class BranchController extends AbstractController
                 'name' => $a->getUser()->getName(),
                 'role' => $a->getUser()->getRole()->value,
             ], $this->assignments->findByBranch($branch)),
+            'memberAssignments' => array_map(fn ($profile) => [
+                'userId' => (string) $profile->getUser()->getId(),
+                'name' => $profile->getUser()->getName(),
+            ], $this->memberProfiles->findByAssignedBranch($branch)),
         ];
     }
 

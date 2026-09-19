@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Input, Modal, Pagination, Select } from '../components/ui'
+import { Button, Card, Input, Modal, Pagination } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { usePagination } from '../lib/usePagination'
 import { useOwnerBranches } from '../branches/useOwnerBranches'
@@ -23,26 +24,24 @@ function Pill({ label, styles }: { label: string; styles: string }) {
 }
 
 /**
- * roadmap Phase 16.1: Owner's branch management — list/create/edit/
- * deactivate, plus Coach/Staff assignment. Card list only (no lg: table
- * split like OwnerPlansPage/OwnerMembersPage) — a business's branch count
- * is small enough that a dense table adds no value here.
+ * roadmap Phase 16.1: Owner's branch management — table (card list at
+ * mobile, sortable-free table at lg: — same split as OwnerMembersPage,
+ * per CLAUDE.md's no-horizontal-scroll rule). A row's name opens
+ * BranchDetailPage, which is where edit / assign / status / delete now
+ * live; this page keeps only the list, search, and create ("New branch").
  */
 export function OwnerBranchesPage() {
-  const { branches, assignableUsers, loaded, createBranch, updateBranch, assign, unassign, deleteBranch } =
-    useOwnerBranches()
+  const { branches, loaded, createBranch } = useOwnerBranches()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  const [editingBranch, setEditingBranch] = useState<BranchDto | 'new' | null>(null)
-  const [assigningBranch, setAssigningBranch] = useState<BranchDto | null>(null)
-  const [statusError, setStatusError] = useState<string | null>(null)
-  const [busyBranchId, setBusyBranchId] = useState<string | null>(null)
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
 
   const visibleBranches = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return branches.filter((branch) => matchesSearch(branch, query))
+    return branches
+      .filter((branch) => matchesSearch(branch, query))
+      .sort((a, b) => a.name.localeCompare(b.name))
   }, [branches, search])
 
   const { page, pageCount, paged: pagedBranches, rangeStart, rangeEnd, total, setPage } = usePagination(
@@ -57,54 +56,21 @@ export function OwnerBranchesPage() {
     setPage(1)
   }, [search, setPage])
 
-  async function handleToggleStatus(branch: BranchDto) {
-    setStatusError(null)
-    setBusyBranchId(branch.id)
-    try {
-      await updateBranch(branch.id, { status: branch.status === 'active' ? 'inactive' : 'active' })
-    } catch (err) {
-      setStatusError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
-    } finally {
-      setBusyBranchId(null)
-    }
-  }
-
-  async function handleDelete(id: string) {
-    setDeleteError(null)
-    setBusyBranchId(id)
-    try {
-      await deleteBranch(id)
-      setConfirmingDeleteId(null)
-    } catch (err) {
-      // functional requirements §14.1: a branch with real history (or the
-      // primary branch) can't be hard-deleted — the backend's message
-      // already says so specifically ("...Deactivate it instead."), so
-      // it's shown as-is rather than replaced with a generic one.
-      setDeleteError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
-    } finally {
-      setBusyBranchId(null)
-    }
-  }
-
   return (
     <div className="h-dvh">
       <NavShell role="owner" title="Gym" navItems={OWNER_NAV_ITEMS} activeHref="/owner/branches">
-        <div className="mx-auto max-w-6xl">
-          <div className="mb-4 flex items-center justify-between">
+        <div className="mx-auto flex max-w-4xl flex-col gap-4">
+          <div className="flex items-center justify-between gap-3">
             <h1 className="font-display text-lg font-semibold tracking-wide text-ink uppercase">Branches</h1>
-            <Button onClick={() => setEditingBranch('new')}>New branch</Button>
+            <Button onClick={() => setCreating(true)}>New branch</Button>
           </div>
 
-          <div className="mb-4">
-            <Input
-              label="Search"
-              placeholder="Search by name or address"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          {statusError ? <p className="mb-3 text-sm text-red-600">{statusError}</p> : null}
+          <Input
+            label="Search"
+            placeholder="Search by name or address"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
 
           {loaded && branches.length === 0 ? (
             <Card>
@@ -116,158 +82,111 @@ export function OwnerBranchesPage() {
             </Card>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {/* Card list — default (mobile/tablet) */}
+          <div className="flex flex-col gap-3 lg:hidden">
             {pagedBranches.map((branch) => (
               <Card key={branch.id}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h2 className="truncate text-base font-semibold text-ink">{branch.name}</h2>
-                      {branch.isPrimary ? <Pill label="Primary" styles="bg-owner-soft text-owner" /> : null}
+                <button
+                  type="button"
+                  className="w-full text-left"
+                  onClick={() => navigate(`/owner/branches/${branch.id}`)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-ink underline-offset-2">
+                          {branch.name}
+                        </span>
+                        {branch.isPrimary ? <Pill label="Primary" styles="bg-owner-soft text-owner" /> : null}
+                      </div>
+                      <p className="mt-0.5 text-sm text-ink-soft">{branch.address}</p>
+                      {branch.phone ? <p className="text-sm text-ink-soft">{branch.phone}</p> : null}
                     </div>
-                    <p className="mt-0.5 text-sm text-ink-soft">{branch.address}</p>
-                    {branch.phone ? <p className="text-sm text-ink-soft">{branch.phone}</p> : null}
+                    <Pill
+                      label={branch.status}
+                      styles={branch.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}
+                    />
                   </div>
-                  <Pill
-                    label={branch.status}
-                    styles={branch.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}
-                  />
-                </div>
-
-                <div className="mt-3 border-t border-line pt-3">
-                  <p className="mb-2 text-xs font-medium tracking-wide text-ink-soft uppercase">
-                    Assigned Coach / Staff
+                  <p className="mt-3 border-t border-line pt-3 text-sm text-ink-soft">
+                    {branch.assignments.length === 0
+                      ? 'No one assigned yet'
+                      : `${branch.assignments.length} assigned`}
                   </p>
-                  {branch.assignments.length === 0 ? (
-                    <p className="text-sm text-ink-soft">No one assigned yet.</p>
-                  ) : (
-                    <ul className="flex flex-col gap-1.5">
-                      {branch.assignments.map((a) => (
-                        <li key={a.userId} className="flex items-center justify-between gap-2">
-                          <span className="text-sm text-ink">
-                            {a.name} <span className="text-ink-soft capitalize">· {a.role}</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => unassign(branch.id, a.userId)}
-                            className="text-xs font-medium text-ink-soft underline hover:text-ink"
-                          >
-                            Remove
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                {confirmingDeleteId === branch.id ? (
-                  <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
-                    <p className="text-sm text-ink">Delete {branch.name}? This can't be undone.</p>
-                    {deleteError ? <p className="text-sm text-red-600">{deleteError}</p> : null}
-                    <div className="flex gap-2">
-                      <Button
-                        variant="secondary"
-                        fullWidth
-                        onClick={() => {
-                          setConfirmingDeleteId(null)
-                          setDeleteError(null)
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        variant="danger"
-                        fullWidth
-                        disabled={busyBranchId === branch.id}
-                        onClick={() => handleDelete(branch.id)}
-                      >
-                        {busyBranchId === branch.id ? 'Deleting…' : 'Delete'}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-3 flex gap-2">
-                    <Button variant="secondary" fullWidth onClick={() => setEditingBranch(branch)}>
-                      Edit
-                    </Button>
-                    <Button variant="secondary" fullWidth onClick={() => setAssigningBranch(branch)}>
-                      Assign
-                    </Button>
-                    <Button
-                      variant={branch.status === 'active' ? 'danger' : 'secondary'}
-                      fullWidth
-                      disabled={busyBranchId === branch.id}
-                      onClick={() => handleToggleStatus(branch)}
-                    >
-                      {branch.status === 'active' ? 'Deactivate' : 'Activate'}
-                    </Button>
-                    {/* Primary branch can never be deleted (every gym must always have exactly one) — no affordance for an action that would only ever 409. */}
-                    {!branch.isPrimary ? (
-                      <Button
-                        variant="danger"
-                        fullWidth
-                        onClick={() => {
-                          setDeleteError(null)
-                          setConfirmingDeleteId(branch.id)
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    ) : null}
-                  </div>
-                )}
+                </button>
               </Card>
             ))}
           </div>
 
-          <div className="mt-4">
-            <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
-          </div>
+          {/* Table — lg: and up. table-fixed + explicit column widths (CLAUDE.md: no horizontal page overflow), break-words so a long name/address wraps within its own column instead of forcing the table wider. */}
+          {pagedBranches.length > 0 ? (
+            <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
+              <thead>
+                <tr className="text-left text-sm text-ink-soft">
+                  <th className="w-[26%] border-b border-line px-4 py-3">Name</th>
+                  <th className="w-[30%] border-b border-line px-4 py-3">Address</th>
+                  <th className="w-[16%] border-b border-line px-4 py-3">Phone</th>
+                  <th className="w-[14%] border-b border-line px-4 py-3">Assigned</th>
+                  <th className="w-[14%] border-b border-line px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedBranches.map((branch) => (
+                  <tr key={branch.id} className="text-sm text-ink">
+                    <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 underline-offset-2 hover:underline"
+                        onClick={() => navigate(`/owner/branches/${branch.id}`)}
+                      >
+                        {branch.name}
+                        {branch.isPrimary ? <Pill label="Primary" styles="bg-owner-soft text-owner" /> : null}
+                      </button>
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">{branch.address}</td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">{branch.phone ?? '—'}</td>
+                    <td className="border-b border-line/60 px-4 py-3 text-ink-soft">
+                      {branch.assignments.length === 0 ? '—' : branch.assignments.length}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3">
+                      <Pill
+                        label={branch.status}
+                        styles={branch.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
 
-          <BranchFormModal
-            open={editingBranch !== null}
-            branch={editingBranch === 'new' ? null : editingBranch}
-            onClose={() => setEditingBranch(null)}
-            onCreate={createBranch}
-            onUpdate={updateBranch}
-          />
-
-          <AssignModal
-            branch={assigningBranch}
-            assignableUsers={assignableUsers}
-            onClose={() => setAssigningBranch(null)}
-            onAssign={assign}
-          />
+          <Pagination page={page} pageCount={pageCount} rangeStart={rangeStart} rangeEnd={rangeEnd} total={total} onChange={setPage} />
         </div>
+
+        <NewBranchModal open={creating} onClose={() => setCreating(false)} onCreate={createBranch} />
       </NavShell>
     </div>
   )
 }
 
-interface BranchFormModalProps {
+interface NewBranchModalProps {
   open: boolean
-  branch: BranchDto | null
   onClose: () => void
   onCreate: (name: string, address: string, phone?: string) => Promise<BranchDto>
-  onUpdate: (id: string, changes: { name?: string; address?: string; phone?: string }) => Promise<BranchDto>
 }
 
-function BranchFormModal({ open, branch, onClose, onCreate, onUpdate }: BranchFormModalProps) {
-  const [name, setName] = useState(branch?.name ?? '')
-  const [address, setAddress] = useState(branch?.address ?? '')
-  const [phone, setPhone] = useState(branch?.phone ?? '')
+function NewBranchModal({ open, onClose, onCreate }: NewBranchModalProps) {
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
+  const [phone, setPhone] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  const [wasOpen, setWasOpen] = useState(false)
-  if (open && !wasOpen) {
-    setWasOpen(true)
-    setName(branch?.name ?? '')
-    setAddress(branch?.address ?? '')
-    setPhone(branch?.phone ?? '')
+  function handleClose() {
+    setName('')
+    setAddress('')
+    setPhone('')
     setError(null)
-  } else if (!open && wasOpen) {
-    setWasOpen(false)
+    onClose()
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -276,12 +195,8 @@ function BranchFormModal({ open, branch, onClose, onCreate, onUpdate }: BranchFo
     setSubmitting(true)
 
     try {
-      if (branch) {
-        await onUpdate(branch.id, { name, address, phone: phone || undefined })
-      } else {
-        await onCreate(name, address, phone || undefined)
-      }
-      onClose()
+      await onCreate(name, address, phone || undefined)
+      handleClose()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
     } finally {
@@ -290,7 +205,7 @@ function BranchFormModal({ open, branch, onClose, onCreate, onUpdate }: BranchFo
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={branch ? 'Edit branch' : 'New branch'}>
+    <Modal open={open} onClose={handleClose} title="New branch">
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} required />
         <Input label="Address" value={address} onChange={(e) => setAddress(e.target.value)} required />
@@ -300,70 +215,6 @@ function BranchFormModal({ open, branch, onClose, onCreate, onUpdate }: BranchFo
           {submitting ? 'Saving…' : 'Save'}
         </Button>
       </form>
-    </Modal>
-  )
-}
-
-interface AssignModalProps {
-  branch: BranchDto | null
-  assignableUsers: { id: string; name: string; role: 'coach' | 'staff' }[]
-  onClose: () => void
-  onAssign: (branchId: string, userId: string) => Promise<BranchDto>
-}
-
-function AssignModal({ branch, assignableUsers, onClose, onAssign }: AssignModalProps) {
-  const unassigned = branch
-    ? assignableUsers.filter((u) => !branch.assignments.some((a) => a.userId === u.id))
-    : []
-  const [userId, setUserId] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-
-  const selectedUserId = userId || unassigned[0]?.id || ''
-
-  function handleClose() {
-    setUserId('')
-    setError(null)
-    onClose()
-  }
-
-  async function handleSubmit() {
-    if (!branch || !selectedUserId) return
-    setSubmitting(true)
-    setError(null)
-    try {
-      await onAssign(branch.id, selectedUserId)
-      handleClose()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <Modal open={branch !== null} onClose={handleClose} title="Assign to branch">
-      {branch ? (
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-ink-soft">{branch.name}</p>
-
-          {unassigned.length === 0 ? (
-            <p className="text-sm text-ink-soft">Every Coach/Staff account is already assigned here.</p>
-          ) : (
-            <>
-              <Select
-                label="Coach or Staff"
-                value={selectedUserId}
-                onChange={(e) => setUserId(e.target.value)}
-                options={unassigned.map((u) => ({ value: u.id, label: `${u.name} (${u.role})` }))}
-              />
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              <Button fullWidth onClick={handleSubmit} disabled={submitting}>
-                {submitting ? 'Assigning…' : 'Assign'}
-              </Button>
-            </>
-          )}
-        </div>
-      ) : null}
     </Modal>
   )
 }

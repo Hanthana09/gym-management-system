@@ -584,12 +584,33 @@ class MemberController extends AbstractController
             'joinedAt' => $user->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'membership' => $membership !== null ? $this->serializeMembership($membership) : null,
             // roadmap Phase 16 hub model: a Member isn't restricted to a
-            // branch, but the Owner's roster filter still needs *some*
-            // branch to filter by — their enrolling branch (the one their
-            // active plan belongs to) is the only one that means anything
-            // here, same source MemberVoter's Staff branch already uses.
-            'branchIds' => $membership !== null ? [(string) $membership->getPlan()->getBranch()->getId()] : [],
+            // branch (MemberVoter's own Staff-scoping check derives its
+            // "enrolling branch" independently, straight off Membership —
+            // deliberately untouched here), but the Owner's roster filter
+            // and BranchDetailPage's "Members" table still need *some*
+            // branch to show. An explicit Owner-set assignedBranch (the
+            // new member-assign facility) takes priority when present;
+            // otherwise this falls back to the enrolling branch (the one
+            // their active plan belongs to), same as before that facility
+            // existed.
+            'branchIds' => $this->resolveMemberBranchIds($profile, $membership),
+            // Distinct from branchIds above: null here means "shown at
+            // that branch only because of their enrolled plan," which the
+            // member-assign Remove action can't act on (nothing to
+            // unassign) — the frontend uses this to decide whether to
+            // offer Remove at all, rather than surfacing a confusing 409.
+            'assignedBranchId' => $profile->getAssignedBranch() !== null ? (string) $profile->getAssignedBranch()->getId() : null,
         ];
+    }
+
+    private function resolveMemberBranchIds(MemberProfile $profile, ?Membership $membership): array
+    {
+        $assignedBranch = $profile->getAssignedBranch();
+        if ($assignedBranch !== null) {
+            return [(string) $assignedBranch->getId()];
+        }
+
+        return $membership !== null ? [(string) $membership->getPlan()->getBranch()->getId()] : [];
     }
 
     private function serializeCoach(CoachProfile $profile): array

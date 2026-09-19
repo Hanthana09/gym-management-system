@@ -126,6 +126,102 @@ final class BranchControllerTest extends WebTestCase
         self::assertSame('already_assigned', $result['body']['error']);
     }
 
+    public function test_owner_can_assign_a_member_to_a_branch(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $member = $this->createUser('Mia Member', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($member));
+        $this->em->flush();
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+
+        $result = $this->request('POST', "/branches/{$branch['id']}/assign-member", $owner, ['userId' => (string) $member->getId()]);
+
+        self::assertSame(201, $result['status']);
+        self::assertCount(1, $result['body']['memberAssignments']);
+        self::assertSame((string) $member->getId(), $result['body']['memberAssignments'][0]['userId']);
+
+        $roster = $this->request('GET', '/members', $owner);
+        self::assertSame([$branch['id']], $roster['body']['members'][0]['branchIds']);
+    }
+
+    public function test_assigning_a_member_to_a_new_branch_moves_them(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $member = $this->createUser('Mia Member', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($member));
+        $this->em->flush();
+        $first = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $second = $this->request('POST', '/branches', $owner, ['name' => 'Uptown', 'address' => '2 Main St'])['body'];
+        $this->request('POST', "/branches/{$first['id']}/assign-member", $owner, ['userId' => (string) $member->getId()]);
+
+        $this->request('POST', "/branches/{$second['id']}/assign-member", $owner, ['userId' => (string) $member->getId()]);
+
+        $firstAfter = $this->request('GET', '/branches', $owner)['body']['branches'];
+        $firstBranch = array_values(array_filter($firstAfter, fn ($b) => $b['id'] === $first['id']))[0];
+        $secondBranch = array_values(array_filter($firstAfter, fn ($b) => $b['id'] === $second['id']))[0];
+        self::assertCount(0, $firstBranch['memberAssignments']);
+        self::assertCount(1, $secondBranch['memberAssignments']);
+    }
+
+    public function test_owner_can_unassign_a_member(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $member = $this->createUser('Mia Member', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($member));
+        $this->em->flush();
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $this->request('POST', "/branches/{$branch['id']}/assign-member", $owner, ['userId' => (string) $member->getId()]);
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}/assign-member/{$member->getId()}", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(0, $result['body']['memberAssignments']);
+    }
+
+    public function test_unassigning_a_member_not_assigned_here_is_rejected_409(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $member = $this->createUser('Mia Member', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($member));
+        $this->em->flush();
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}/assign-member/{$member->getId()}", $owner);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('not_assigned', $result['body']['error']);
+    }
+
+    public function test_non_owner_cannot_assign_a_member_403(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $staff = $this->createUser('Sam Staff', UserRole::STAFF);
+        $member = $this->createUser('Mia Member', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($member));
+        $this->em->flush();
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+
+        $result = $this->request('POST', "/branches/{$branch['id']}/assign-member", $staff, ['userId' => (string) $member->getId()]);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_deleting_a_branch_clears_its_member_assignments_too(): void
+    {
+        $owner = $this->createUser('Olivia Owner', UserRole::OWNER);
+        $member = $this->createUser('Mia Member', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($member));
+        $this->em->flush();
+        $branch = $this->request('POST', '/branches', $owner, ['name' => 'Downtown', 'address' => '1 Main St'])['body'];
+        $this->request('POST', "/branches/{$branch['id']}/assign-member", $owner, ['userId' => (string) $member->getId()]);
+
+        $result = $this->request('DELETE', "/branches/{$branch['id']}", $owner);
+
+        self::assertSame(204, $result['status']);
+        $roster = $this->request('GET', '/members', $owner);
+        self::assertSame([], $roster['body']['members'][0]['branchIds']);
+    }
+
     public function test_owner_can_deactivate_a_branch(): void
     {
         $owner = $this->createUser('Olivia Owner', UserRole::OWNER);

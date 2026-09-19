@@ -27,6 +27,7 @@ import { DevComponentsPage } from './pages/DevComponentsPage'
 import { StaffDashboardPage } from './pages/StaffDashboardPage'
 import { OwnerSettingsPage } from './pages/OwnerSettingsPage'
 import { OwnerBranchesPage } from './pages/OwnerBranchesPage'
+import { BranchDetailPage } from './pages/BranchDetailPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { OwnerProductsPage } from './pages/OwnerProductsPage'
 import { RetailSalePage } from './pages/RetailSalePage'
@@ -246,6 +247,14 @@ function App() {
         element={
           <RequireAuth>
             <OwnerBranchesPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/branches/:id"
+        element={
+          <RequireAuth>
+            <BranchDetailPage />
           </RequireAuth>
         }
       />

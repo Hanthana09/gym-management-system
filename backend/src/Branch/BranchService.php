@@ -5,10 +5,12 @@ namespace App\Branch;
 use App\Entity\Branch;
 use App\Entity\BranchAssignment;
 use App\Entity\Gym;
+use App\Entity\MemberProfile;
 use App\Entity\User;
 use App\Enum\UserRole;
 use App\Repository\AttendanceLogRepository;
 use App\Repository\BranchAssignmentRepository;
+use App\Repository\MemberProfileRepository;
 use App\Repository\MembershipPlanRepository;
 use App\Repository\PtSessionRepository;
 use Doctrine\ORM\EntityManagerInterface;
@@ -26,6 +28,7 @@ class BranchService
         private readonly AttendanceLogRepository $attendanceLogs,
         private readonly MembershipPlanRepository $membershipPlans,
         private readonly PtSessionRepository $ptSessions,
+        private readonly MemberProfileRepository $memberProfiles,
         private readonly EntityManagerInterface $em,
     ) {
     }
@@ -102,6 +105,13 @@ class BranchService
         foreach ($this->assignments->findByBranch($branch) as $assignment) {
             $this->em->remove($assignment);
         }
+        // Same reasoning as the BranchAssignment removal above — a
+        // Member's assignedBranch is just current placement, not
+        // historical data, so clear it rather than block the delete or
+        // leave a dangling reference.
+        foreach ($this->memberProfiles->findByAssignedBranch($branch) as $profile) {
+            $profile->setAssignedBranch(null);
+        }
         $this->em->remove($branch);
         $this->em->flush();
     }
@@ -144,6 +154,31 @@ class BranchService
 
         $user->removeBranchAssignment($assignment);
         $this->em->remove($assignment);
+        $this->em->flush();
+    }
+
+    /**
+     * Owner-set "home branch" tag for a Member — deliberately NOT the
+     * same mechanism as assign()/unassign() above (BranchAssignment is
+     * Coach/Staff access-scoping; a Member is never restricted to a
+     * branch, functional requirements §14.3's hub model). A Member has
+     * at most one assigned branch at a time, unlike Coach/Staff, so
+     * assigning to a new branch simply overwrites the previous one
+     * rather than erroring like a Coach/Staff "already_assigned" would.
+     */
+    public function assignMember(Branch $branch, MemberProfile $profile): void
+    {
+        $profile->setAssignedBranch($branch);
+        $this->em->flush();
+    }
+
+    public function unassignMember(Branch $branch, MemberProfile $profile): void
+    {
+        if ($profile->getAssignedBranch() !== $branch) {
+            throw new BranchAssignmentConflictException('not_assigned', 'This member is not assigned to this branch.');
+        }
+
+        $profile->setAssignedBranch(null);
         $this->em->flush();
     }
 }

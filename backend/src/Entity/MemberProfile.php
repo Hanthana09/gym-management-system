@@ -113,6 +113,22 @@ class MemberProfile
     private ?Gym $gym = null;
 
     /**
+     * Owner-set "home branch" tag (BranchController's member-assign
+     * endpoints) — deliberately separate from both BranchAssignment
+     * (Coach/Staff access-scoping, never populated for a Member per
+     * architecture doc §5.2) and the membership-plan-derived enrolling
+     * branch below. Purely informational, same as that derived value:
+     * it does not restrict which branch this Member can check in at
+     * (functional requirements §14.3's hub model) — CLAUDE.md is explicit
+     * that reversing that would be undoing a deliberate decision, not a
+     * bug fix. When set, it takes priority over the derived enrolling
+     * branch for MemberController::serializeMember()'s `branchIds`.
+     */
+    #[ORM\ManyToOne(targetEntity: Branch::class)]
+    #[ORM\JoinColumn(name: 'assigned_branch_id', nullable: true)]
+    private ?Branch $assignedBranch = null;
+
+    /**
      * roadmap Phase 16 / architecture doc §9.1's MemberVoter: the Staff
      * VIEW branch needs "which branch did this member enroll at," derived
      * from `getActiveMembership()?->getPlan()?->getBranch()`. Kept in sync
@@ -289,6 +305,16 @@ class MemberProfile
     public function setMemberId(?string $memberId): void
     {
         $this->memberId = $memberId;
+    }
+
+    public function getAssignedBranch(): ?Branch
+    {
+        return $this->assignedBranch;
+    }
+
+    public function setAssignedBranch(?Branch $branch): void
+    {
+        $this->assignedBranch = $branch;
     }
 
     public function getGym(): ?Gym

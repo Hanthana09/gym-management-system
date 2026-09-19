@@ -21,10 +21,17 @@ export interface MemberListItemDto {
   joinedAt: string
   // Coaches never have a Membership — always null for role: 'coach'.
   membership: MemberMembershipSummary | null
-  // A Member's enrolling branch (0 or 1 entries) or a Coach's assigned
-  // branches (0+ entries) — what the Owner roster's branch filter matches
-  // against. Never a restriction on the Member themselves (hub model).
+  // A Member's home branch (0 or 1 entries — their Owner-assigned branch,
+  // falling back to their enrolling plan's branch when unassigned) or a
+  // Coach's assigned branches (0+ entries) — what the Owner roster's
+  // branch filter matches against. Never a restriction on the Member
+  // themselves (hub model) — see MemberVoter, which derives Staff branch
+  // scoping independently and does not read either of these fields.
   branchIds: string[]
+  // Always null for a Coach. For a Member: the branch a branch-assign
+  // action can actually remove them from — null when branchIds[0] (if
+  // present) is only the enrolling-plan fallback, not a real assignment.
+  assignedBranchId: string | null
 }
 
 /** GET/PATCH /members/:id — Owner/Staff (any member) or a Member reading their own record. */
