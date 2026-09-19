@@ -23,17 +23,6 @@ const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
   { value: 'other', label: 'Other' },
 ]
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-function daysAgo(days: number): string {
-  const date = new Date()
-  date.setDate(date.getDate() - days)
-
-  return date.toISOString().slice(0, 10)
-}
-
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
@@ -57,18 +46,17 @@ export function RetailSalePage() {
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
   const effectiveBranchId = isOwner ? selectedBranchId : (selectedBranchId ?? defaultBranchId(myBranches))
 
-  const [from] = useState(daysAgo(7))
-  const [to] = useState(today())
-
   // Only active products belong in the sale picker (functional
   // requirements §15.2 — a deactivated product "stops appearing in the
   // sale quick-entry picker but past sales referencing it remain intact").
   const { products, loaded: productsLoaded } = useProducts({ isActive: true })
   const { members } = useMembers()
+  // No date-range restriction — "Recent sales" shows the gym's full sale
+  // history, paginated (below), not just a fixed recent window.
   const { sales, loaded: salesLoaded, createSale } = useProductSales({
     branchId: effectiveBranchId,
-    from,
-    to,
+    from: null,
+    to: null,
   })
 
   const saleBranchId = effectiveBranchId ?? defaultBranchId(myBranches)
@@ -115,7 +103,7 @@ export function RetailSalePage() {
               <h2 className="mb-3 text-base font-semibold text-ink">Recent sales</h2>
               {salesLoaded && sales.length === 0 ? (
                 <Card>
-                  <p className="py-6 text-center text-sm text-ink-soft">No sales in the last 7 days.</p>
+                  <p className="py-6 text-center text-sm text-ink-soft">No sales yet.</p>
                 </Card>
               ) : null}
 
