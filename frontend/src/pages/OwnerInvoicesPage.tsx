@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
-import { Button, Card, Modal, Select, Ticket } from '../components/ui'
+import { Button, Card, Modal, Pagination, Select, Ticket } from '../components/ui'
 import { ApiError } from '../lib/apiClient'
 import { useInvoices } from '../invoices/useInvoices'
+import { usePagination } from '../lib/usePagination'
 import type { InvoiceDto, InvoiceStatus, OwnerSelectablePaymentMethod } from '../invoices/types'
 
 // DESIGN-SYSTEM.md §3 "Tag/pill" pattern, same approach as every other
@@ -34,12 +35,22 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function dateSummary(invoice: InvoiceDto): string {
+  return invoice.status === 'paid' && invoice.paidAt
+    ? `Paid ${formatDate(invoice.paidAt)} · ${invoice.paymentMethod} · recorded by ${invoice.recordedByName}`
+    : `Issued ${formatDate(invoice.issuedAt)}`
+}
+
+const PAGE_SIZE = 20
+
 /**
  * roadmap Phase 10: the outstanding-invoices view is "the actual
  * day-to-day screen for this phase, more so than history" — defaults to
- * showing pending invoices, with a filter to switch to paid/all. Ticket
- * pattern for rows (DESIGN-SYSTEM.md §3/§4 — each invoice is exactly the
- * kind of discrete, scannable event that pattern fits).
+ * showing pending invoices, with a filter to switch to paid/all. Card
+ * grid on mobile/tablet (Ticket pattern, DESIGN-SYSTEM.md §3/§4), sortable-
+ * free table at lg: and up — same card/table split and usePagination/
+ * Pagination wiring as OwnerMembersPage, since GET /invoices returns the
+ * gym's full invoice history as one array (no server-side pagination).
  */
 export function OwnerInvoicesPage() {
   const { invoices, loaded, markPaid } = useInvoices()
@@ -52,6 +63,18 @@ export function OwnerInvoicesPage() {
 
     return invoices.filter((i) => i.status === 'paid')
   }, [invoices, filter])
+
+  const { page, pageCount, paged: pagedInvoices, rangeStart, rangeEnd, total, setPage } = usePagination(
+    visibleInvoices,
+    PAGE_SIZE,
+  )
+
+  // A filter change can shrink the result set or move a row to a
+  // different page — always land back on page 1 rather than risk
+  // stranding the Owner on a now-empty page (same rule as OwnerMembersPage).
+  useEffect(() => {
+    setPage(1)
+  }, [filter, setPage])
 
   return (
     <div className="h-dvh">
@@ -83,8 +106,9 @@ export function OwnerInvoicesPage() {
             </Card>
           ) : null}
 
-          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {visibleInvoices.map((invoice) => (
+          {/* Card list — default (mobile/tablet), same pattern as OwnerMembersPage/OwnerPlansPage */}
+          <ul className="grid grid-cols-1 gap-3 lg:hidden">
+            {pagedInvoices.map((invoice) => (
               <li key={invoice.id}>
                 <Ticket className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -92,11 +116,7 @@ export function OwnerInvoicesPage() {
                     <p className="font-mono text-xs text-ink-soft">
                       {invoice.plan.name} · ${invoice.amount}
                     </p>
-                    <p className="mt-0.5 text-xs text-ink-soft">
-                      {invoice.status === 'paid' && invoice.paidAt
-                        ? `Paid ${formatDate(invoice.paidAt)} · ${invoice.paymentMethod} · recorded by ${invoice.recordedByName}`
-                        : `Issued ${formatDate(invoice.issuedAt)}`}
-                    </p>
+                    <p className="mt-0.5 text-xs text-ink-soft">{dateSummary(invoice)}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <StatusTag status={invoice.status} />
@@ -110,6 +130,55 @@ export function OwnerInvoicesPage() {
               </li>
             ))}
           </ul>
+
+          {/* Table — lg: and up */}
+          {pagedInvoices.length > 0 ? (
+            <table className="hidden w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-lg border border-line bg-card lg:table">
+              <thead>
+                <tr className="text-left text-sm text-ink-soft">
+                  <th className="w-[22%] border-b border-line px-4 py-3">Member</th>
+                  <th className="w-[18%] border-b border-line px-4 py-3">Plan</th>
+                  <th className="w-[12%] border-b border-line px-4 py-3">Amount</th>
+                  <th className="w-[12%] border-b border-line px-4 py-3">Status</th>
+                  <th className="w-[24%] border-b border-line px-4 py-3">Date</th>
+                  <th className="w-[12%] border-b border-line px-4 py-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedInvoices.map((invoice) => (
+                  <tr key={invoice.id} className="text-sm text-ink">
+                    <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
+                      {invoice.member?.name ?? 'Member'}
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">{invoice.plan.name}</td>
+                    <td className="border-b border-line/60 px-4 py-3 font-mono whitespace-nowrap">${invoice.amount}</td>
+                    <td className="border-b border-line/60 px-4 py-3">
+                      <StatusTag status={invoice.status} />
+                    </td>
+                    <td className="border-b border-line/60 px-4 py-3 break-words text-ink-soft">{dateSummary(invoice)}</td>
+                    <td className="border-b border-line/60 px-4 py-3">
+                      {invoice.status === 'pending' ? (
+                        <Button variant="secondary" onClick={() => setMarkingInvoice(invoice)}>
+                          Mark as paid
+                        </Button>
+                      ) : (
+                        <span className="text-ink-soft">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            rangeStart={rangeStart}
+            rangeEnd={rangeEnd}
+            total={total}
+            onChange={setPage}
+          />
         </div>
 
         <MarkPaidModal invoice={markingInvoice} onClose={() => setMarkingInvoice(null)} onMarkPaid={markPaid} />
