@@ -28,6 +28,14 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
+      # gym_logos.storage / expense_receipts.storage (config/packages/
+      # flysystem.yaml) write here at request time; public/uploads/ is
+      # gitignored and not baked into the image, so without a persistent
+      # volume every uploaded logo/receipt was silently lost whenever this
+      # container got recreated (redeploy, restart, etc.) — the DB kept
+      # pointing at a file that no longer existed, showing as a broken
+      # <img> in prod.
+      - uploads_data:/app/public/uploads
     ports:
       - name: http
         target: 80
@@ -105,6 +113,7 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  uploads_data:
 ###> symfony/mercure-bundle ###
 ###< symfony/mercure-bundle ###
 
