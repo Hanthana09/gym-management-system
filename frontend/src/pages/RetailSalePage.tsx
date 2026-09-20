@@ -64,8 +64,6 @@ export function RetailSalePage() {
   // history, paginated (below), not just a fixed recent window.
   const { sales, loaded: salesLoaded, createSale } = useProductSales({
     branchId: effectiveBranchId,
-    from: null,
-    to: null,
   })
 
   const saleBranchId = effectiveBranchId ?? defaultBranchId(myBranches)

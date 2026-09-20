@@ -6,12 +6,12 @@ import { BranchSwitcher } from '../branches/BranchSwitcher'
 import type { BranchDto } from '../branches/types'
 
 const SINGLE_BRANCH: BranchDto[] = [
-  { id: '1', name: 'Main St', address: '', phone: null, isPrimary: true, status: 'active', assignments: [] },
+  { id: '1', name: 'Main St', address: '', phone: null, isPrimary: true, status: 'active', assignments: [], memberAssignments: [] },
 ]
 
 const TWO_BRANCHES: BranchDto[] = [
-  { id: '1', name: 'Main St', address: '', phone: null, isPrimary: true, status: 'active', assignments: [] },
-  { id: '2', name: 'Downtown', address: '', phone: null, isPrimary: false, status: 'active', assignments: [] },
+  { id: '1', name: 'Main St', address: '', phone: null, isPrimary: true, status: 'active', assignments: [], memberAssignments: [] },
+  { id: '2', name: 'Downtown', address: '', phone: null, isPrimary: false, status: 'active', assignments: [], memberAssignments: [] },
 ]
 
 /**
