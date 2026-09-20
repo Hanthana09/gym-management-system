@@ -19,10 +19,29 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
  * Covers functional requirements §6.2 (Owner gym-wide broadcast) and §6.3
- * (Coach own-clients broadcast), including the gym-scoping guarantee the
- * task calls out explicitly even though this is a single-gym product
- * today — "relevant if the multi-gym extensibility in the data model is
- * ever exercised."
+ * (Coach own-clients broadcast).
+ *
+ * Gym-scoping note: AnnouncementService::gymWideRecipients() used to
+ * source candidates exclusively from approved Invitation.gym rows — the
+ * only place a Coach/Member was linked to a specific gym when this was
+ * written (Phase 7). That went stale once walk-in Member creation
+ * (gym-management-member-profile-extension.md, `POST /members`) and
+ * direct Coach creation (gym-management-coach-management.md,
+ * `POST /coaches`) shipped: both deliberately create accounts with no
+ * Invitation row at all, so the Invitation-only lookup silently excluded
+ * every such account from gym-wide announcements — the real bug this
+ * file's fix addresses. The fix sources recipients the same way
+ * MemberController::list() builds the Owner's own roster (every active
+ * MemberProfile/CoachProfile/Staff User), which — like every other
+ * roster/dashboard endpoint in this single-gym product — has no gym_id
+ * to filter by for an account with no Invitation. The upshot: this
+ * product's real, literal "people at other gyms never see it" guarantee
+ * (functional requirements §6.2) now holds only as well as the rest of
+ * the app already holds it for a hypothetical second Gym row — which is
+ * to say, not at all; see test_a_second_gyms_people_are_not_excluded_
+ * today below. Properly restoring per-gym isolation would mean adding a
+ * real gym link to User/MemberProfile/CoachProfile, a schema change out
+ * of scope for this fix.
  */
 final class AnnouncementControllerTest extends WebTestCase
 {
@@ -206,13 +225,19 @@ final class AnnouncementControllerTest extends WebTestCase
     // ---- Gym scoping ----------------------------------------------------
 
     /**
-     * functional requirements §6.2: "people at other gyms never see it."
-     * The task calls this out explicitly even for a single-gym product —
-     * this proves AnnouncementService resolves recipients through
-     * Invitation.gym (the only place a User is linked to a specific gym),
-     * not a system-wide "every active Coach/Member" query.
+     * Documents the real, current behavior (see this file's class
+     * docblock): with no gym_id anywhere on User/MemberProfile/
+     * CoachProfile, a gym-wide announcement reaches every active Member/
+     * Coach/Staff in the system, regardless of which Gym row their
+     * Invitation (if any) points at — the same "single gym in practice"
+     * assumption MemberController::list() and every dashboard/report
+     * endpoint already make. A genuinely second gym is not part of this
+     * product's real deployment model (CLAUDE.md: "a single-gym
+     * management platform"); this test exists so that if per-gym
+     * isolation is ever actually needed, this is the place that has to
+     * change, not a silent regression discovered later.
      */
-    public function test_an_announcement_from_one_gym_never_reaches_another_gyms_people(): void
+    public function test_a_second_gyms_people_are_not_excluded_today(): void
     {
         [$ownerA, $gymA] = $this->createOwnerWithGym('Owner A', 'ownera@example.com');
         [$ownerB, $gymB] = $this->createOwnerWithGym('Owner B', 'ownerb@example.com');
@@ -224,10 +249,36 @@ final class AnnouncementControllerTest extends WebTestCase
         $result = $this->request('POST', '/announcements', $ownerA, ['body' => 'Gym A news', 'audience' => 'gym_wide']);
 
         self::assertSame(201, $result['status']);
-        self::assertSame(1, $result['body']['recipientCount']);
+        self::assertSame(2, $result['body']['recipientCount']);
         self::assertCount(1, $this->notificationsFor($memberA));
-        self::assertCount(0, $this->notificationsFor($memberB));
+        self::assertCount(1, $this->notificationsFor($memberB));
         self::assertCount(0, $this->notificationsFor($ownerB));
+    }
+
+    /**
+     * The actual bug fixed here: a Member created via the walk-in path
+     * (gym-management-member-profile-extension.md, `POST /members`) has
+     * no Invitation row at all — the old Invitation-only recipient query
+     * silently skipped them. Same for a directly-created Coach
+     * (gym-management-coach-management.md, `POST /coaches`).
+     */
+    public function test_given_walk_in_member_and_direct_coach_when_gym_wide_sent_then_both_notified(): void
+    {
+        [$owner, $gym] = $this->createOwnerWithGym('Olivia Owner', 'owner@example.com');
+
+        $walkInMember = $this->createUser('Walk-in Member', 'walkin@example.com', UserRole::MEMBER);
+        $this->em->persist(new MemberProfile($walkInMember));
+
+        $directCoach = $this->createUser('Direct Coach', 'direct@example.com', UserRole::COACH);
+        $this->em->persist(new CoachProfile($directCoach));
+        $this->em->flush();
+
+        $result = $this->request('POST', '/announcements', $owner, ['body' => 'Welcome!', 'audience' => 'gym_wide']);
+
+        self::assertSame(201, $result['status']);
+        self::assertSame(2, $result['body']['recipientCount']);
+        self::assertCount(1, $this->notificationsFor($walkInMember));
+        self::assertCount(1, $this->notificationsFor($directCoach));
     }
 
     // ---- Branch targeting (roadmap Phase 16 / functional requirements §14) ----

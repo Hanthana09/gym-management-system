@@ -4,15 +4,13 @@ namespace App\Notification;
 
 use App\Entity\Announcement;
 use App\Entity\Branch;
-use App\Entity\Gym;
 use App\Entity\User;
 use App\Enum\Audience;
 use App\Enum\NotificationType;
 use App\Enum\UserRole;
-use App\Enum\UserStatus;
 use App\Repository\CoachProfileRepository;
-use App\Repository\InvitationRepository;
 use App\Repository\MemberProfileRepository;
+use App\Repository\UserRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -27,9 +25,9 @@ class AnnouncementService
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly NotificationService $notifications,
-        private readonly InvitationRepository $invitations,
         private readonly MemberProfileRepository $memberProfiles,
         private readonly CoachProfileRepository $coachProfiles,
+        private readonly UserRepository $users,
     ) {
     }
 
@@ -47,7 +45,7 @@ class AnnouncementService
         $this->em->flush();
 
         $recipients = $announcement->getAudience() === Audience::GYM_WIDE
-            ? $this->gymWideRecipients($announcement->getGym(), $announcement->getCreatedBy(), $announcement->getBranch())
+            ? $this->gymWideRecipients($announcement->getCreatedBy(), $announcement->getBranch())
             : $this->ownClientRecipients($announcement->getCreatedBy());
 
         $sourceRole = $announcement->getCreatedBy()->getRole();
@@ -60,12 +58,25 @@ class AnnouncementService
 
     /**
      * functional requirements §6.2: "every active Member and Coach at my
-     * gym; people at other gyms never see it" — approved Invitation.gym is
-     * the only place a Coach/Member is linked to a specific gym (User has
-     * no direct gym_id), so that's what scopes this, not a blanket
-     * "every active Coach/Member in the system" query. Also excludes the
-     * Owner themselves (harmless — an Owner has no invitation to their
-     * own gym anyway) and anyone since suspended.
+     * gym; people at other gyms never see it." Originally sourced from
+     * approved Invitation.gym — correct in the invite-only world this was
+     * written for (Phase 7), since that was the only place a Coach/Member
+     * was ever linked to a gym. It went stale once
+     * gym-management-member-profile-extension.md (walk-in `POST /members`)
+     * and gym-management-coach-management.md (`POST /coaches`) shipped:
+     * those deliberately create accounts with **no** Invitation row at
+     * all (CLAUDE.md's documented override of the invite-only rule), so
+     * an Invitation-only lookup silently excluded every walk-in Member
+     * and directly-created Coach from gym-wide announcements — the
+     * Announcement row still got created (audit-visible, 201 to the
+     * Owner), it just fanned out to almost nobody. Fixed by sourcing
+     * candidates the same way the Owner's own roster does
+     * (MemberController::list()'s findAllWithUser() calls, and
+     * UserRepository::findActiveByRoles() for Staff, who have no profile
+     * entity) — single-gym product, so "every active Member/Coach/Staff"
+     * already is "at my gym," the same assumption findAllWithUser() and
+     * findTheOnlyGym() make everywhere else. Also excludes the Owner
+     * themselves and anyone not ACTIVE.
      *
      * roadmap Phase 16: when $branch is given (the Owner targeted one
      * branch, not gym-wide), this narrows further to Members enrolled at
@@ -77,18 +88,17 @@ class AnnouncementService
      *
      * @return User[]
      */
-    private function gymWideRecipients(Gym $gym, User $owner, ?Branch $branch): array
+    private function gymWideRecipients(User $owner, ?Branch $branch): array
     {
-        $approved = array_values(array_filter(
-            $this->invitations->findApprovedUsersForGym($gym),
-            fn (User $user) => $user !== $owner && $user->getStatus() === UserStatus::ACTIVE,
-        ));
+        $candidates = $this->users->findActiveByRoles([UserRole::MEMBER, UserRole::COACH, UserRole::STAFF]);
+
+        $active = array_values(array_filter($candidates, fn (User $user) => $user !== $owner));
 
         if ($branch === null) {
-            return $approved;
+            return $active;
         }
 
-        return array_values(array_filter($approved, function (User $user) use ($branch) {
+        return array_values(array_filter($active, function (User $user) use ($branch) {
             if ($user->getRole() === UserRole::MEMBER) {
                 $member = $this->memberProfiles->findOneByUser($user);
                 $enrollingBranch = $member?->getActiveMembership()?->getPlan()?->getBranch();
