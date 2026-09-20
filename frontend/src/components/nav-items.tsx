@@ -48,6 +48,7 @@ export const OWNER_NAV_ITEMS: NavItem[] = [
   { label: 'Expenses', href: '/owner/expenses', icon: <ExpenseIcon /> },
   { label: 'Products', href: '/owner/products', icon: <ProductIcon /> },
   { label: 'Sell', href: '/owner/sell', icon: <SellIcon /> },
+  { label: 'Notifications', href: '/owner/notifications', icon: <BellIcon /> },
   { label: 'Settings', href: '/owner/settings', icon: <SettingsIcon /> },
 ]
 
@@ -57,6 +58,7 @@ export const COACH_NAV_ITEMS: NavItem[] = [
   { label: 'Sessions', href: '/coach/sessions', icon: <SessionsIcon /> },
   { label: 'Workouts', href: '/coach/workout-schedules', icon: <WorkoutIcon /> },
   { label: 'Members', href: '/coach/members', icon: <MembersIcon /> },
+  { label: 'Notifications', href: '/coach/notifications', icon: <BellIcon /> },
 ]
 
 // roadmap Phase 15.1: Staff's whole app is this one screen — a
@@ -73,4 +75,5 @@ export const STAFF_NAV_ITEMS: NavItem[] = [
   { label: 'Members', href: '/staff/members', icon: <MembersIcon /> },
   { label: 'Expenses', href: '/staff/expenses', icon: <ExpenseIcon /> },
   { label: 'Sell', href: '/staff/sell', icon: <SellIcon /> },
+  { label: 'Notifications', href: '/staff/notifications', icon: <BellIcon /> },
 ]

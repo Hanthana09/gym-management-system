@@ -21,7 +21,6 @@ import { MemberSessionsPage } from './pages/MemberSessionsPage'
 import { CoachMembersPage } from './pages/CoachMembersPage'
 import { CoachSchedulePage } from './pages/CoachSchedulePage'
 import { MemberTrackingPage } from './pages/MemberTrackingPage'
-import { ComingSoonPage } from './pages/ComingSoonPage'
 import { CoachDashboardPage } from './pages/CoachDashboardPage'
 import { DevComponentsPage } from './pages/DevComponentsPage'
 import { StaffDashboardPage } from './pages/StaffDashboardPage'
@@ -34,6 +33,7 @@ import { RetailSalePage } from './pages/RetailSalePage'
 import { OwnerFinancialSummaryPage } from './pages/OwnerFinancialSummaryPage'
 import { CoachWorkoutSchedulesPage } from './pages/CoachWorkoutSchedulesPage'
 import { MemberWorkoutSchedulePage } from './pages/MemberWorkoutSchedulePage'
+import { NotificationsPage } from './pages/NotificationsPage'
 
 const FORCED_PASSWORD_CHANGE_PATH = '/change-password'
 
@@ -214,7 +214,31 @@ function App() {
         path="/member/notifications"
         element={
           <RequireAuth>
-            <ComingSoonPage title="Notifications" activeHref="/member/notifications" />
+            <NotificationsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/owner/notifications"
+        element={
+          <RequireAuth>
+            <NotificationsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/coach/notifications"
+        element={
+          <RequireAuth>
+            <NotificationsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/staff/notifications"
+        element={
+          <RequireAuth>
+            <NotificationsPage />
           </RequireAuth>
         }
       />

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { GymBrandingProvider } from './gym/useGymBranding'
 import { GymMemberIdSettingsProvider } from './gym/useGymMemberIdSettings'
+import { NotificationsProvider } from './notifications/useNotifications'
 import './index.css'
 import App from './App.tsx'
 
@@ -13,7 +14,9 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <GymBrandingProvider>
           <GymMemberIdSettingsProvider>
-            <App />
+            <NotificationsProvider>
+              <App />
+            </NotificationsProvider>
           </GymMemberIdSettingsProvider>
         </GymBrandingProvider>
       </AuthProvider>
