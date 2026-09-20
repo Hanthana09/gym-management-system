@@ -193,6 +193,34 @@ final class GymBrandingControllerTest extends WebTestCase
         self::assertNull($result['brandColor']);
     }
 
+    /**
+     * Regression test: an Owner's GET must resolve to their own Gym, not
+     * an arbitrary one. GymRepository::findTheOnlyGym() is `findOneBy([])`
+     * with no WHERE/ORDER BY, and is only safe for reads by roles with no
+     * owned gym of their own (Coach/Staff/Member, per
+     * MemberController::resolveGymForActingUser's identical pattern).
+     * With two Owners (and therefore two Gym rows) both present,
+     * GymBrandingController::get() previously called findTheOnlyGym()
+     * unconditionally and could hand one Owner back the other's (empty)
+     * branding.
+     */
+    public function test_owner_reads_back_their_own_branding_not_another_owners(): void
+    {
+        $ownerA = $this->createUser('Olivia Owner', 'olivia@example.com', UserRole::OWNER);
+        $ownerB = $this->createUser('Ben Owner', 'ben@example.com', UserRole::OWNER);
+
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => '#1A2B3C'], [], $this->authHeaders($ownerA));
+        $this->client->request('PATCH', '/api/gym/branding', ['brandColor' => '#4D5E6F'], [], $this->authHeaders($ownerB));
+
+        $this->client->request('GET', '/api/gym/branding', server: $this->authHeaders($ownerA));
+        $resultA = json_decode($this->client->getResponse()->getContent(), true);
+        self::assertSame('#1A2B3C', $resultA['brandColor']);
+
+        $this->client->request('GET', '/api/gym/branding', server: $this->authHeaders($ownerB));
+        $resultB = json_decode($this->client->getResponse()->getContent(), true);
+        self::assertSame('#4D5E6F', $resultB['brandColor']);
+    }
+
     public function test_member_sees_owners_branding_once_set(): void
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);

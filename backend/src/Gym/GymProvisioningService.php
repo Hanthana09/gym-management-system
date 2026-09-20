@@ -11,6 +11,7 @@ use App\Repository\BranchRepository;
 use App\Repository\ExpenseCategoryRepository;
 use App\Repository\GymRepository;
 use App\Repository\ProductCategoryRepository;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 
 /**
@@ -57,7 +58,21 @@ class GymProvisioningService
         if ($gym === null) {
             $gym = new Gym($owner->getName() . "'s Gym", '', $owner);
             $this->em->persist($gym);
-            $this->em->flush();
+            try {
+                $this->em->flush();
+            } catch (UniqueConstraintViolationException) {
+                // Lost a race with a concurrent request also provisioning
+                // this Owner's gym for the first time (owner_id is DB-unique
+                // — see Gym's docblock). Drop our attempt and use the row
+                // the other request just committed instead of creating a
+                // second Gym for the same Owner, which broke every unscoped
+                // GymRepository::findTheOnlyGym() read for them.
+                $this->em->detach($gym);
+                $gym = $this->gyms->findOneByOwner($owner);
+                if ($gym === null) {
+                    throw new \RuntimeException('Gym unique constraint violated but no gym found for owner.');
+                }
+            }
         }
 
         $this->ensurePrimaryBranch($gym);

@@ -2,7 +2,9 @@
 
 namespace App\Controller;
 
+use App\Entity\Gym;
 use App\Entity\User;
+use App\Enum\UserRole;
 use App\Gym\GymProvisioningService;
 use App\Repository\GymRepository;
 use App\Security\Voter\GymVoter;
@@ -60,13 +62,33 @@ class GymBrandingController extends AbstractController
             return $this->unauthenticated();
         }
 
-        $gym = $this->gyms->findTheOnlyGym();
+        $gym = $this->resolveGymForActingUser($user);
 
         return new JsonResponse([
             'name' => $gym?->getName(),
             'logoUrl' => $gym?->getLogoUrl(),
             'brandColor' => $gym?->getBrandColor(),
         ]);
+    }
+
+    /**
+     * Mirrors MemberController::resolveGymForActingUser(): an Owner must
+     * always read back *their own* gym, not an arbitrary one -
+     * findTheOnlyGym()'s unscoped `findOneBy([])` only holds up when
+     * there's truly one Gym system-wide, which isn't guaranteed once more
+     * than one Owner account exists (confirmed live: this was the actual
+     * cause of an Owner's saved branding reverting to defaults on reload
+     * — GET was returning a different Owner's blank gym). Non-Owner roles
+     * have no owned gym of their own, so they keep the existing
+     * single-gym-product fallback.
+     */
+    private function resolveGymForActingUser(User $user): ?Gym
+    {
+        if ($user->getRole() === UserRole::OWNER) {
+            return $this->gyms->findOneByOwner($user);
+        }
+
+        return $this->gyms->findTheOnlyGym();
     }
 
     #[Route('/gym/branding', name: 'gym_branding_update', methods: ['PATCH'])]

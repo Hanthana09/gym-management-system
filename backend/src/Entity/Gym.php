@@ -57,7 +57,7 @@ class Gym
     private string $address;
 
     #[ORM\ManyToOne(targetEntity: User::class)]
-    #[ORM\JoinColumn(name: 'owner_id', nullable: false)]
+    #[ORM\JoinColumn(name: 'owner_id', nullable: false, unique: true)]
     private User $owner;
 
     /** roadmap Phase 15.2 / architecture doc §5.1, §6.11: nullable — a gym with no branding set shows product defaults (functional requirements §12.1). */
