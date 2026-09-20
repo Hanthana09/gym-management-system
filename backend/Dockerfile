@@ -172,6 +172,17 @@ COPY --link --exclude=var --from=frankenphp_prod_builder /app /app
 COPY --chown=www-data:0 --from=frankenphp_prod_builder /app/var /app/var
 RUN chmod g=u /app/var
 
+# public/uploads is gitignored/dockerignored (flysystem.yaml's local
+# storages write here at request time) so it doesn't exist in the image
+# above. The compose uploads_data volume mounts over this path, and
+# Docker creates a fresh root-owned directory for a volume mount that has
+# no prior content to copy up from — leaving www-data (this image's
+# runtime user) unable to write. Pre-creating it owned by www-data here
+# means the volume's first mount copies up that ownership instead.
+RUN mkdir -p /app/public/uploads/gym-logos /app/public/uploads/expense-receipts \
+	&& chown -R www-data:0 /app/public/uploads \
+	&& chmod -R g=u /app/public/uploads
+
 COPY --link --chmod=755 frankenphp/docker-entrypoint.sh /usr/local/bin/docker-entrypoint
 
 USER www-data
