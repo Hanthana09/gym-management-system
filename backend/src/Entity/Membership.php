@@ -140,6 +140,21 @@ class Membership
         return $this->plan;
     }
 
+    /**
+     * Owner reassigning which plan this membership is on (architecture
+     * doc §6.2 "plan changes"). Deliberately doesn't touch startDate/
+     * endDate/billingAnchorDay/nextBillingDate — same "no retroactive
+     * changes" principle as a plan's own price edit (functional
+     * requirements §3.1): the current period runs its course unchanged,
+     * and InvoiceGenerationService/BillingService already read
+     * `getPlan()->getPrice()` at generation time, so the new price takes
+     * effect starting with the next invoice with no extra bookkeeping.
+     */
+    public function changePlan(MembershipPlan $plan): void
+    {
+        $this->plan = $plan;
+    }
+
     public function getStartDate(): \DateTimeImmutable
     {
         return $this->startDate;

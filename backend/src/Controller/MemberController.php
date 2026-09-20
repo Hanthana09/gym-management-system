@@ -639,6 +639,12 @@ class MemberController extends AbstractController
     private function serializeMembership(Membership $membership): array
     {
         return [
+            // id/planId added for the Owner's "change plan" action
+            // (MembershipController::changePlan) — the roster/detail
+            // screens need both to target the PATCH and preselect the
+            // current plan.
+            'id' => (string) $membership->getId(),
+            'planId' => (string) $membership->getPlan()->getId(),
             'planName' => $membership->getPlan()->getName(),
             'status' => $membership->getStatus()->value,
         ];

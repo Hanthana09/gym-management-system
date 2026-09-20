@@ -185,6 +185,46 @@ class MembershipController extends AbstractController
         return new JsonResponse($this->serializeMembership($membership), 201);
     }
 
+    /** Owner reassigning an existing member's plan — the "edit" counterpart to enroll() above, for a member who already has an ongoing membership. */
+    #[Route('/memberships/{id}/plan', name: 'memberships_change_plan', methods: ['PATCH'])]
+    public function changePlan(string $id, Request $request): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $membership = $this->membershipRepository->find($id);
+        if ($membership === null) {
+            return $this->notFound('Membership not found.');
+        }
+        if (!$this->isGranted(MembershipVoter::MANAGE, $membership)) {
+            return $this->forbidden();
+        }
+
+        $data = $this->decode($request);
+        $planId = (string) ($data['planId'] ?? '');
+        if ($planId === '') {
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'planId is required.'], 400);
+        }
+
+        $plan = $this->planRepository->find($planId);
+        if ($plan === null) {
+            return $this->notFound('Plan not found.');
+        }
+        if (!$this->isGranted(MembershipVoter::MANAGE, $plan)) {
+            return $this->forbidden();
+        }
+
+        try {
+            $this->memberships->changePlan($membership, $plan, $user);
+        } catch (MembershipConflictException $exception) {
+            return new JsonResponse(['error' => $exception->reason, 'message' => $exception->getMessage()], 409);
+        }
+
+        return new JsonResponse($this->serializeMembership($membership));
+    }
+
     // ---- Member's own membership (self-service) -----------------------------
 
     #[Route('/members/me/membership', name: 'members_me_membership', methods: ['GET'])]

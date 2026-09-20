@@ -2,11 +2,13 @@
 
 namespace App\Membership;
 
+use App\Audit\AuditLogger;
 use App\Billing\BillingCycleCalculator;
 use App\Entity\Branch;
 use App\Entity\MemberProfile;
 use App\Entity\Membership;
 use App\Entity\MembershipPlan;
+use App\Entity\User;
 use App\Enum\MembershipStatus;
 use App\Enum\UserStatus;
 use App\Event\MembershipCreatedEvent;
@@ -17,7 +19,7 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
  * architecture doc §6.2: plan creation/pricing (Owner only), member
- * enrollment, pause/cancel.
+ * enrollment, plan changes, pause/cancel.
  */
 class MembershipService
 {
@@ -26,6 +28,7 @@ class MembershipService
         private readonly MembershipRepository $memberships,
         private readonly EntityManagerInterface $em,
         private readonly EventDispatcherInterface $dispatcher,
+        private readonly AuditLogger $auditLogger,
     ) {
     }
 
@@ -103,6 +106,32 @@ class MembershipService
         $this->dispatcher->dispatch(new MembershipCreatedEvent($membership), MembershipCreatedEvent::NAME);
 
         return $membership;
+    }
+
+    /**
+     * Owner reassigning an existing member's plan (architecture doc
+     * §6.2/§9 "plan changes" — the counterpart to enroll() for a member
+     * who already has an ongoing membership rather than a fresh one).
+     * Same-plan is a no-op: nothing to change, nothing to audit.
+     */
+    public function changePlan(Membership $membership, MembershipPlan $newPlan, User $actingUser): void
+    {
+        if (!$membership->isOngoing()) {
+            throw new MembershipConflictException('not_ongoing', 'Only an active, paused, or suspended membership can change plans.');
+        }
+
+        $previousPlan = $membership->getPlan();
+        if ($previousPlan === $newPlan) {
+            return;
+        }
+
+        $membership->changePlan($newPlan);
+        $this->em->flush();
+
+        $this->auditLogger->log($actingUser, 'membership.plan_changed', 'Membership', $membership->getId(), [
+            'fromPlanId' => (string) $previousPlan->getId(),
+            'toPlanId' => (string) $newPlan->getId(),
+        ]);
     }
 
     /** "My membership" — most recent regardless of status, with the lazy natural-expiry check applied first. */

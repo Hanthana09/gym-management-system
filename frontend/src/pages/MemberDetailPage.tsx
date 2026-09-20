@@ -12,6 +12,11 @@ import { MemberProfileForm, type MemberProfileFormValues } from '../members/Memb
 import { SetPasswordModal } from '../members/SetPasswordModal'
 import { RecordPaymentModal } from '../billing/RecordPaymentModal'
 import { useMemberBillingStatus } from '../billing/useMemberBillingStatus'
+import { useOwnerPlans } from '../membership/useOwnerPlans'
+import { useEnrollMember } from '../membership/useEnrollMember'
+import { useChangeMembershipPlan } from '../membership/useChangeMembershipPlan'
+import { AssignPlanModal } from '../membership/AssignPlanModal'
+import { isOngoingMembershipStatus } from '../membership/types'
 import type { AttendanceLogDto, MemberAttendancePageDto, MemberProfileFieldsInput, MemberPtScheduleDto } from '../members/types'
 import type { OutstandingInvoiceDto } from '../billing/types'
 
@@ -71,8 +76,21 @@ export function MemberDetailPage() {
   const { profile, loaded, refreshProfile, loadPtSchedule, loadAttendance } = useMemberDetail(memberId)
   const { updateProfile } = useMembers()
   const { user } = useAuth()
+  const { plans, loaded: plansLoaded } = useOwnerPlans()
+  const { enroll } = useEnrollMember()
+  const { changePlan } = useChangeMembershipPlan()
   const [tab, setTab] = useState<TabValue>('profile')
   const [setPasswordOpen, setSetPasswordOpen] = useState(false)
+  const [assigningPlan, setAssigningPlan] = useState(false)
+
+  async function handlePlanSubmit(planId: string) {
+    if (!profile) return
+    if (profile.membership && isOngoingMembershipStatus(profile.membership.status)) {
+      await changePlan(profile.membership.id, planId)
+    } else {
+      await enroll(profile.id, planId)
+    }
+  }
 
   return (
     <div className="h-dvh">
@@ -113,10 +131,27 @@ export function MemberDetailPage() {
                 userName={profile.name}
               />
 
+              <AssignPlanModal
+                member={assigningPlan ? { id: profile.id, name: profile.name } : null}
+                currentPlanId={
+                  profile.membership && isOngoingMembershipStatus(profile.membership.status) ? profile.membership.planId : null
+                }
+                plans={plans}
+                plansLoaded={plansLoaded}
+                onClose={() => setAssigningPlan(false)}
+                onSubmit={handlePlanSubmit}
+                onAssigned={refreshProfile}
+              />
+
               <Tabs items={TAB_ITEMS} value={tab} onChange={(v) => setTab(v as TabValue)} />
 
               {tab === 'profile' ? (
-                <ProfileTab profile={profile} onSave={(fields) => updateProfile(memberId, fields)} onSaved={refreshProfile} />
+                <ProfileTab
+                  profile={profile}
+                  onSave={(fields) => updateProfile(memberId, fields)}
+                  onSaved={refreshProfile}
+                  onAssignPlan={() => setAssigningPlan(true)}
+                />
               ) : null}
               {tab === 'pt-schedule' ? <PtScheduleTab load={loadPtSchedule} /> : null}
               {tab === 'attendance' ? <AttendanceTab load={loadAttendance} /> : null}
@@ -133,9 +168,10 @@ interface ProfileTabProps {
   profile: NonNullable<ReturnType<typeof useMemberDetail>['profile']>
   onSave: (fields: MemberProfileFieldsInput) => Promise<unknown>
   onSaved: () => Promise<unknown>
+  onAssignPlan: () => void
 }
 
-function ProfileTab({ profile, onSave, onSaved }: ProfileTabProps) {
+function ProfileTab({ profile, onSave, onSaved, onAssignPlan }: ProfileTabProps) {
   const { settings: memberIdSettings } = useGymMemberIdSettings()
   const [values, setValues] = useState<MemberProfileFormValues>({
     name: profile.name,
@@ -184,11 +220,22 @@ function ProfileTab({ profile, onSave, onSaved }: ProfileTabProps) {
       <div className="mb-4 flex flex-col gap-1 text-sm text-ink-soft">
         {profile.email ? <p>{profile.email}</p> : null}
         {profile.phone ? <p>{profile.phone}</p> : null}
-        {profile.membership ? (
-          <p>
-            {profile.membership.planName} — {profile.membership.status}
-          </p>
-        ) : null}
+        <p className="flex flex-wrap items-center gap-2">
+          {profile.membership ? (
+            <>
+              <span>
+                {profile.membership.planName} — {profile.membership.status}
+              </span>
+              <button type="button" className="text-xs text-ink-soft underline-offset-2 hover:underline" onClick={onAssignPlan}>
+                {isOngoingMembershipStatus(profile.membership.status) ? 'Change plan' : 'Re-enroll'}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="text-xs text-ink-soft underline-offset-2 hover:underline" onClick={onAssignPlan}>
+              Enroll in plan
+            </button>
+          )}
+        </p>
         {profile.age !== null ? <p>Age: {profile.age}</p> : null}
       </div>
       {/* Contact fields aren't editable in this phase — only dob, gender, address fields, and memberId (gym-management-member-profile-extension.md §4). */}

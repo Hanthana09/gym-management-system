@@ -205,6 +205,54 @@ final class MembershipControllerTest extends WebTestCase
         self::assertSame('already_enrolled', $second['body']['error']);
     }
 
+    // ---- Plan changes (architecture doc §6.2/§9 — Owner reassigning an existing member's plan) ----
+
+    public function test_given_ongoing_membership_when_plan_changed_then_plan_updated(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $standard = $this->createPlan($owner, 'Standard', '49.99', 30);
+        $gold = $this->createPlan($owner, 'Gold', '79.99', 30);
+        $enrolled = $this->enroll($owner, (string) $member->getId(), $standard['body']['id']);
+
+        $result = $this->request('PATCH', "/memberships/{$enrolled['body']['id']}/plan", $owner, ['planId' => $gold['body']['id']]);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('Gold', $result['body']['plan']['name']);
+
+        $stillEndDate = $this->em->getConnection()->fetchOne('SELECT end_date FROM membership WHERE id = ?', [$enrolled['body']['id']]);
+        self::assertSame($enrolled['body']['endDate'], $stillEndDate);
+    }
+
+    public function test_given_cancelled_membership_when_plan_change_attempted_then_conflict(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $standard = $this->createPlan($owner, 'Standard', '49.99', 30);
+        $gold = $this->createPlan($owner, 'Gold', '79.99', 30);
+        $enrolled = $this->enroll($owner, (string) $member->getId(), $standard['body']['id']);
+        $this->request('PATCH', '/members/me/membership/cancel', $member);
+
+        $result = $this->request('PATCH', "/memberships/{$enrolled['body']['id']}/plan", $owner, ['planId' => $gold['body']['id']]);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('not_ongoing', $result['body']['error']);
+    }
+
+    public function test_non_owner_cannot_change_a_members_plan_403(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $coach = $this->createUser('Carlos Coach', 'coach@example.com', UserRole::COACH);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $standard = $this->createPlan($owner, 'Standard', '49.99', 30);
+        $gold = $this->createPlan($owner, 'Gold', '79.99', 30);
+        $enrolled = $this->enroll($owner, (string) $member->getId(), $standard['body']['id']);
+
+        $result = $this->request('PATCH', "/memberships/{$enrolled['body']['id']}/plan", $coach, ['planId' => $gold['body']['id']]);
+
+        self::assertSame(403, $result['status']);
+    }
+
     // ---- §3.2 status display (check-in block explicitly deferred to Phase 5) ----
 
     public function test_given_active_membership_when_view_my_membership_then_shows_plan_price_and_dates(): void
@@ -222,6 +270,31 @@ final class MembershipControllerTest extends WebTestCase
         self::assertSame('79.99', $result['body']['membership']['plan']['price']);
         self::assertArrayHasKey('startDate', $result['body']['membership']);
         self::assertArrayHasKey('endDate', $result['body']['membership']);
+    }
+
+    /**
+     * The end-to-end guarantee behind the "change plan" feature: an Owner
+     * changing a member's plan must be visible from the Member's own
+     * "My membership" view on their very next fetch, not just in the
+     * Owner-facing PATCH response.
+     */
+    public function test_given_owner_changes_plan_when_member_views_my_membership_then_sees_new_plan(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', UserRole::OWNER);
+        $member = $this->createApprovedMember('Mia Member', 'mia@example.com');
+        $standard = $this->createPlan($owner, 'Standard', '49.99', 30);
+        $gold = $this->createPlan($owner, 'Gold', '79.99', 30);
+        $enrolled = $this->enroll($owner, (string) $member->getId(), $standard['body']['id']);
+
+        $before = $this->request('GET', '/members/me/membership', $member);
+        self::assertSame('Standard', $before['body']['membership']['plan']['name']);
+
+        $changed = $this->request('PATCH', "/memberships/{$enrolled['body']['id']}/plan", $owner, ['planId' => $gold['body']['id']]);
+        self::assertSame(200, $changed['status']);
+        self::assertSame('Gold', $changed['body']['plan']['name']);
+
+        $after = $this->request('GET', '/members/me/membership', $member);
+        self::assertSame('Gold', $after['body']['membership']['plan']['name']);
     }
 
     public function test_given_no_membership_when_view_my_membership_then_null_not_error(): void

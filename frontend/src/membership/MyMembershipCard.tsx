@@ -11,6 +11,7 @@ import type { MembershipStatus } from './types'
 const STATUS_STYLES: Record<MembershipStatus, string> = {
   active: 'bg-green-100 text-green-800',
   paused: 'bg-amber-100 text-amber-800',
+  suspended: 'bg-red-100 text-red-800',
   expired: 'bg-gray-100 text-gray-600',
   cancelled: 'bg-red-100 text-red-800',
 }

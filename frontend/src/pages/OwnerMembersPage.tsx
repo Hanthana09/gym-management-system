@@ -17,6 +17,9 @@ import {
 import { useGymMemberIdSettings } from '../gym/useGymMemberIdSettings'
 import { useOwnerPlans } from '../membership/useOwnerPlans'
 import { useEnrollMember } from '../membership/useEnrollMember'
+import { useChangeMembershipPlan } from '../membership/useChangeMembershipPlan'
+import { isOngoingMembershipStatus } from '../membership/types'
+import { AssignPlanModal } from '../membership/AssignPlanModal'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import { usePagination } from '../lib/usePagination'
@@ -114,6 +117,7 @@ export function OwnerMembersPage() {
   const { members, loaded, refresh, updateStatus } = useMembers()
   const { plans, loaded: plansLoaded } = useOwnerPlans()
   const { enroll } = useEnrollMember()
+  const { changePlan } = useChangeMembershipPlan()
   const { branches } = useBranches()
   const [addingMember, setAddingMember] = useState(false)
   const [addingCoach, setAddingCoach] = useState(false)
@@ -121,7 +125,10 @@ export function OwnerMembersPage() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all')
   const [sortField, setSortField] = useState<SortField>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [enrollingMember, setEnrollingMember] = useState<MemberListItemDto | null>(null)
+  // Serves both "Enroll in plan" (member.membership is null) and "Change
+  // plan" (member.membership is set) — AssignPlanModal itself decides
+  // which verb/current-selection to show based on that.
+  const [assigningPlanMember, setAssigningPlanMember] = useState<MemberListItemDto | null>(null)
   const [confirmingSuspendId, setConfirmingSuspendId] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null)
@@ -216,6 +223,15 @@ export function OwnerMembersPage() {
   }
 
   const sortIndicator = sortDirection === 'asc' ? '↑' : '↓'
+
+  async function handlePlanSubmit(planId: string) {
+    if (!assigningPlanMember) return
+    if (assigningPlanMember.membership && isOngoingMembershipStatus(assigningPlanMember.membership.status)) {
+      await changePlan(assigningPlanMember.membership.id, planId)
+    } else {
+      await enroll(assigningPlanMember.id, planId)
+    }
+  }
 
   return (
     <div className="h-dvh">
@@ -325,17 +341,24 @@ export function OwnerMembersPage() {
                 </div>
                 <div className="mt-3 flex items-center justify-between text-sm">
                   {member.membership ? (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-ink-soft">{member.membership.planName}</span>
                       <Pill
                         label={member.membership.status}
                         styles={MEMBERSHIP_STATUS_STYLES[member.membership.status] ?? 'bg-gray-100 text-gray-600'}
                       />
+                      <button
+                        type="button"
+                        className="text-xs text-ink-soft underline-offset-2 hover:underline"
+                        onClick={() => setAssigningPlanMember(member)}
+                      >
+                        {isOngoingMembershipStatus(member.membership.status) ? 'Change' : 'Re-enroll'}
+                      </button>
                     </div>
                   ) : member.role === 'coach' ? (
                     <span className="text-ink-soft">—</span>
                   ) : (
-                    <Button variant="secondary" onClick={() => setEnrollingMember(member)}>
+                    <Button variant="secondary" onClick={() => setAssigningPlanMember(member)}>
                       Enroll in plan
                     </Button>
                   )}
@@ -449,11 +472,18 @@ export function OwnerMembersPage() {
                             label={member.membership.status}
                             styles={MEMBERSHIP_STATUS_STYLES[member.membership.status] ?? 'bg-gray-100 text-gray-600'}
                           />
+                          <button
+                            type="button"
+                            className="text-xs text-ink-soft underline-offset-2 hover:underline"
+                            onClick={() => setAssigningPlanMember(member)}
+                          >
+                            {isOngoingMembershipStatus(member.membership.status) ? 'Change' : 'Re-enroll'}
+                          </button>
                         </div>
                       ) : member.role === 'coach' ? (
                         <span className="text-ink-soft">—</span>
                       ) : (
-                        <Button variant="secondary" onClick={() => setEnrollingMember(member)}>
+                        <Button variant="secondary" onClick={() => setAssigningPlanMember(member)}>
                           Enroll in plan
                         </Button>
                       )}
@@ -518,13 +548,18 @@ export function OwnerMembersPage() {
           />
         </div>
 
-        <EnrollModal
-          member={enrollingMember}
+        <AssignPlanModal
+          member={assigningPlanMember}
+          currentPlanId={
+            assigningPlanMember?.membership && isOngoingMembershipStatus(assigningPlanMember.membership.status)
+              ? assigningPlanMember.membership.planId
+              : null
+          }
           plans={plans}
           plansLoaded={plansLoaded}
-          onClose={() => setEnrollingMember(null)}
-          onEnroll={enroll}
-          onEnrolled={refresh}
+          onClose={() => setAssigningPlanMember(null)}
+          onSubmit={handlePlanSubmit}
+          onAssigned={refresh}
         />
 
         <AddMemberModal open={addingMember} onClose={() => setAddingMember(false)} onCreated={refresh} />
@@ -607,79 +642,6 @@ function AddMemberModal({ open, onClose, onCreated }: AddMemberModalProps) {
           {submitting ? 'Creating…' : 'Create member'}
         </Button>
       </div>
-    </Modal>
-  )
-}
-
-interface EnrollModalProps {
-  member: MemberListItemDto | null
-  plans: { id: string; name: string; price: string; durationDays: number }[]
-  plansLoaded: boolean
-  onClose: () => void
-  onEnroll: (memberUserId: string, planId: string) => Promise<unknown>
-  onEnrolled: () => Promise<void>
-}
-
-/**
- * "Enroll in plan" for a member with no membership yet (e.g. bulk-
- * imported or seeded accounts) — plan picker + one confirm tap, then
- * refreshes the roster so the new plan/invoice show up immediately.
- * Enrolling auto-creates a pending Invoice (roadmap Phase 10).
- */
-function EnrollModal({ member, plans, plansLoaded, onClose, onEnroll, onEnrolled }: EnrollModalProps) {
-  const [planId, setPlanId] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const selectedPlanId = planId || plans[0]?.id || ''
-
-  function handleClose() {
-    setPlanId('')
-    setError(null)
-    setSubmitting(false)
-    onClose()
-  }
-
-  async function handleSubmit() {
-    if (!member || !selectedPlanId) return
-    setSubmitting(true)
-    setError(null)
-    try {
-      await onEnroll(member.id, selectedPlanId)
-      await onEnrolled()
-      handleClose()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <Modal open={member !== null} onClose={handleClose} title="Enroll in plan">
-      {member ? (
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-ink-soft">{member.name}</p>
-
-          {!plansLoaded ? (
-            <p className="text-sm text-ink-soft">Loading plans…</p>
-          ) : plans.length === 0 ? (
-            <p className="text-sm text-ink-soft">No plans yet — create one first.</p>
-          ) : (
-            <>
-              <Select
-                label="Plan"
-                value={selectedPlanId}
-                onChange={(e) => setPlanId(e.target.value)}
-                options={plans.map((plan) => ({ value: plan.id, label: `${plan.name} — $${plan.price} / ${plan.durationDays} days` }))}
-              />
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
-              <Button fullWidth onClick={handleSubmit} disabled={submitting}>
-                {submitting ? 'Enrolling…' : 'Enroll'}
-              </Button>
-            </>
-          )}
-        </div>
-      ) : null}
     </Modal>
   )
 }

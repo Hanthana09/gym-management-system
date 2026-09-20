@@ -3,6 +3,11 @@ export type RosterRole = 'member' | 'coach'
 export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say'
 
 export interface MemberMembershipSummary {
+  // id/planId let the Owner's "change plan" action (PATCH
+  // /memberships/:id/plan) target this membership and preselect its
+  // current plan — added alongside that feature.
+  id: string
+  planId: string
   planName: string
   status: string
 }
