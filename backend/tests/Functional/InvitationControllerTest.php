@@ -337,6 +337,128 @@ final class InvitationControllerTest extends WebTestCase
         self::assertSame(403, $result['status']);
     }
 
+    // ---- §2.1 "the invitation shows as 'pending' in my invitations list" ----
+
+    public function test_given_bulk_and_single_invitations_when_owner_lists_them_then_all_appear_newest_first(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000024', UserRole::OWNER);
+
+        $this->request('POST', '/invitations', $owner, ['destination' => 'first@example.com', 'role' => 'member']);
+        $this->request('POST', '/invitations/bulk', $owner, [
+            'csv' => "name,email,role\nSecond,second@example.com,coach\nThird,third@example.com,member",
+        ]);
+
+        $result = $this->request('GET', '/invitations', $owner);
+
+        self::assertSame(200, $result['status']);
+        $destinations = array_column($result['body']['invitations'], 'destination');
+        self::assertSame(['third@example.com', 'second@example.com', 'first@example.com'], $destinations);
+    }
+
+    public function test_given_status_filter_when_owner_lists_invitations_then_only_matching_status_returned(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000025', UserRole::OWNER);
+        $invitee = $this->createUser('Ivy Invitee', 'approve@example.com', null, UserRole::MEMBER, UserStatus::PENDING_APPROVAL);
+
+        $this->request('POST', '/invitations', $owner, ['destination' => 'pending@example.com', 'role' => 'member']);
+        $toApprove = $this->request('POST', '/invitations', $owner, ['destination' => 'approve@example.com', 'role' => 'member']);
+
+        $approveResult = $this->request('PATCH', "/invitations/{$toApprove['body']['id']}/approve", $invitee);
+        self::assertSame(200, $approveResult['status'], (string) json_encode($approveResult));
+
+        $result = $this->request('GET', '/invitations?status=pending', $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertCount(1, $result['body']['invitations']);
+        self::assertSame('pending@example.com', $result['body']['invitations'][0]['destination']);
+    }
+
+    public function test_given_two_owners_when_one_lists_invitations_then_only_own_gyms_invitations_returned(): void
+    {
+        $ownerA = $this->createUser('Olivia Owner', 'ownerA@example.com', '+15550000026', UserRole::OWNER);
+        $ownerB = $this->createUser('Oscar Owner', 'ownerB@example.com', '+15550000027', UserRole::OWNER);
+
+        $this->request('POST', '/invitations', $ownerA, ['destination' => 'a-invitee@example.com', 'role' => 'member']);
+        $this->request('POST', '/invitations', $ownerB, ['destination' => 'b-invitee@example.com', 'role' => 'member']);
+
+        $result = $this->request('GET', '/invitations', $ownerA);
+
+        self::assertSame(200, $result['status']);
+        $destinations = array_column($result['body']['invitations'], 'destination');
+        self::assertSame(['a-invitee@example.com'], $destinations);
+    }
+
+    public function test_non_owner_cannot_list_invitations_403(): void
+    {
+        $coach = $this->createUser('Carlos Coach', 'coach3@example.com', '+15550000028', UserRole::COACH);
+
+        $result = $this->request('GET', '/invitations', $coach);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    // ---- Owner cancels their own pending invitation (Members-list merge) --
+
+    public function test_given_pending_invitation_when_owner_cancels_then_status_cancelled_and_audit_logged(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000029', UserRole::OWNER);
+        $created = $this->request('POST', '/invitations', $owner, ['destination' => 'oops@example.com', 'role' => 'member']);
+
+        $result = $this->request('PATCH', "/invitations/{$created['body']['id']}/cancel", $owner);
+
+        self::assertSame(200, $result['status']);
+        self::assertSame('cancelled', $result['body']['status']);
+
+        $status = $this->em->getConnection()->fetchOne('SELECT status FROM invitation WHERE id = ?', [$created['body']['id']]);
+        self::assertSame('cancelled', $status);
+
+        $auditAction = $this->em->getConnection()->fetchOne(
+            'SELECT action FROM audit_log WHERE entity_type = ? AND entity_id = ?',
+            ['Invitation', $created['body']['id']],
+        );
+        self::assertSame('invitation.cancelled', $auditAction);
+    }
+
+    public function test_non_owner_cannot_cancel_invitation_403(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000030', UserRole::OWNER);
+        $invitee = $this->createUser('Mia Member', 'mia5@example.com', '+15550000031', UserRole::MEMBER, UserStatus::PENDING_APPROVAL);
+        $created = $this->request('POST', '/invitations', $owner, ['destination' => 'mia5@example.com', 'role' => 'member']);
+
+        // Neither an unrelated Coach nor the invitee themselves (who can
+        // approve/decline, but that's a different Voter attribute) may cancel.
+        $coach = $this->createUser('Carlos Coach', 'coach4@example.com', '+15550000032', UserRole::COACH);
+        $coachResult = $this->request('PATCH', "/invitations/{$created['body']['id']}/cancel", $coach);
+        $inviteeResult = $this->request('PATCH', "/invitations/{$created['body']['id']}/cancel", $invitee);
+
+        self::assertSame(403, $coachResult['status']);
+        self::assertSame(403, $inviteeResult['status']);
+    }
+
+    public function test_given_another_owners_invitation_when_cancelled_then_403(): void
+    {
+        $ownerA = $this->createUser('Olivia Owner', 'ownerA2@example.com', '+15550000033', UserRole::OWNER);
+        $ownerB = $this->createUser('Oscar Owner', 'ownerB2@example.com', '+15550000034', UserRole::OWNER);
+        $created = $this->request('POST', '/invitations', $ownerA, ['destination' => 'a-invitee2@example.com', 'role' => 'member']);
+
+        $result = $this->request('PATCH', "/invitations/{$created['body']['id']}/cancel", $ownerB);
+
+        self::assertSame(403, $result['status']);
+    }
+
+    public function test_given_already_approved_invitation_when_owner_cancels_then_409(): void
+    {
+        $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000035', UserRole::OWNER);
+        $invitee = $this->createUser('Mia Member', 'mia6@example.com', '+15550000036', UserRole::MEMBER, UserStatus::PENDING_APPROVAL);
+        $created = $this->request('POST', '/invitations', $owner, ['destination' => 'mia6@example.com', 'role' => 'member']);
+        $this->request('PATCH', "/invitations/{$created['body']['id']}/approve", $invitee);
+
+        $result = $this->request('PATCH', "/invitations/{$created['body']['id']}/cancel", $owner);
+
+        self::assertSame(409, $result['status']);
+        self::assertSame('invitation_already_responded', $result['body']['error']);
+    }
+
     public function test_given_no_existing_account_when_otp_verified_for_invited_destination_then_account_created(): void
     {
         $owner = $this->createUser('Olivia Owner', 'owner@example.com', '+15550000016', UserRole::OWNER);

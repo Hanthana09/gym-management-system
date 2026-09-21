@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Input, Select, Tabs, type TabItem } from '../components/ui'
@@ -20,6 +20,8 @@ const DEFAULT_BRAND_COLOR = '#1F2937'
 
 type SettingsTab = 'general' | 'notifications' | 'tools' | 'account'
 
+const SETTINGS_TABS: SettingsTab[] = ['general', 'notifications', 'tools', 'account']
+
 const SETTINGS_TAB_ITEMS: TabItem[] = [
   { value: 'general', label: 'General' },
   { value: 'notifications', label: 'Notifications' },
@@ -35,7 +37,10 @@ const SETTINGS_TAB_ITEMS: TabItem[] = [
  */
 export function OwnerSettingsPage() {
   const { user, logout } = useAuth()
-  const [tab, setTab] = useState<SettingsTab>('general')
+  const [searchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const initialTab = SETTINGS_TABS.includes(requestedTab as SettingsTab) ? (requestedTab as SettingsTab) : 'general'
+  const [tab, setTab] = useState<SettingsTab>(initialTab)
   const { branding, loaded, updateBranding } = useGymBranding()
   const [name, setName] = useState<string | null>(null)
   const [logoFile, setLogoFile] = useState<File | null>(null)

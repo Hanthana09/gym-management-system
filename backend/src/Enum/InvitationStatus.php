@@ -8,4 +8,6 @@ enum InvitationStatus: string
     case APPROVED = 'approved';
     case DECLINED = 'declined';
     case EXPIRED = 'expired';
+    /** Owner-initiated close, distinct from DECLINED (the invitee's own choice) — see InvitationVoter::CANCEL. */
+    case CANCELLED = 'cancelled';
 }

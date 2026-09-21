@@ -4,13 +4,12 @@ import { MERCURE_URL } from '../lib/apiClient'
 import type { InvitationDto, InvitationRole } from './types'
 
 /**
- * Owner-side invitation list. There's no "list all invitations I've sent"
- * endpoint in architecture doc §7 — only POST /invitations, GET
- * /invitations/me (invitee-scoped), and the approve/decline actions — so
- * this list is seeded from each POST response and kept live via Mercure
- * for the rest of the session. A page reload starts it empty again; a
- * fuller Owner-facing listing endpoint is a natural follow-up, not built
- * here since it isn't in this phase's documented API surface.
+ * Owner-side invitation list. Backed by `GET /invitations` (functional
+ * requirements §2.1: "the invitation shows as 'pending' in my invitations
+ * list") — fetched on mount so a page reload, or a batch sent elsewhere
+ * (e.g. the bulk-import screen at /owner/import, which doesn't go through
+ * `sendInvitation` below), still shows up here. Mercure then keeps
+ * individual rows live for the rest of the session as invitees respond.
  */
 export function useOwnerInvitations() {
   const { authFetch } = useAuth()
@@ -28,9 +27,34 @@ export function useOwnerInvitations() {
     setGymId(invitation.gymId)
   }, [])
 
+  useEffect(() => {
+    authFetch<{ invitations: InvitationDto[] }>('/invitations', { method: 'GET' })
+      .then((data) => {
+        setInvitations(data.invitations)
+        if (data.invitations.length > 0) setGymId(data.invitations[0].gymId)
+      })
+      .catch(() => {
+        // Best-effort: an Owner who hasn't sent any invitations yet, or a
+        // transient failure, just leaves the list empty — sendInvitation
+        // below still works standalone.
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const sendInvitation = useCallback(
     async (destination: string, role: InvitationRole) => {
       const invitation = await authFetch<InvitationDto>('/invitations', { body: { destination, role } })
+      upsert(invitation)
+
+      return invitation
+    },
+    [authFetch, upsert],
+  )
+
+  /** Owner closing their own still-pending invitation — e.g. a bulk-import row that was a mistake or duplicate. */
+  const cancelInvitation = useCallback(
+    async (id: string) => {
+      const invitation = await authFetch<InvitationDto>(`/invitations/${id}/cancel`, { method: 'PATCH' })
       upsert(invitation)
 
       return invitation
@@ -58,5 +82,5 @@ export function useOwnerInvitations() {
     return () => source.close()
   }, [gymId])
 
-  return { invitations, sendInvitation }
+  return { invitations, sendInvitation, cancelInvitation }
 }

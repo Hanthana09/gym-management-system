@@ -11,6 +11,7 @@ const STATUS_STYLES: Record<InvitationStatus, string> = {
   approved: 'bg-green-100 text-green-800',
   declined: 'bg-red-100 text-red-800',
   expired: 'bg-gray-100 text-gray-600',
+  cancelled: 'bg-gray-100 text-gray-600',
 }
 
 function StatusBadge({ status }: { status: InvitationStatus }) {
@@ -28,8 +29,20 @@ function StatusBadge({ status }: { status: InvitationStatus }) {
  * 3). Built from Card/Button/Input/Select/Modal — no new primitives.
  */
 export function OwnerInvitationsPanel() {
-  const { invitations, sendInvitation } = useOwnerInvitations()
+  const { invitations, sendInvitation, cancelInvitation } = useOwnerInvitations()
   const [modalOpen, setModalOpen] = useState(false)
+  const [cancellingId, setCancellingId] = useState<string | null>(null)
+
+  async function handleCancel(id: string) {
+    setCancellingId(id)
+    try {
+      await cancelInvitation(id)
+    } catch {
+      // Best-effort — the row's status simply doesn't change; the Owner can retry.
+    } finally {
+      setCancellingId(null)
+    }
+  }
 
   return (
     <Card>
@@ -56,7 +69,18 @@ export function OwnerInvitationsPanel() {
                   <p className="truncate text-sm font-medium text-ink">{invitation.destination}</p>
                   <p className="text-xs text-ink-soft capitalize">{invitation.role}</p>
                 </div>
-                <StatusBadge status={invitation.status} />
+                <div className="flex shrink-0 items-center gap-2">
+                  <StatusBadge status={invitation.status} />
+                  {invitation.status === 'pending' ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleCancel(invitation.id)}
+                      disabled={cancellingId === invitation.id}
+                    >
+                      {cancellingId === invitation.id ? 'Cancelling…' : 'Cancel'}
+                    </Button>
+                  ) : null}
+                </div>
               </Ticket>
             </li>
           ))}

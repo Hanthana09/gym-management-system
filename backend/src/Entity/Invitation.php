@@ -212,4 +212,11 @@ class Invitation
         $this->status = InvitationStatus::DECLINED;
         $this->respondedAt = new \DateTimeImmutable();
     }
+
+    /** Owner closing their own still-pending invitation — e.g. a bulk-import row that was a mistake or duplicate. */
+    public function cancel(): void
+    {
+        $this->status = InvitationStatus::CANCELLED;
+        $this->respondedAt = new \DateTimeImmutable();
+    }
 }

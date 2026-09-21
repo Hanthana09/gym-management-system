@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\Invitation;
 use App\Entity\User;
 use App\Enum\InvitationRole;
+use App\Enum\InvitationStatus;
 use App\Gym\GymProvisioningService;
 use App\Invitation\InvitationNotRespondableException;
 use App\Invitation\InvitationService;
@@ -39,7 +40,7 @@ class InvitationController extends AbstractController
         $role = InvitationRole::tryFrom((string) ($data['role'] ?? ''));
 
         if ($destination === '' || $role === null) {
-            return new JsonResponse(['error' => 'invalid_request', 'message' => 'A destination and a role (coach or member) are required.'], 400);
+            return new JsonResponse(['error' => 'invalid_request', 'message' => 'A destination and a role (coach, staff, or member) are required.'], 400);
         }
 
         // architecture doc §9.1's InvitationVoter::SEND expects an actual
@@ -106,6 +107,41 @@ class InvitationController extends AbstractController
         ], 201);
     }
 
+    /**
+     * Owner-facing "everyone I've invited" listing (functional requirements
+     * §2.1) — was previously missing entirely, so a bulk import of 100+
+     * rows had nowhere persistent to show up: the frontend's
+     * useOwnerInvitations hook could only ever see invitations sent during
+     * the current session (seeded from each POST's own response), and a
+     * page reload — or a completely separate bulk-import flow — started it
+     * empty again. Same SEND permission and gym-scoping as create()/
+     * bulkCreate(): whichever Owner can send invitations for this gym can
+     * also see all of them, filterable by `?status=pending` etc.
+     */
+    #[Route('/invitations', name: 'invitations_list', methods: ['GET'])]
+    public function list(Request $request): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $gym = $this->gymProvisioning->ensureGymForOwner($user);
+        $candidate = new Invitation($gym, $user, null, null, null, InvitationRole::MEMBER, new \DateTimeImmutable('+7 days'));
+        if (!$this->isGranted(InvitationVoter::SEND, $candidate)) {
+            return $this->forbidden();
+        }
+
+        $status = InvitationStatus::tryFrom((string) $request->query->get('status', ''));
+
+        $invitations = array_map(
+            fn (Invitation $invitation) => $this->serialize($invitation),
+            $this->invitationRepository->findForGym($gym, $status),
+        );
+
+        return new JsonResponse(['invitations' => $invitations]);
+    }
+
     #[Route('/invitations/me', name: 'invitations_me', methods: ['GET'])]
     public function mine(): JsonResponse
     {
@@ -134,6 +170,40 @@ class InvitationController extends AbstractController
         return $this->respond($id, approve: false);
     }
 
+    /**
+     * Owner-side counterpart to approve/decline: closes their own
+     * still-pending invitation (e.g. a bulk-import row that was a mistake
+     * or a duplicate) without the invitee's involvement. Deliberately a
+     * separate action from decline() — that one is the invitee's own
+     * choice (InvitationVoter::RESPOND); this one is INVITATION_CANCEL,
+     * Owner + own gym only, same shape as SEND.
+     */
+    #[Route('/invitations/{id}/cancel', name: 'invitations_cancel', methods: ['PATCH'])]
+    public function cancel(string $id): JsonResponse
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return $this->unauthenticated();
+        }
+
+        $invitation = $this->invitationRepository->find($id);
+        if ($invitation === null) {
+            return new JsonResponse(['error' => 'not_found', 'message' => 'Invitation not found.'], 404);
+        }
+
+        if (!$this->isGranted(InvitationVoter::CANCEL, $invitation)) {
+            return $this->forbidden();
+        }
+
+        try {
+            $this->invitations->cancel($user, $invitation);
+        } catch (InvitationNotRespondableException $exception) {
+            return $this->notRespondable($exception);
+        }
+
+        return new JsonResponse($this->serialize($invitation));
+    }
+
     private function respond(string $id, bool $approve): JsonResponse
     {
         $user = $this->getUser();
@@ -155,17 +225,22 @@ class InvitationController extends AbstractController
         try {
             $approve ? $this->invitations->approve($invitation) : $this->invitations->decline($invitation);
         } catch (InvitationNotRespondableException $exception) {
-            return new JsonResponse([
-                'error' => 'invitation_' . $exception->reason,
-                'message' => match ($exception->reason) {
-                    'expired' => 'This invitation has expired.',
-                    'already_responded' => 'This invitation has already been responded to.',
-                    default => 'This invitation cannot be responded to.',
-                },
-            ], 409);
+            return $this->notRespondable($exception);
         }
 
         return new JsonResponse($this->serialize($invitation));
+    }
+
+    private function notRespondable(InvitationNotRespondableException $exception): JsonResponse
+    {
+        return new JsonResponse([
+            'error' => 'invitation_' . $exception->reason,
+            'message' => match ($exception->reason) {
+                'expired' => 'This invitation has expired.',
+                'already_responded' => 'This invitation has already been responded to.',
+                default => 'This invitation cannot be responded to.',
+            },
+        ], 409);
     }
 
     /**

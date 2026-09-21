@@ -23,7 +23,38 @@ import { AssignPlanModal } from '../membership/AssignPlanModal'
 import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import { usePagination } from '../lib/usePagination'
+import { useOwnerInvitations } from '../invitations/useOwnerInvitations'
 import type { MemberAccountStatus, MemberListItemDto, RosterRole } from '../members/types'
+
+/**
+ * A still-pending invitation, shown alongside real Members/Coaches so
+ * there's one place to see "everyone I've invited or added," per the
+ * gap a 100+ row bulk import made obvious: previously these only ever
+ * showed on Settings > Tools & Invitations. Shaped to slot into the same
+ * table/card rendering as MemberListItemDto — every account-only field
+ * (membership, memberId, branch assignment) is null/empty since none of
+ * that exists until the invitee actually approves. There is no captured
+ * name for an invitation (architecture doc §5.1's INVITATION has no name
+ * field — the bulk-import CSV's "name" column was always cosmetic, see
+ * OwnerBulkImportPage), so `name` falls back to the destination, same as
+ * the Settings panel already does.
+ */
+interface PendingInvitationRow {
+  source: 'invitation'
+  id: string
+  memberId: null
+  name: string
+  email: string | null
+  phone: string | null
+  role: RosterRole
+  status: 'pending'
+  joinedAt: string
+  membership: null
+  branchIds: string[]
+  assignedBranchId: null
+}
+
+type RosterRow = (MemberListItemDto & { source: 'account' }) | PendingInvitationRow
 
 const BLOCKED_REASON_LABELS: Record<string, string> = {
   membership_expired: 'Membership expired',
@@ -40,6 +71,11 @@ const ACCOUNT_STATUS_STYLES: Record<MemberAccountStatus, string> = {
   pending_approval: 'bg-amber-100 text-amber-800',
   suspended: 'bg-red-100 text-red-800',
 }
+
+// Same amber as ACCOUNT_STATUS_STYLES.pending_approval — a pending
+// invitation and a not-yet-approved account read as the same "waiting on
+// someone else" state to an Owner scanning the list.
+const PENDING_INVITATION_STYLE = 'bg-amber-100 text-amber-800'
 
 const MEMBERSHIP_STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
@@ -81,14 +117,14 @@ const ROLE_FILTER_OPTIONS: { value: RoleFilter; label: string }[] = [
 
 const PAGE_SIZE = 20
 
-function matchesSearch(member: MemberListItemDto, query: string): boolean {
+function matchesSearch(member: RosterRow, query: string): boolean {
   if (query === '') return true
   const haystack = [member.name, member.email, member.phone].filter(Boolean).join(' ').toLowerCase()
 
   return haystack.includes(query)
 }
 
-function compareBy(field: SortField, a: MemberListItemDto, b: MemberListItemDto): number {
+function compareBy(field: SortField, a: RosterRow, b: RosterRow): number {
   switch (field) {
     case 'name':
       return a.name.localeCompare(b.name)
@@ -115,6 +151,7 @@ export function OwnerMembersPage() {
   const { authFetch, user } = useAuth()
   const navigate = useNavigate()
   const { members, loaded, refresh, updateStatus } = useMembers()
+  const { invitations, cancelInvitation } = useOwnerInvitations()
   const { plans, loaded: plansLoaded } = useOwnerPlans()
   const { enroll } = useEnrollMember()
   const { changePlan } = useChangeMembershipPlan()
@@ -132,6 +169,7 @@ export function OwnerMembersPage() {
   const [confirmingSuspendId, setConfirmingSuspendId] = useState<string | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null)
+  const [cancellingInvitationId, setCancellingInvitationId] = useState<string | null>(null)
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
   const [checkInState, setCheckInState] = useState<Record<string, { status: 'checking' | 'success' | 'blocked' | 'error'; message: string }>>({})
 
@@ -189,16 +227,56 @@ export function OwnerMembersPage() {
     }
   }
 
+  async function handleCancelInvitation(id: string) {
+    setStatusError(null)
+    setCancellingInvitationId(id)
+    try {
+      await cancelInvitation(id)
+    } catch (err) {
+      setStatusError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setCancellingInvitationId(null)
+    }
+  }
+
+  // Merges real accounts with still-pending invitations (member/coach
+  // only — a pending Staff invitation stays Settings-only, since Staff
+  // never appears on this roster at all). Recomputes whenever either
+  // source changes so an invitation that just got approved (a real
+  // account now exists via useMembers' own Mercure-free refresh) or
+  // cancelled (upsert() flips it out of 'pending') drops off here.
+  const rosterRows = useMemo<RosterRow[]>(() => {
+    const accountRows: RosterRow[] = members.map((member) => ({ ...member, source: 'account' }))
+    const invitationRows: RosterRow[] = invitations
+      .filter((invitation) => invitation.status === 'pending' && (invitation.role === 'member' || invitation.role === 'coach'))
+      .map((invitation) => ({
+        source: 'invitation',
+        id: invitation.id,
+        memberId: null,
+        name: invitation.destination,
+        email: invitation.destination.includes('@') ? invitation.destination : null,
+        phone: invitation.destination.includes('@') ? null : invitation.destination,
+        role: invitation.role,
+        status: 'pending',
+        joinedAt: invitation.createdAt,
+        membership: null,
+        branchIds: [],
+        assignedBranchId: null,
+      }))
+
+    return [...accountRows, ...invitationRows]
+  }, [members, invitations])
+
   const visibleMembers = useMemo(() => {
     const query = search.trim().toLowerCase()
     const direction = sortDirection === 'asc' ? 1 : -1
 
-    return members
+    return rosterRows
       .filter((member) => roleFilter === 'all' || member.role === roleFilter)
       .filter((member) => selectedBranchId === null || member.branchIds.includes(selectedBranchId))
       .filter((member) => matchesSearch(member, query))
       .sort((a, b) => direction * compareBy(sortField, a, b))
-  }, [members, search, roleFilter, selectedBranchId, sortField, sortDirection])
+  }, [rosterRows, search, roleFilter, selectedBranchId, sortField, sortDirection])
 
   const { page: currentPage, pageCount, paged: pagedMembers, rangeStart, rangeEnd, total, setPage } = usePagination(
     visibleMembers,
@@ -296,13 +374,13 @@ export function OwnerMembersPage() {
             </div>
           </div>
 
-          {loaded && members.length === 0 ? (
+          {loaded && rosterRows.length === 0 ? (
             <Card>
               <p className="py-6 text-center text-sm text-ink-soft">No members yet.</p>
             </Card>
           ) : null}
 
-          {loaded && members.length > 0 && visibleMembers.length === 0 ? (
+          {loaded && rosterRows.length > 0 && visibleMembers.length === 0 ? (
             <Card>
               <p className="py-6 text-center text-sm text-ink-soft">No one matches these filters.</p>
             </Card>
@@ -317,7 +395,8 @@ export function OwnerMembersPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      {member.role === 'member' || (member.role === 'coach' && user?.role === 'owner') ? (
+                      {member.source === 'account' &&
+                      (member.role === 'member' || (member.role === 'coach' && user?.role === 'owner')) ? (
                         <button
                           type="button"
                           className="text-sm font-semibold text-ink underline-offset-2 hover:underline"
@@ -337,10 +416,16 @@ export function OwnerMembersPage() {
                     {/* gym-management-member-profile-extension.md §8: memberId shown here, age deliberately not shown at list granularity. */}
                     {member.memberId ? <p className="mt-0.5 font-mono text-xs text-ink-soft">{member.memberId}</p> : null}
                   </div>
-                  <Pill label={member.status} styles={ACCOUNT_STATUS_STYLES[member.status]} />
+                  {member.source === 'account' ? (
+                    <Pill label={member.status} styles={ACCOUNT_STATUS_STYLES[member.status]} />
+                  ) : (
+                    <Pill label="Pending" styles={PENDING_INVITATION_STYLE} />
+                  )}
                 </div>
                 <div className="mt-3 flex items-center justify-between text-sm">
-                  {member.membership ? (
+                  {member.source === 'invitation' ? (
+                    <span className="text-ink-soft">Awaiting approval</span>
+                  ) : member.membership ? (
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-ink-soft">{member.membership.planName}</span>
                       <Pill
@@ -366,7 +451,18 @@ export function OwnerMembersPage() {
                     {new Date(member.joinedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                   </span>
                 </div>
-                {member.role === 'member' ? (
+                {member.source === 'invitation' ? (
+                  <div className="mt-3 border-t border-line pt-3">
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      onClick={() => handleCancelInvitation(member.id)}
+                      disabled={cancellingInvitationId === member.id}
+                    >
+                      {cancellingInvitationId === member.id ? 'Cancelling…' : 'Cancel invitation'}
+                    </Button>
+                  </div>
+                ) : member.role === 'member' ? (
                   <div className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
                     <div className="flex items-center justify-between gap-2">
                       <MemberStatusAction
@@ -438,7 +534,8 @@ export function OwnerMembersPage() {
                 {pagedMembers.map((member) => (
                   <tr key={member.id} className="text-sm text-ink">
                     <td className="border-b border-line/60 px-4 py-3 font-medium break-words">
-                      {member.role === 'member' || (member.role === 'coach' && user?.role === 'owner') ? (
+                      {member.source === 'account' &&
+                      (member.role === 'member' || (member.role === 'coach' && user?.role === 'owner')) ? (
                         <button
                           type="button"
                           className="underline-offset-2 hover:underline"
@@ -462,10 +559,16 @@ export function OwnerMembersPage() {
                       <Pill label={member.role} styles={ROLE_STYLES[member.role]} />
                     </td>
                     <td className="border-b border-line/60 px-4 py-3">
-                      <Pill label={member.status} styles={ACCOUNT_STATUS_STYLES[member.status]} />
+                      {member.source === 'account' ? (
+                        <Pill label={member.status} styles={ACCOUNT_STATUS_STYLES[member.status]} />
+                      ) : (
+                        <Pill label="Pending" styles={PENDING_INVITATION_STYLE} />
+                      )}
                     </td>
                     <td className="border-b border-line/60 px-4 py-3 break-words">
-                      {member.membership ? (
+                      {member.source === 'invitation' ? (
+                        <span className="text-ink-soft">—</span>
+                      ) : member.membership ? (
                         <div className="flex flex-wrap items-center gap-2">
                           <span>{member.membership.planName}</span>
                           <Pill
@@ -489,7 +592,15 @@ export function OwnerMembersPage() {
                       )}
                     </td>
                     <td className="border-b border-line/60 px-4 py-3">
-                      {member.role === 'member' ? (
+                      {member.source === 'invitation' ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleCancelInvitation(member.id)}
+                          disabled={cancellingInvitationId === member.id}
+                        >
+                          {cancellingInvitationId === member.id ? 'Cancelling…' : 'Cancel invitation'}
+                        </Button>
+                      ) : member.role === 'member' ? (
                         <div className="flex flex-col gap-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <MemberStatusAction

@@ -2,6 +2,7 @@
 
 namespace App\Invitation;
 
+use App\Audit\AuditLogger;
 use App\Entity\CoachProfile;
 use App\Entity\Invitation;
 use App\Entity\MemberProfile;
@@ -36,6 +37,7 @@ class InvitationService
         private readonly MemberProfileRepository $memberProfiles,
         private readonly EntityManagerInterface $em,
         private readonly EventDispatcherInterface $dispatcher,
+        private readonly AuditLogger $auditLogger,
     ) {
     }
 
@@ -162,6 +164,28 @@ class InvitationService
         $this->em->flush();
 
         $this->dispatcher->dispatch(new InvitationDeclinedEvent($invitation), InvitationDeclinedEvent::NAME);
+    }
+
+    /**
+     * Owner-initiated close of their own still-pending invitation — e.g. a
+     * bulk-import row that was a typo or duplicate. Deliberately does NOT
+     * touch User/profile state (there is none yet for a pending
+     * invitation) and does not notify the invitee — this is closer to
+     * "undo a mistake" than a real decision about someone's membership.
+     * Audit-logged like every other Owner action that touches an
+     * invitation (architecture doc §9).
+     */
+    public function cancel(User $actingOwner, Invitation $invitation): void
+    {
+        $this->assertRespondable($invitation);
+
+        $invitation->cancel();
+        $this->em->flush();
+
+        $this->auditLogger->log($actingOwner, 'invitation.cancelled', 'Invitation', $invitation->getId(), [
+            'destination' => $invitation->getEmail() ?? $invitation->getPhone(),
+            'role' => $invitation->getRole()->value,
+        ]);
     }
 
     /**

@@ -22,17 +22,18 @@ final class InvitationVoter extends AppVoter
 {
     const SEND = 'INVITATION_SEND';    // Owner only, for their own gym
     const RESPOND = 'INVITATION_RESPOND'; // Coach/Member — own invitation only
+    const CANCEL = 'INVITATION_CANCEL'; // Owner only, for their own gym — same rule as SEND, added so an Owner can close a pending invitation (e.g. a bad bulk-import row) without the invitee's involvement
 
     protected function supports(string $attribute, mixed $subject): bool
     {
-        return in_array($attribute, [self::SEND, self::RESPOND]) && $subject instanceof Invitation;
+        return in_array($attribute, [self::SEND, self::RESPOND, self::CANCEL]) && $subject instanceof Invitation;
     }
 
     protected function voteOnAttribute(string $attribute, mixed $subject, TokenInterface $token): bool
     {
         $user = $token->getUser();
 
-        if ($attribute === self::SEND) {
+        if ($attribute === self::SEND || $attribute === self::CANCEL) {
             return $this->isOwner($user) && $subject->getGym()->getOwner() === $user;
         }
 

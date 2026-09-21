@@ -5,6 +5,7 @@ namespace App\Repository;
 use App\Entity\Gym;
 use App\Entity\Invitation;
 use App\Entity\User;
+use App\Enum\InvitationStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
 
@@ -46,6 +47,32 @@ class InvitationRepository extends ServiceEntityRepository
             ->setMaxResults(1)
             ->getQuery()
             ->getOneOrNullResult();
+    }
+
+    /**
+     * Owner-facing "everyone I've invited" listing (functional requirements
+     * §2.1: "the invitation shows as 'pending' in my invitations list") —
+     * newest first, optionally narrowed to one status.
+     *
+     * @return Invitation[]
+     */
+    public function findForGym(Gym $gym, ?InvitationStatus $status = null): array
+    {
+        // Secondary sort on id: createdAt's column precision can't tell
+        // apart two rows created in the same request (e.g. a bulk import's
+        // 100+ rows), but id is a time-ordered UUIDv7, so it still sorts
+        // them in creation order.
+        $qb = $this->createQueryBuilder('i')
+            ->andWhere('i.gym = :gym')
+            ->setParameter('gym', $gym)
+            ->orderBy('i.createdAt', 'DESC')
+            ->addOrderBy('i.id', 'DESC');
+
+        if ($status !== null) {
+            $qb->andWhere('i.status = :status')->setParameter('status', $status);
+        }
+
+        return $qb->getQuery()->getResult();
     }
 
     /** Every invitation addressed to this user, by account link or by matching email/phone (mirrors InvitationVoter::RESPOND). */

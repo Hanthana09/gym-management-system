@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Papa from 'papaparse'
+import { Link } from 'react-router-dom'
 import { NavShell } from '../components/NavShell'
 import { OWNER_NAV_ITEMS } from '../components/nav-items'
 import { Button, Card, Select } from '../components/ui'
@@ -45,7 +46,7 @@ const OUTCOME_STYLES: Record<BulkImportOutcome, string> = {
 
 const REASON_LABELS: Record<string, string> = {
   missing_email_or_phone: 'Missing email or phone',
-  invalid_role: 'Invalid role (must be coach or member)',
+  invalid_role: 'Invalid role (must be coach, staff, or member)',
 }
 
 /**
@@ -151,6 +152,25 @@ export function OwnerBulkImportPage() {
   )
 }
 
+const TEMPLATE_ROWS = [
+  { name: 'Alice Example', email: 'alice@example.com', phone: '', role: 'member' },
+  { name: 'Bob Example', email: '', phone: '+15550001111', role: 'coach' },
+  { name: 'Carol Example', email: 'carol@example.com', phone: '', role: 'staff' },
+]
+
+function downloadTemplate() {
+  const csv = Papa.unparse(TEMPLATE_ROWS, { columns: ['name', 'email', 'phone', 'role'] })
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'bulk-invite-template.csv'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 function UploadStep({ onFile, error }: { onFile: (file: File) => void; error: string | null }) {
   return (
     <Card>
@@ -172,6 +192,9 @@ function UploadStep({ onFile, error }: { onFile: (file: File) => void; error: st
         />
       </label>
       {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      <Button className="mt-3" variant="secondary" fullWidth onClick={downloadTemplate}>
+        Download template
+      </Button>
     </Card>
   )
 }
@@ -274,6 +297,17 @@ function ResultSummary({ result, onImportAnother }: { result: BulkImportResponse
           <p className="text-xs font-medium text-red-800">Invalid</p>
         </div>
       </div>
+
+      {result.summary.created > 0 ? (
+        <p className="mb-4 text-sm text-ink-soft">
+          Everyone created here is still <span className="font-medium">pending</span> until they approve their own
+          invitation.{' '}
+          <Link to="/owner/settings?tab=tools" className="font-medium text-ink underline">
+            View pending invitations
+          </Link>
+          .
+        </p>
+      ) : null}
 
       <ul className="flex flex-col gap-2">
         {result.results.map((row) => (

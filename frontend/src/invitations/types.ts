@@ -1,5 +1,5 @@
 export type InvitationRole = 'coach' | 'staff' | 'member'
-export type InvitationStatus = 'pending' | 'approved' | 'declined' | 'expired'
+export type InvitationStatus = 'pending' | 'approved' | 'declined' | 'expired' | 'cancelled'
 
 export interface InvitationDto {
   id: string
