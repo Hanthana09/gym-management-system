@@ -24,6 +24,7 @@ import { useBranches } from '../branches/useBranches'
 import { BranchSwitcher, defaultBranchId } from '../branches/BranchSwitcher'
 import { usePagination } from '../lib/usePagination'
 import { useOwnerInvitations } from '../invitations/useOwnerInvitations'
+import type { InvitationDto } from '../invitations/types'
 import type { MemberAccountStatus, MemberListItemDto, RosterRole } from '../members/types'
 
 /**
@@ -248,7 +249,10 @@ export function OwnerMembersPage() {
   const rosterRows = useMemo<RosterRow[]>(() => {
     const accountRows: RosterRow[] = members.map((member) => ({ ...member, source: 'account' }))
     const invitationRows: RosterRow[] = invitations
-      .filter((invitation) => invitation.status === 'pending' && (invitation.role === 'member' || invitation.role === 'coach'))
+      .filter(
+        (invitation): invitation is InvitationDto & { role: RosterRole } =>
+          invitation.status === 'pending' && (invitation.role === 'member' || invitation.role === 'coach'),
+      )
       .map((invitation) => ({
         source: 'invitation',
         id: invitation.id,
